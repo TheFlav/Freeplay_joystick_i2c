@@ -1,3 +1,8 @@
+/*
+ Setup:     sudo apt install libi2c-dev
+ Compile:   gcc -o uhid-i2c-gamepad uhid-i2c-gamepad.c -li2c
+ Run:       sudo ./uhid-i2c-gamepad 
+ */
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
