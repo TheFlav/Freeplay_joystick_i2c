@@ -1,4 +1,6 @@
 //Freeplay_joystick_i2c_attiny
+#include <Wire.h>
+
 
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
 //currently testing on Adafruit 817
@@ -9,10 +11,15 @@
 #define CONFIG_I2C_ADDR     0x20
 //#define CONFIG_I2C_2NDADDR  0x40  //0x30 wouldn't work
 
+#define USE_INTERRUPTS
+//#define USE_ADC
+
 //#define CONFIG_SERIAL_DEBUG 1     //this shares a pin with the nINT, so be careful
 
+#if defined(USE_ADC) && defined(USE_INTERRUPTS)
+ #error ADC0 and nINT_PIN share the same pin
+#endif
 
-#include <Wire.h>
 
 
 struct i2c_register_struct {
@@ -26,10 +33,10 @@ struct i2c_register_struct {
   byte a1_lsb;          // Reg: 0x03 - ADC1 least significant 8 bits
   byte a2_lsb;          // Reg: 0x04 - ADC2 least significant 8 bits
   byte a3_lsb;          // Reg: 0x05 - ADC3 least significant 8 bits
-  byte config0;         // Reg: 0x06 - Configuration port 0
-  byte config1;         // Reg: 0x07 - Configuration port 1
+  byte adc_on_bits;     // Reg: 0x06 - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
+  byte config0;         // Reg: 0x07 - Configuration port 0
   byte configPWM;       // Reg: 0x08 - set PWM duty cycle
-  byte adc_res;         // Reg: 0x10 - current ADC resolution (maybe settable?)
+  byte adc_res;         // Reg: 0x09 - current ADC resolution (maybe settable?)
 } i2c_registers;
 
 volatile byte g_last_sent_input0 = 0xFF;
@@ -59,22 +66,21 @@ byte g_pwm_duty_cycle = 0xFF;  //100% on
  * PB3 = IO1_7 = BTN_R2 ifndef CONFIG_SERIAL_DEBUG (or can be used for UART RXD0 for debugging)
  */
 
-
 // How many ADC's do you want?
-//#define USE_ADC0
-//#define USE_ADC1
-//#define USE_ADC2
-//#define USE_ADC3
+#ifdef USE_ADC
+ #define USE_ADC0
+ #define USE_ADC1
+ #define USE_ADC2
+ #define USE_ADC3
+#endif
 
 //I feel like we only want to do interrupts if we're not doing ADCs, but this can change around
 
-#ifndef USE_ADC0
-#define nINT_PIN 0 //also PIN_PA4
+#if !defined(USE_ADC0) && defined(USE_INTERRUPTS)
+ #define nINT_PIN 0 //also PIN_PA4
 #endif
 
-#if defined(USE_ADC0) && defined(nINT_PIN)
- #error ADC0 and nINT_PIN share the same pin
-#endif
+
 
 
 //if you change any of these, then you need to change the pullups in setup()
@@ -148,24 +154,41 @@ void setup_gpio(void)
 
 void read_all_gpio(void)
 {
-  i2c_registers.input0 = ((PORTA_IN & PINA_IN0_MASK) >> PINA_IN0_SHR) | ((PORTB_IN & PINB_IN0_MASK) >> PINB_IN0_SHR);
+  //we may want to turn off interrupts during this function
+  //at the least, we need to poll the registers PA, PB, PC once
+  //then set up the input registers as TEMPORARY registers
+  //then put them in the actual i2c_registers 
+  //otherwise, if we get interrupted during the setup, things get out of whack
+  
+  byte input0, input1;
+  byte pa_in = PORTA_IN;
+  byte pb_in = PORTB_IN;
+  byte pc_in = PORTC_IN;
+
+  input0 = ((pa_in & PINA_IN0_MASK) >> PINA_IN0_SHR) | ((pb_in & PINB_IN0_MASK) >> PINB_IN0_SHR);
 
 #ifndef CONFIG_SERIAL_DEBUG
-  i2c_registers.input1 = ((PORTB_IN & PINB_IN1_MASK) << PINB_IN1_SHL) |  (PORTC_IN & PINC_IN1_MASK);
+  input1 = ((pb_in & PINB_IN1_MASK) << PINB_IN1_SHL) |  (pc_in & PINC_IN1_MASK);
 #else
-  i2c_registers.input1 = ((PORTB_IN & PINB_IN1_MASK | PINB_UART_MASK) << PINB_IN1_SHL) |  (PORTC_IN & PINC_IN1_MASK);   //act like the PINB_UART_MASK pins are never pressed
+  input1 = ((pb_in & PINB_IN1_MASK | PINB_UART_MASK) << PINB_IN1_SHL) |  (pc_in & PINC_IN1_MASK);   //act like the PINB_UART_MASK pins are never pressed
 #endif
 
-#if !defined(USE_ADC2) && !defined(USE_ADC3)
-  i2c_registers.input0 |= (PORTA_IN & (PINA_ADC2_MASK | PINA_ADC3_MASK));
+#if defined(USE_ADC2) && defined(USE_ADC3)
+  input0 |= (PINA_ADC3_MASK | PINA_ADC2_MASK);
+#elif !defined(USE_ADC2) && !defined(USE_ADC3)
+  input0 |= (pa_in & (PINA_ADC2_MASK | PINA_ADC3_MASK));
+#elif defined(USE_ADC3) && !defined(USE_ADC2)
+  input0 |= (pa_in & PINA_ADC2_MASK) | PINA_ADC3_MASK;
+#elif defined(USE_ADC2) && !defined(USE_ADC3)
+  input0 |= (pa_in & PINA_ADC3_MASK) | PINA_ADC2_MASK;
 #else
- #ifndef USE_ADC2
-  i2c_registers.input0 |= (PORTA_IN & PINA_ADC2_MASK);
- #endif
- #ifndef USE_ADC3
-  i2c_registers.input0 |= (PORTA_IN & PINA_ADC3_MASK);
- #endif
+ #error How can this be?
 #endif
+
+
+  i2c_registers.input0 = input0;
+  i2c_registers.input1 = input1;
+
 }
 
 //When Qwiic Joystick receives data bytes from Master, this function is called as an interrupt
@@ -181,8 +204,11 @@ void receive_i2c_callback(int i2c_bytes_received)
     //  byte configPWM;       // Reg: 0x08 - set PWM duty cycle
     if(x == 0x08)
     {
-      i2c_registers.configPWM = temp;
-      
+      i2c_registers.configPWM = temp;      
+    }
+    else if(x == 0x06)
+    {
+      i2c_registers.adc_on_bits = temp;
     }
   }
   
@@ -236,12 +262,18 @@ void set_pwm_duty_cycle(byte new_duty_cycle)
 
 
 
-void setup() {
+void setup() 
+{
+  //memset(&i2c_registers, 0, sizeof(i2c_registers));
+  
+  startI2C(); //Determine the I2C address we should be using and begin listening on I2C bus
+  setup_gpio();
+  
+  
 #ifdef nINT_PIN
   pinMode(nINT_PIN, OUTPUT);
 #endif 
 
-  startI2C(); //Determine the I2C address we should be using and begin listening on I2C bus
 
 #ifdef CONFIG_SERIAL_DEBUG
   Serial.begin(115200);
@@ -250,7 +282,9 @@ void setup() {
   Serial.flush();
 #endif
 
+#if (defined(USE_ADC0) || defined(USE_ADC1) || defined(USE_ADC2) || defined(USE_ADC3)) && (ADC_RESOLUTION != 10)
   analogReadResolution(ADC_RESOLUTION);
+#endif
   i2c_registers.adc_res = ADC_RESOLUTION;
 }
 
@@ -265,24 +299,36 @@ void loop() {
   read_all_gpio();
 
 #ifdef USE_ADC0
-  adc = analogRead(PIN_PA4);
-  i2c_registers.a0_msb = adc >> (ADC_RESOLUTION - 8);
-  i2c_registers.a0_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+  if(i2c_registers.adc_on_bits & (1 << 0))
+  {
+    adc = analogRead(PIN_PA4);
+    i2c_registers.a0_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_registers.a0_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+  }
 #endif
 #ifdef USE_ADC1
-  adc = analogRead(PIN_PA5);
-  i2c_registers.a1_msb = adc >> (ADC_RESOLUTION - 8);
-  i2c_registers.a1_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+  if(i2c_registers.adc_on_bits & (1 << 1))
+  {
+    adc = analogRead(PIN_PA5);
+    i2c_registers.a1_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_registers.a1_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+  }
 #endif
 #ifdef USE_ADC2
-  adc = analogRead(PIN_PA6);
-  i2c_registers.a2_msb = adc >> (ADC_RESOLUTION - 8);
-  i2c_registers.a2_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+  if(i2c_registers.adc_on_bits & (1 << 2))
+  {
+    adc = analogRead(PIN_PA6);
+    i2c_registers.a2_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_registers.a2_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+  }
 #endif
 #ifdef USE_ADC3
-  adc = analogRead(PIN_PA7);
-  i2c_registers.a3_msb = adc >> (ADC_RESOLUTION - 8);
-  i2c_registers.a3_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+  if(i2c_registers.adc_on_bits & (1 << 3))
+  {
+    adc = analogRead(PIN_PA7);
+    i2c_registers.a3_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_registers.a3_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+  }
 #endif
 
 #ifdef nINT_PIN
