@@ -43,28 +43,32 @@ static unsigned char rdesc[] =
     0x15, 0x00, //; LOGICAL_MINIMUM (0)
     0x25, 0x01, //; LOGICAL_MAXIMUM (1)
     0x75, 0x01, //; REPORT_SIZE (1)
-    0x95, 0x0C, //; REPORT_COUNT (12)
+    0x95, 0x10, //; REPORT_COUNT (16)
     0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
     
         0x05, 0x01,  // Usage Page (Generic Desktop Ctrls)
-        0x15, 0x00,  // Logical Minimum (0)
-        0x25, 0x01,              //     LOGICAL_MAXIMUM (0x1)
-        0x09, 0x34,  // Usage (?)
-        0x09, 0x35,  // Usage (Rz)
+        0x15, 0xFF,  // Logical Minimum (-1)
+        0x25, 0x01,              //     LOGICAL_MAXIMUM (1)
+        0x09, 0x34,  // Usage (X)
+        0x09, 0x35,  // Usage (Y)
         0x75, 0x08,  // Report Size (8)
-        0x95, 0x04,  // Report Count (2)
+        0x95, 0x02,  // Report Count (2)
         0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
 
+    
        0x05, 0x01,  // Usage Page (Generic Desktop Ctrls)
-       0x15, 0x00,  // Logical Minimum (0)
-       0x26, 0xff, 0xFF, 0x00,              //     LOGICAL_MAXIMUM (0xFF)
+    0x15, 0x00,                    //     LOGICAL_MINIMUM (0)
+    0x26, 0xFF, 0x00,              //     LOGICAL_MAXIMUM (255)
+//       0x15, 0x00,  // Logical Minimum (0)
+//       0x26, 0xff, 0xFF, 0x00,              //     LOGICAL_MAXIMUM (0xFFFF)
        0x09, 0x30,  // Usage (X)
        0x09, 0x31,  // Usage (Y)
        0x09, 0x32,  // Usage (Z)
        0x09, 0x33,  // Usage (?)
-       0x75, 0x10,  // Report Size (16)
+       0x75, 0x08,  // Report Size (8)
        0x95, 0x04,  // Report Count (4)
        0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+     
     0xC0,// ; END_COLLECTION
 };
     
@@ -229,14 +233,14 @@ struct i2c_register_struct {
 
 struct gamepad_report_t
 {
-    uint8_t hat_x;
-    uint8_t hat_y;
+    int8_t hat_x;
+    int8_t hat_y;
     uint8_t buttons7to0;
     uint8_t buttons15to8;
-    uint16_t left_x;
-    uint16_t left_y;
-    uint16_t right_x;
-    uint16_t right_y;
+    uint8_t left_x;
+    uint8_t left_y;
+    uint8_t right_x;
+    uint8_t right_y;
 } gamepad_report, gamepad_report_prev;
 
 
@@ -253,8 +257,12 @@ static int send_event(int fd)
 	ev.u.input.data[0] = gamepad_report.buttons7to0;
 	ev.u.input.data[1] = gamepad_report.buttons15to8;
 
-	ev.u.input.data[2] = gamepad_report.hat_x;
-	ev.u.input.data[3] = gamepad_report.hat_y = 1;
+    ev.u.input.data[2] = (unsigned char) gamepad_report.hat_x;
+	ev.u.input.data[3] = (unsigned char) gamepad_report.hat_y;
+    
+    //printf("i2c_registers.input0=0x%02X hat_x=%d hat_x=%d d[2]=0x%02X d[3]=0x%02X\n", i2c_registers.input0, gamepad_report.hat_x, gamepad_report.hat_y, ev.u.input.data[2], ev.u.input.data[3]);
+
+    
 	ev.u.input.data[4] = gamepad_report.left_x;
 	ev.u.input.data[5] = gamepad_report.left_y;
     ev.u.input.data[6] = gamepad_report.right_x;
@@ -281,6 +289,7 @@ void i2c_open()
 
 void i2c_poll_joystick()
 {
+    int8_t dpad_u, dpad_d, dpad_l, dpad_r;
 	unsigned char buf[32];
 	int ret;
 
@@ -306,29 +315,25 @@ void i2c_poll_joystick()
 	gamepad_report.buttons15to8 = ~(i2c_registers.input1 >> 4);
 	//printf("gamepad_report.buttons7to0 = 0x%02X gamepad_report.buttons15to8 = 0x%02X\n", gamepad_report.buttons7to0, gamepad_report.buttons15to8);
 
+    dpad_u = (~i2c_registers.input0 >> 0 & 0x01);
+    dpad_d = (~i2c_registers.input0 >> 1 & 0x01);
     
-#if 0
-#error Broken Analog Stuff
-        ret = i2c_smbus_read_word_data(i2c_file, 2);  //ADC MSBs
-        if(ret < 0)
-                exit(1);
+    dpad_l = (~i2c_registers.input0 >> 2 & 0x01);
+    dpad_r = (~i2c_registers.input0 >> 3 & 0x01);
 
-        //printf("left_x=%d ", ret);
-	ret = ret >> 2; //0x3FF -> 0xFF
-	//ret = ret - 127; //0-255  ->  -127-127
-        //printf("left_x=%d\n", ret);
-	gamepad_report.left_x = ret;
+    gamepad_report.hat_x = dpad_r - dpad_l;
+    gamepad_report.hat_y = dpad_u - dpad_d;
+    
+    //printf("i2c_registers.input0=0x%02X u=%d d=%d l=%d r=%d hat_x=%d hat_x=%d\n", i2c_registers.input0, dpad_u, dpad_d, dpad_l, dpad_r, gamepad_report.hat_x, gamepad_report.hat_y);
 
-        ret = i2c_smbus_read_word_data(i2c_file, 6);  //ADC LSBs
-        if(ret < 0)
-                exit(1);
 
-	ret = ret >> 2; //0x3FF -> 0xFF
-	//ret = ret - 127; //0-255  ->  -127-127
-	gamepad_report.left_y = ret;
-        //printf("ret = 0x%04X ", ret);
-#endif
+    gamepad_report.left_x = i2c_registers.a0_msb;
+    gamepad_report.left_y = i2c_registers.a1_msb;
 
+    gamepad_report.right_x = i2c_registers.a2_msb;
+    gamepad_report.right_y = i2c_registers.a3_msb;
+
+    
 	//printf("\n");
 }
 
@@ -391,7 +396,7 @@ int main(int argc, char **argv)
 	while (1) {
 		i2c_poll_joystick();
 
-		if(gamepad_report.buttons7to0 != gamepad_report_prev.buttons7to0 || gamepad_report.buttons15to8 != gamepad_report_prev.buttons15to8)
+		//if(gamepad_report.buttons7to0 != gamepad_report_prev.buttons7to0 || gamepad_report.buttons15to8 != gamepad_report_prev.buttons15to8)
 		{
 			gamepad_report_prev = gamepad_report;
 			send_event(fd);
