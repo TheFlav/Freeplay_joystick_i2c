@@ -1,7 +1,7 @@
 /*
- Setup:     sudo apt install libi2c-dev
- Compile:   gcc -o uhid-i2c-gamepad uhid-i2c-gamepad.c -li2c
- Run:       sudo ./uhid-i2c-gamepad 
+ Setup:     sudo apt install libi2c-dev pigpio
+ Compile:   gcc -o uhid-i2c-gamepad uhid-i2c-gamepad.c -li2c -lpigpio
+ Run:       sudo ./uhid-i2c-gamepad
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -17,9 +17,14 @@
 #include <linux/i2c-dev.h>
 #include <i2c/smbus.h>
 
+#include <pigpio.h>
+
+
+//#define USE_ANALOG
 #define I2C_BUSNAME "/dev/i2c-1"
 #define I2C_ADDRESS 0x20
 int i2c_file = -1;
+
 
 static unsigned char rdesc[] = {
  0x05, 0x01, //; USAGE_PAGE (Generic Desktop)
@@ -32,8 +37,9 @@ static unsigned char rdesc[] = {
  0x25, 0x01, //; LOGICAL_MAXIMUM (1)
  0x75, 0x01, //; REPORT_SIZE (1)
  0x95, 0x10, //; REPORT_COUNT (16)
-
  0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+
+#ifdef USE_ANALOG
     0x05, 0x01,  // Usage Page (Generic Desktop Ctrls)
     0x15, 0x00,  // Logical Minimum (-127)
     //0x25, 0x7F,  // Logical Maximum (127)
@@ -45,6 +51,7 @@ static unsigned char rdesc[] = {
     0x75, 0x08,  // Report Size (8)
     0x95, 0x04,  // Report Count (4)
     0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+#endif
  0xC0,// ; END_COLLECTION
 };
 
@@ -185,16 +192,21 @@ static int send_event(int fd)
 
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_INPUT;
+#ifdef USE_ANALOG
 	ev.u.input.size = 6;
-
+#else
+    ev.u.input.size = 2;
+#endif
+    
 	ev.u.input.data[0] = gamepad_report.buttons7to0;
 	ev.u.input.data[1] = gamepad_report.buttons15to8;
 
+#ifdef USE_ANALOG
 	ev.u.input.data[2] = gamepad_report.left_x;
 	ev.u.input.data[3] = gamepad_report.left_y;
 	ev.u.input.data[4] = gamepad_report.right_x;
 	ev.u.input.data[5] = gamepad_report.right_y;
-
+#endif
 	return uhid_write(fd, &ev);
 }
 
@@ -241,7 +253,10 @@ void i2c_poll_joystick()
 	gamepad_report.buttons15to8 = ~(ret >> 8 & 0xFF);
 	//printf("gamepad_report.buttons7to0 = 0x%02X gamepad_report.buttons15to8 = 0x%02X\n", gamepad_report.buttons7to0, gamepad_report.buttons15to8);
 
-        ret = i2c_smbus_read_word_data(i2c_file, 8);
+    
+#ifdef USE_ANALOG
+#error Broken Analog Stuff
+        ret = i2c_smbus_read_word_data(i2c_file, 2);  //ADC MSBs
         if(ret < 0)
                 exit(1);
 
@@ -251,7 +266,7 @@ void i2c_poll_joystick()
         //printf("left_x=%d\n", ret);
 	gamepad_report.left_x = ret;
 
-        ret = i2c_smbus_read_word_data(i2c_file, 10);
+        ret = i2c_smbus_read_word_data(i2c_file, 6);  //ADC LSBs
         if(ret < 0)
                 exit(1);
 
@@ -259,13 +274,31 @@ void i2c_poll_joystick()
 	//ret = ret - 127; //0-255  ->  -127-127
 	gamepad_report.left_y = ret;
         //printf("ret = 0x%04X ", ret);
+#endif
 
 	//printf("\n");
 }
 
+#define nINT_GPIO 10
+int fd;
+
+void gpio_callback(int gpio, int level, uint32_t tick) {
+    printf("GPIO %d ",gpio);
+    switch (level) {
+        case 0: printf("LOW\n");
+                i2c_poll_joystick();
+                gamepad_report_prev = gamepad_report;
+                send_event(fd);
+                break;
+        case 1: printf("HIGH\n");
+                break;
+        case 2: printf("WATCHDOG\n");
+                break;
+    }
+}
+
 int main(int argc, char **argv)
 {
-	int fd;
 	const char *path = "/dev/uhid";
 	struct pollfd pfds[2];
 	int ret;
@@ -311,6 +344,39 @@ int main(int argc, char **argv)
 	pfds[1].events = POLLIN;
 
 	i2c_open();
+    
+    
+    {
+        int ver;
+        int err;
+        
+        if ((ver =gpioInitialise()) > 0)
+            printf("pigpio version: %d\n",ver);
+        else
+            exit(1);
+
+        // sets the GPIO to input
+        if ((err = gpioSetMode(nINT_GPIO,PI_INPUT)) != 0)
+            exit(1);
+
+        // sets the pull up to high so I can ground it with the push button
+        if ((err = gpioSetPullUpDown(nINT_GPIO,PI_PUD_UP)) != 0)
+            exit(1);
+
+        // this is here because I'm testing with a push button that will bounce
+        if ((err = gpioGlitchFilter(nINT_GPIO,100)) != 0)
+            exit(1);
+
+        // set the call back function on the GPIO level change
+        if ((err = gpioSetAlertFunc(nINT_GPIO,gpio_callback)) != 0)
+            exit(1);
+
+        // sleep indefinitely
+        while (1)
+            time_sleep(0.1);
+    }
+    
+    
 
 	fprintf(stderr, "Press '^C' to quit...\n");
 	while (1) {
@@ -327,3 +393,8 @@ int main(int argc, char **argv)
 	destroy(fd);
 	return EXIT_SUCCESS;
 }
+
+
+
+
+
