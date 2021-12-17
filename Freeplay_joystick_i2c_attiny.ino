@@ -29,14 +29,14 @@ struct i2c_register_struct {
   byte a1_msb;          // Reg: 0x03 - ADC1 most significant 8 bits
   byte a2_msb;          // Reg: 0x04 - ADC2 most significant 8 bits
   byte a3_msb;          // Reg: 0x05 - ADC3 most significant 8 bits
-  byte a0_lsb;          // Reg: 0x02 - ADC0 least significant 8 bits
-  byte a1_lsb;          // Reg: 0x03 - ADC1 least significant 8 bits
-  byte a2_lsb;          // Reg: 0x04 - ADC2 least significant 8 bits
-  byte a3_lsb;          // Reg: 0x05 - ADC3 least significant 8 bits
-  byte adc_on_bits;     // Reg: 0x06 - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
-  byte config0;         // Reg: 0x07 - Configuration port 0
-  byte configPWM;       // Reg: 0x08 - set PWM duty cycle
-  byte adc_res;         // Reg: 0x09 - current ADC resolution (maybe settable?)
+  byte a0_lsb;          // Reg: 0x06 - ADC0 least significant 8 bits
+  byte a1_lsb;          // Reg: 0x07 - ADC1 least significant 8 bits
+  byte a2_lsb;          // Reg: 0x08 - ADC2 least significant 8 bits
+  byte a3_lsb;          // Reg: 0x09 - ADC3 least significant 8 bits
+  byte adc_on_bits;     // Reg: 0x0A - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
+  byte config0;         // Reg: 0x0B - Configuration port 0
+  byte configPWM;       // Reg: 0x0C - set PWM duty cycle
+  byte adc_res;         // Reg: 0x0D - current ADC resolution (maybe settable?)
 } i2c_registers;
 
 volatile byte g_last_sent_input0 = 0xFF;
@@ -139,7 +139,7 @@ void setup_gpio(void)
   PORTB_PIN4CTRL = PORT_PULLUPEN_bm;
   PORTB_PIN5CTRL = PORT_PULLUPEN_bm;
   PORTB_PIN6CTRL = PORT_PULLUPEN_bm;
-  //PORTB_PIN7CTRL = PORT_PULLUPEN_bm;
+  PORTB_PIN7CTRL = PORT_PULLUPEN_bm;
 
 //#define PINC_MASK (0b00111111)
   PORTC_PIN0CTRL = PORT_PULLUPEN_bm;
