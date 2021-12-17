@@ -1,4 +1,7 @@
 /*
+ 
+ This program sets up a gamepad device in the sytem, interfaces with the attiny i2c device as a gamepad (digital only), and sends HID reports to the system.
+ 
  Setup:     sudo apt install libi2c-dev pigpio
  Compile:   gcc -o uhid-i2c-gamepad uhid-i2c-gamepad.c -li2c -lpigpio
  Run:       sudo ./uhid-i2c-gamepad
@@ -17,8 +20,21 @@
 #include <linux/i2c-dev.h>
 #include <i2c/smbus.h>
 
-#include <pigpio.h>
+#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
+//#define USE_PIGPIO_IRQ //or USE_PIGPIO
+//or comment out both of the above to poll
 
+#if defined(USE_PIGPIO_IRQ) && defined(USE_WIRINGPI_IRQ)
+ #error Cannot do both IRQ styles
+#elif defined(USE_WIRINGPI_IRQ)
+ #include <wiringPi.h>
+ #define nINT_GPIO 40
+#elif defined(USE_PIGPIO_IRQ)
+ #include <pigpio.h>
+ #define nINT_GPIO 10   //won't allow >31
+#endif
+
+int fd;
 
 //#define USE_ANALOG
 #define I2C_BUSNAME "/dev/i2c-1"
@@ -279,14 +295,13 @@ void i2c_poll_joystick()
 	//printf("\n");
 }
 
-#define nINT_GPIO 10
-int fd;
 
+#ifdef USE_PIGPIO_IRQ
 void gpio_callback(int gpio, int level, uint32_t tick) {
     printf("GPIO %d ",gpio);
     switch (level) {
         case 0: printf("LOW\n");
-		    #error Don't poll the joystick in the interrupt service routine.  Just set a flag for the main thread to handle
+		    #error Dont poll the joystick in the interrupt service routine.  Just set a flag for the main thread to handle
                 i2c_poll_joystick();
                 gamepad_report_prev = gamepad_report;
                 send_event(fd);
@@ -297,6 +312,16 @@ void gpio_callback(int gpio, int level, uint32_t tick) {
                 break;
     }
 }
+#endif
+
+#ifdef USE_WIRINGPI_IRQ
+void attiny_irq_handler(void)
+{
+    i2c_poll_joystick();
+    gamepad_report_prev = gamepad_report;
+    send_event(fd);
+}
+#endif
 
 int main(int argc, char **argv)
 {
@@ -346,8 +371,23 @@ int main(int argc, char **argv)
 
 	i2c_open();
     
-    
+    fprintf(stderr, "Press '^C' to quit...\n");
+
+   
+#ifdef USE_WIRINGPI_IRQ
+    wiringPiSetupGpio();        //use BCM numbering
+    wiringPiISR(nINT_GPIO, INT_EDGE_FALLING, &attiny_irq_handler);
+    i2c_poll_joystick();//make sure it's cleared out
+    gamepad_report_prev = gamepad_report;
+    send_event(fd);
+    while(1)
     {
+        
+    }
+#endif
+    
+#ifdef USE_PIGPIO_IRQ
+ {
         int ver;
         int err;
         
@@ -369,7 +409,7 @@ int main(int argc, char **argv)
             exit(1);
 
         // set the call back function on the GPIO level change
-	    #error Investigate why this won't work with nINT_GPIO set to 40!
+        #error Investigate why this wont work with nINT_GPIO set to 40!
         if ((err = gpioSetAlertFunc(nINT_GPIO,gpio_callback)) != 0)
             exit(1);
 
@@ -377,14 +417,12 @@ int main(int argc, char **argv)
         while (1)
             time_sleep(0.1);
     }
+#endif
     
-    
-
-	fprintf(stderr, "Press '^C' to quit...\n");
 	while (1) {
 		i2c_poll_joystick();
 
-		//if(gamepad_report.buttons7to0 != gamepad_report_prev.buttons7to0 || gamepad_report.buttons15to8 != gamepad_report_prev.buttons15to8)
+		if(gamepad_report.buttons7to0 != gamepad_report_prev.buttons7to0 || gamepad_report.buttons15to8 != gamepad_report_prev.buttons15to8)
 		{
 			gamepad_report_prev = gamepad_report;
 			send_event(fd);
