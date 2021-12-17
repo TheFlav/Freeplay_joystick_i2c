@@ -286,6 +286,7 @@ void gpio_callback(int gpio, int level, uint32_t tick) {
     printf("GPIO %d ",gpio);
     switch (level) {
         case 0: printf("LOW\n");
+		    #error Don't poll the joystick in the interrupt service routine.  Just set a flag for the main thread to handle
                 i2c_poll_joystick();
                 gamepad_report_prev = gamepad_report;
                 send_event(fd);
@@ -368,6 +369,7 @@ int main(int argc, char **argv)
             exit(1);
 
         // set the call back function on the GPIO level change
+	    #error Investigate why this won't work with nINT_GPIO set to 40!
         if ((err = gpioSetAlertFunc(nINT_GPIO,gpio_callback)) != 0)
             exit(1);
 
