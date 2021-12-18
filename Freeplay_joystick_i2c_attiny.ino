@@ -11,8 +11,8 @@
 #define CONFIG_I2C_ADDR     0x20
 //#define CONFIG_I2C_2NDADDR  0x40  //0x30 wouldn't work
 
-#define USE_INTERRUPTS
-//#define USE_ADC
+//#define USE_INTERRUPTS
+#define USE_ADC
 
 //#define CONFIG_SERIAL_DEBUG 1     //this shares a pin with the nINT, so be careful
 
@@ -113,7 +113,9 @@ byte g_pwm_duty_cycle = 0xFF;  //100% on
 void setup_gpio(void)
 {
   //set as inputs
+
   PORTA_DIRCLR = PINA_GPIO_MASK | PINA_ADC0_MASK | PINA_ADC1_MASK | PINA_ADC2_MASK | PINA_ADC3_MASK;
+
   PORTB_DIRCLR = PINB_GPIO_MASK;
   PORTC_DIRCLR = PINC_GPIO_MASK;
 
@@ -286,6 +288,8 @@ void setup()
   analogReadResolution(ADC_RESOLUTION);
 #endif
   i2c_registers.adc_res = ADC_RESOLUTION;
+
+  i2c_registers.adc_on_bits = 0xFF;
 }
 
 void loop() {
