@@ -58,14 +58,14 @@ static unsigned char rdesc[] =
     
        0x05, 0x01,  // Usage Page (Generic Desktop Ctrls)
     0x15, 0x00,                    //     LOGICAL_MINIMUM (0)
-    0x26, 0xFF, 0x00,              //     LOGICAL_MAXIMUM (255)
+    0x26, 0xFF, 0xFF, 0x00,              //     LOGICAL_MAXIMUM (0xFFFF)
 //       0x15, 0x00,  // Logical Minimum (0)
 //       0x26, 0xff, 0xFF, 0x00,              //     LOGICAL_MAXIMUM (0xFFFF)
        0x09, 0x30,  // Usage (X)
        0x09, 0x31,  // Usage (Y)
        0x09, 0x32,  // Usage (Z)
        0x09, 0x33,  // Usage (?)
-       0x75, 0x08,  // Report Size (8)
+       0x75, 0x10,  // Report Size (16)
        0x95, 0x04,  // Report Count (4)
        0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
      
@@ -237,10 +237,10 @@ struct gamepad_report_t
     int8_t hat_y;
     uint8_t buttons7to0;
     uint8_t buttons15to8;
-    uint8_t left_x;
-    uint8_t left_y;
-    uint8_t right_x;
-    uint8_t right_y;
+    uint16_t left_x;
+    uint16_t left_y;
+    uint16_t right_x;
+    uint16_t right_y;
 } gamepad_report, gamepad_report_prev;
 
 
@@ -252,7 +252,7 @@ static int send_event(int fd)
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_INPUT;
     
-	ev.u.input.size = 8;
+	ev.u.input.size = 12;
     
 	ev.u.input.data[0] = gamepad_report.buttons7to0;
 	ev.u.input.data[1] = gamepad_report.buttons15to8;
@@ -263,11 +263,15 @@ static int send_event(int fd)
     //printf("i2c_registers.input0=0x%02X hat_x=%d hat_x=%d d[2]=0x%02X d[3]=0x%02X\n", i2c_registers.input0, gamepad_report.hat_x, gamepad_report.hat_y, ev.u.input.data[2], ev.u.input.data[3]);
 
     
-	ev.u.input.data[4] = gamepad_report.left_x;
-	ev.u.input.data[5] = gamepad_report.left_y;
-    ev.u.input.data[6] = gamepad_report.right_x;
-    ev.u.input.data[7] = gamepad_report.right_y;
-    
+    ev.u.input.data[4] = gamepad_report.left_x & 0xFF;
+    ev.u.input.data[5] = gamepad_report.left_x >> 8;
+    ev.u.input.data[6] = gamepad_report.left_y & 0xFF;
+    ev.u.input.data[7] = gamepad_report.left_y >> 8;
+    ev.u.input.data[8] = gamepad_report.right_x & 0xFF;
+    ev.u.input.data[9] = gamepad_report.right_x >> 8;
+    ev.u.input.data[10] = gamepad_report.right_y & 0xFF;
+    ev.u.input.data[11] = gamepad_report.right_y >> 8;
+
 	return uhid_write(fd, &ev);
 }
 
@@ -327,11 +331,11 @@ void i2c_poll_joystick()
     //printf("i2c_registers.input0=0x%02X u=%d d=%d l=%d r=%d hat_x=%d hat_x=%d\n", i2c_registers.input0, dpad_u, dpad_d, dpad_l, dpad_r, gamepad_report.hat_x, gamepad_report.hat_y);
 
 
-    gamepad_report.left_x = i2c_registers.a0_msb;
-    gamepad_report.left_y = i2c_registers.a1_msb;
-
-    gamepad_report.right_x = i2c_registers.a2_msb;
-    gamepad_report.right_y = i2c_registers.a3_msb;
+    gamepad_report.left_x = i2c_registers.a0_msb << 8 | i2c_registers.a0_lsb;
+    gamepad_report.left_y = i2c_registers.a1_msb << 8 | i2c_registers.a1_lsb;
+    
+    gamepad_report.right_x = i2c_registers.a2_msb << 8 | i2c_registers.a2_lsb;
+    gamepad_report.right_y = i2c_registers.a3_msb << 8 | i2c_registers.a3_lsb;
 
     
 	//printf("\n");
