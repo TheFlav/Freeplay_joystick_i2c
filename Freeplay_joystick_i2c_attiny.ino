@@ -1,6 +1,9 @@
 //Freeplay_joystick_i2c_attiny
 #include <Wire.h>
 
+#define VERSION_MAJOR   0
+#define VERSION_MINOR   2
+
 
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
 //currently testing on Adafruit 817
@@ -9,7 +12,7 @@
 //#define ADC_RESOLUTION 12  //can do analogReadResolution(12) on 2-series 427/827 chips
 
 #define CONFIG_I2C_ADDR     0x20
-//#define CONFIG_I2C_2NDADDR  0x40  //0x30 wouldn't work
+#define CONFIG_I2C_2NDADDR  0x40  //0x30 wouldn't work
 
 //#define USE_INTERRUPTS
 #define USE_ADC
@@ -22,7 +25,7 @@
 
 
 
-struct i2c_register_struct {
+struct i2c_joystick_register_struct {
   byte input0;          // Reg: 0x00 - INPUT port 0
   byte input1;          // Reg: 0x01 - INPUT port 1
   byte a0_msb;          // Reg: 0x02 - ADC0 most significant 8 bits
@@ -35,14 +38,23 @@ struct i2c_register_struct {
   byte a3_lsb;          // Reg: 0x09 - ADC3 least significant 8 bits
   byte adc_on_bits;     // Reg: 0x0A - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
   byte config0;         // Reg: 0x0B - Configuration port 0
-  byte configPWM;       // Reg: 0x0C - set PWM duty cycle
   byte adc_res;         // Reg: 0x0D - current ADC resolution (maybe settable?)
-} i2c_registers;
+} i2c_joystick_registers;
+
+struct i2c_secondary_address_register_struct {
+  byte magic;  //set to some magic value, so we know this is the right chip we're talking to
+  byte ver_major;
+  byte ver_minor;
+  byte config_PWM;      // Reg: 0x03
+} i2c_secondary_registers;
 
 volatile byte g_last_sent_input0 = 0xFF;
 volatile byte g_last_sent_input1 = 0xFF;
 
 volatile byte g_i2c_command_index; //Gets set when user writes an address. We then serve the spot the user requested.
+#ifdef CONFIG_I2C_2NDADDR
+ volatile byte g_i2c_address;  //if we're using multiple i2c addresses, we need to know which one is in use
+#endif
 
 byte g_pwm_duty_cycle = 0xFF;  //100% on
 
@@ -159,7 +171,7 @@ void read_all_gpio(void)
   //we may want to turn off interrupts during this function
   //at the least, we need to poll the registers PA, PB, PC once
   //then set up the input registers as TEMPORARY registers
-  //then put them in the actual i2c_registers 
+  //then put them in the actual i2c_joystick_registers 
   //otherwise, if we get interrupted during the setup, things get out of whack
   
   byte input0, input1;
@@ -188,8 +200,8 @@ void read_all_gpio(void)
 #endif
 
 
-  i2c_registers.input0 = input0;
-  i2c_registers.input1 = input1;
+  i2c_joystick_registers.input0 = input0;
+  i2c_joystick_registers.input1 = input1;
 
 }
 
@@ -199,18 +211,34 @@ void receive_i2c_callback(int i2c_bytes_received)
 {
   g_i2c_command_index = Wire.read(); //Get the memory map offset from the user
 
-  for (byte x = 0 ; x < i2c_bytes_received - 1 ; x++)
-  {
-    byte temp = Wire.read(); //We might record it, we might throw it away
+#ifdef CONFIG_I2C_2NDADDR  
+  g_i2c_address = Wire.getIncomingAddress() >> 1;
 
-    //  byte configPWM;       // Reg: 0x08 - set PWM duty cycle
-    if(x == 0x08)
+  if(g_i2c_address == CONFIG_I2C_2NDADDR)
+  {
+    //what do we do when we receive bytes on the 2nd address?
+    for (byte x = g_i2c_command_index ; x < i2c_bytes_received - 1 ; x++)
     {
-      i2c_registers.configPWM = temp;      
+      byte temp = Wire.read(); //We might record it, we might throw it away
+
+      //  byte configPWM;       // Reg: 0x08 - set PWM duty cycle
+      if(x == 0x08)
+      {
+        i2c_secondary_registers.config_PWM = temp;      
+      }
     }
-    else if(x == 0x06)
+  }
+  else
+#endif
+  {
+    for (byte x = g_i2c_command_index ; x < i2c_bytes_received - 1 ; x++)
     {
-      i2c_registers.adc_on_bits = temp;
+      byte temp = Wire.read(); //We might record it, we might throw it away
+  
+      if(x == 0x06)
+      {
+        i2c_joystick_registers.adc_on_bits = temp;
+      }
     }
   }
   
@@ -225,19 +253,30 @@ void request_i2c_callback()
   //the register the user requested, and when it reaches the end the master
   //will read 0xFFs.
 
-  Wire.write((((byte *)&i2c_registers) + g_i2c_command_index), sizeof(i2c_registers) - g_i2c_command_index);
+#ifdef CONFIG_I2C_2NDADDR  
+  //g_i2c_address = Wire.getIncomingAddress() << 1;
 
-  //TODO: fixme?
-  if(g_i2c_command_index == 0)
+  if(g_i2c_address == CONFIG_I2C_2NDADDR)
   {
-    //if the index was 0, just assume we sent at least 2 bytes.  I don't know how to tell
-    //could use getBytesRead combined with g_i2c_command_index
-    g_last_sent_input0 = i2c_registers.input0;
-    g_last_sent_input1 = i2c_registers.input1;
+    Wire.write((((byte *)&i2c_secondary_registers) + g_i2c_command_index), sizeof(i2c_secondary_registers) - g_i2c_command_index);
   }
+  else
+#endif
+  {
+    Wire.write((((byte *)&i2c_joystick_registers) + g_i2c_command_index), sizeof(i2c_joystick_registers) - g_i2c_command_index);
   
-  if(g_i2c_command_index == 1)
-    g_last_sent_input1 = i2c_registers.input1;
+    //TODO: fixme?
+    if(g_i2c_command_index == 0)
+    {
+      //if the index was 0, just assume we sent at least 2 bytes.  I don't know how to tell
+      //could use getBytesRead combined with g_i2c_command_index
+      g_last_sent_input0 = i2c_joystick_registers.input0;
+      g_last_sent_input1 = i2c_joystick_registers.input1;
+    }
+    
+    if(g_i2c_command_index == 1)
+      g_last_sent_input1 = i2c_joystick_registers.input1;
+  }
 }
 
 //Begin listening on I2C bus as I2C slave using the global variable setting_i2c_address
@@ -266,7 +305,7 @@ void set_pwm_duty_cycle(byte new_duty_cycle)
 
 void setup() 
 {
-  //memset(&i2c_registers, 0, sizeof(i2c_registers));
+  //memset(&i2c_joystick_registers, 0, sizeof(i2c_joystick_registers));
   
   startI2C(); //Determine the I2C address we should be using and begin listening on I2C bus
   setup_gpio();
@@ -287,55 +326,61 @@ void setup()
 #if (defined(USE_ADC0) || defined(USE_ADC1) || defined(USE_ADC2) || defined(USE_ADC3)) && (ADC_RESOLUTION != 10)
   analogReadResolution(ADC_RESOLUTION);
 #endif
-  i2c_registers.adc_res = ADC_RESOLUTION;
 
-  i2c_registers.adc_on_bits = 0xFF;
+
+  i2c_joystick_registers.adc_res = ADC_RESOLUTION;
+  i2c_joystick_registers.adc_on_bits = 0xFF;
+
+  i2c_secondary_registers.magic = 0xED;
+  i2c_secondary_registers.ver_major = VERSION_MAJOR;
+  i2c_secondary_registers.ver_minor = VERSION_MINOR;
+  i2c_secondary_registers.config_PWM = 0xFF;
 }
 
 void loop() {
   word adc;
   
-  if(g_pwm_duty_cycle != i2c_registers.configPWM)
+  if(g_pwm_duty_cycle != i2c_secondary_registers.config_PWM)
   {
-    set_pwm_duty_cycle(i2c_registers.configPWM);
-    g_pwm_duty_cycle = i2c_registers.configPWM;
+    set_pwm_duty_cycle(i2c_secondary_registers.config_PWM);
+    g_pwm_duty_cycle = i2c_secondary_registers.config_PWM;
   }
   read_all_gpio();
 
 #ifdef USE_ADC0
-  if(i2c_registers.adc_on_bits & (1 << 0))
+  if(i2c_joystick_registers.adc_on_bits & (1 << 0))
   {
     adc = analogRead(PIN_PA4);
-    i2c_registers.a0_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_registers.a0_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+    i2c_joystick_registers.a0_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_joystick_registers.a0_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
   }
 #endif
 #ifdef USE_ADC1
-  if(i2c_registers.adc_on_bits & (1 << 1))
+  if(i2c_joystick_registers.adc_on_bits & (1 << 1))
   {
     adc = analogRead(PIN_PA5);
-    i2c_registers.a1_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_registers.a1_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+    i2c_joystick_registers.a1_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_joystick_registers.a1_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
   }
 #endif
 #ifdef USE_ADC2
-  if(i2c_registers.adc_on_bits & (1 << 2))
+  if(i2c_joystick_registers.adc_on_bits & (1 << 2))
   {
     adc = analogRead(PIN_PA6);
-    i2c_registers.a2_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_registers.a2_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+    i2c_joystick_registers.a2_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_joystick_registers.a2_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
   }
 #endif
 #ifdef USE_ADC3
-  if(i2c_registers.adc_on_bits & (1 << 3))
+  if(i2c_joystick_registers.adc_on_bits & (1 << 3))
   {
     adc = analogRead(PIN_PA7);
-    i2c_registers.a3_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_registers.a3_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+    i2c_joystick_registers.a3_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_joystick_registers.a3_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
   }
 #endif
 
 #ifdef nINT_PIN
-  digitalWrite(nINT_PIN, ((g_last_sent_input0 == i2c_registers.input0) && (g_last_sent_input1 == i2c_registers.input1)));
+  digitalWrite(nINT_PIN, ((g_last_sent_input0 == i2c_joystick_registers.input0) && (g_last_sent_input1 == i2c_joystick_registers.input1)));
 #endif
 }
