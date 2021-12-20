@@ -17,7 +17,7 @@
 //#define USE_INTERRUPTS
 #define USE_ADC
 
-//#define CONFIG_SERIAL_DEBUG 1     //this shares a pin with the nINT, so be careful
+//#define CONFIG_SERIAL_DEBUG  //shares pins with L2/R2 IO1_6/IO1_7
 
 #if defined(USE_ADC) && defined(USE_INTERRUPTS)
  #error ADC0 and nINT_PIN share the same pin
@@ -51,9 +51,10 @@ struct i2c_secondary_address_register_struct {
 volatile byte g_last_sent_input0 = 0xFF;
 volatile byte g_last_sent_input1 = 0xFF;
 
-volatile byte g_i2c_command_index; //Gets set when user writes an address. We then serve the spot the user requested.
+volatile byte g_i2c_index_to_read = 0;
+volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. We then serve the spot the user requested.
 #ifdef CONFIG_I2C_2NDADDR
- volatile byte g_i2c_address;  //if we're using multiple i2c addresses, we need to know which one is in use
+ volatile byte g_i2c_address = 0;  //if we're using multiple i2c addresses, we need to know which one is in use
 #endif
 
 byte g_pwm_duty_cycle = 0xFF;  //100% on
@@ -184,7 +185,7 @@ void read_all_gpio(void)
 #ifndef CONFIG_SERIAL_DEBUG
   input1 = ((pb_in & PINB_IN1_MASK) << PINB_IN1_SHL) |  (pc_in & PINC_IN1_MASK);
 #else
-  input1 = ((pb_in & PINB_IN1_MASK | PINB_UART_MASK) << PINB_IN1_SHL) |  (pc_in & PINC_IN1_MASK);   //act like the PINB_UART_MASK pins are never pressed
+  input1 = ((pb_in & (PINB_IN1_MASK | PINB_UART_MASK)) << PINB_IN1_SHL) |  (pc_in & PINC_IN1_MASK);   //act like the PINB_UART_MASK pins are never pressed
 #endif
 
 #if defined(USE_ADC2) && defined(USE_ADC3)
@@ -205,46 +206,100 @@ void read_all_gpio(void)
 
 }
 
+//this is the function that receives bytes from the i2c master for the PRIMARY
+// i2c address (which is for the joystick functionality)
+inline void receive_i2c_callback_main_address(int i2c_bytes_received)
+{
+  //g_i2c_command_index %= sizeof(i2c_joystick_registers);
+
+  for (byte x = g_i2c_command_index ; x < (g_i2c_command_index + i2c_bytes_received - 1) ; x++)
+  {
+    byte temp = Wire.read(); //We might record it, we might throw it away
+
+    if(x == 0x0A)   //this is a writeable register
+    {
+      i2c_joystick_registers.adc_on_bits = temp;
+    }
+  }
+}
+
+#ifdef CONFIG_I2C_2NDADDR  
+//this is the function that receives bytes from the i2c master for the SECONDARY
+// i2c address (which is for the joystick functionality)
+inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
+{
+  //g_i2c_command_index %= sizeof(i2c_secondary_registers);
+  
+  //what do we do when we receive bytes on the 2nd address?
+  for (byte x = g_i2c_command_index ; x < (g_i2c_command_index + i2c_bytes_received - 1) ; x++)
+  {
+    byte temp = Wire.read(); //We might record it, we might throw it away
+
+    //  byte configPWM;       // Reg: 0x08 - set PWM duty cycle
+    if(x == 0x03)   //this is a writeable register
+    {
+      i2c_secondary_registers.config_PWM = temp;      
+    }
+  }
+}
+#endif
+
 //When Qwiic Joystick receives data bytes from Master, this function is called as an interrupt
 //(Serves rewritable I2C address)
 void receive_i2c_callback(int i2c_bytes_received)
 {
-  g_i2c_command_index = Wire.read(); //Get the memory map offset from the user
+  Wire.getBytesRead(); // reset count of bytes read. We don't do anything with it here, but a write is going to reset it to a new value.
 
+  g_i2c_command_index = Wire.read(); //Get the memory map offset from the user
+  
 #ifdef CONFIG_I2C_2NDADDR  
   g_i2c_address = Wire.getIncomingAddress() >> 1;
 
   if(g_i2c_address == CONFIG_I2C_2NDADDR)
-  {
-    //what do we do when we receive bytes on the 2nd address?
-    for (byte x = g_i2c_command_index ; x < i2c_bytes_received - 1 ; x++)
-    {
-      byte temp = Wire.read(); //We might record it, we might throw it away
-
-      //  byte configPWM;       // Reg: 0x08 - set PWM duty cycle
-      if(x == 0x08)
-      {
-        i2c_secondary_registers.config_PWM = temp;      
-      }
-    }
-  }
+    receive_i2c_callback_secondary_address(i2c_bytes_received);
   else
+    receive_i2c_callback_main_address(i2c_bytes_received);
+#else
+
+  receive_i2c_callback_main_address(i2c_bytes_received);
+
 #endif
-  {
-    for (byte x = g_i2c_command_index ; x < i2c_bytes_received - 1 ; x++)
-    {
-      byte temp = Wire.read(); //We might record it, we might throw it away
-  
-      if(x == 0x06)
-      {
-        i2c_joystick_registers.adc_on_bits = temp;
-      }
-    }
-  }
-  
-  return;
 }
 
+//this is the function that sends bytes from the i2c slave to master for the PRIMARY
+// i2c address (which is for the joystick functionality)
+inline void request_i2c_callback_primary_address()
+{
+  g_i2c_index_to_read = Wire.getBytesRead() + g_i2c_command_index;
+  
+  g_i2c_index_to_read %= sizeof(i2c_joystick_registers);
+
+  Wire.write((((byte *)&i2c_joystick_registers) + g_i2c_index_to_read), sizeof(i2c_joystick_registers) - g_i2c_index_to_read);
+
+  //TODO: fixme?
+  if(g_i2c_index_to_read == 0)
+  {
+    //if the index was 0, just assume we sent at least 2 bytes.  I don't know how to tell
+    //could use getBytesRead combined with g_i2c_command_index
+    g_last_sent_input0 = i2c_joystick_registers.input0;
+    g_last_sent_input1 = i2c_joystick_registers.input1;
+  }
+  
+  if(g_i2c_index_to_read == 1)
+    g_last_sent_input1 = i2c_joystick_registers.input1;
+}
+
+#ifdef CONFIG_I2C_2NDADDR  
+//this is the function that sends bytes from the i2c slave to master for the PRIMARY
+// i2c address (which is for the joystick functionality)
+inline void request_i2c_callback_secondary_address()
+{
+    g_i2c_index_to_read = Wire.getBytesRead() + g_i2c_command_index;
+    g_i2c_index_to_read %= sizeof(i2c_joystick_registers);
+    
+    Wire.write((((byte *)&i2c_secondary_registers) + g_i2c_index_to_read), sizeof(i2c_secondary_registers) - g_i2c_index_to_read);
+}
+#endif
 
 //Respond to GET commands
 void request_i2c_callback()
@@ -254,29 +309,17 @@ void request_i2c_callback()
   //will read 0xFFs.
 
 #ifdef CONFIG_I2C_2NDADDR  
-  //g_i2c_address = Wire.getIncomingAddress() << 1;
-
   if(g_i2c_address == CONFIG_I2C_2NDADDR)
   {
-    Wire.write((((byte *)&i2c_secondary_registers) + g_i2c_command_index), sizeof(i2c_secondary_registers) - g_i2c_command_index);
+      request_i2c_callback_secondary_address();
   }
   else
-#endif
   {
-    Wire.write((((byte *)&i2c_joystick_registers) + g_i2c_command_index), sizeof(i2c_joystick_registers) - g_i2c_command_index);
-  
-    //TODO: fixme?
-    if(g_i2c_command_index == 0)
-    {
-      //if the index was 0, just assume we sent at least 2 bytes.  I don't know how to tell
-      //could use getBytesRead combined with g_i2c_command_index
-      g_last_sent_input0 = i2c_joystick_registers.input0;
-      g_last_sent_input1 = i2c_joystick_registers.input1;
-    }
-    
-    if(g_i2c_command_index == 1)
-      g_last_sent_input1 = i2c_joystick_registers.input1;
+    request_i2c_callback_primary_address();
   }
+#else
+  request_i2c_callback_primary_address();
+#endif
 }
 
 //Begin listening on I2C bus as I2C slave using the global variable setting_i2c_address
@@ -319,7 +362,7 @@ void setup()
 #ifdef CONFIG_SERIAL_DEBUG
   Serial.begin(115200);
   delay(500);
-  Serial.println("PCA9555 Emulation");
+  Serial.println("Freeplay Joystick Debugging");
   Serial.flush();
 #endif
 
@@ -339,7 +382,20 @@ void setup()
 
 void loop() {
   word adc;
+
+
+#ifdef CONFIG_SERIAL_DEBUG
+  Serial.print("g_i2c_address=");
+  Serial.print(g_i2c_address);
+  Serial.print(" g_i2c_command_index=");
+  Serial.print(g_i2c_command_index);
+  Serial.print(" g_i2c_index_to_read=");
+  Serial.print(g_i2c_index_to_read);
+
+  Serial.println();
+#endif
   
+
   if(g_pwm_duty_cycle != i2c_secondary_registers.config_PWM)
   {
     set_pwm_duty_cycle(i2c_secondary_registers.config_PWM);
