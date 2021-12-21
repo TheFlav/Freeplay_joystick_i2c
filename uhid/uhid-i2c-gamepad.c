@@ -20,6 +20,8 @@
 #include <termios.h>
 #include <unistd.h>
 #include <linux/uhid.h>
+#include <stdint.h>
+
 
 #include <linux/i2c-dev.h>
 #include <i2c/smbus.h>
@@ -35,43 +37,37 @@
  #define nINT_GPIO 40
 #elif defined(USE_PIGPIO_IRQ)
  #include <pigpio.h>
- #define nINT_GPIO 10   //won't allow >31
+ #define nINT_GPIO 10   //pigpio won't allow >31
 #endif
 
 int fd;
 
-//#define USE_ANALOG
 #define I2C_BUSNAME "/dev/i2c-1"
 #define I2C_ADDRESS 0x20
 int i2c_file = -1;
 
 
 static unsigned char rdesc[] = {
- 0x05, 0x01, //; USAGE_PAGE (Generic Desktop)
- 0x09, 0x05, //; USAGE (Gamepad)
- 0xA1, 0x01, //; COLLECTION (Application)
- 0x05, 0x09,// ; USAGE_PAGE (Button)
- 0x19, 0x01, //; USAGE_MINIMUM (Button 1)
- 0x29, 0x10, //; USAGE_MAXIMUM (Button 16)
- 0x15, 0x00, //; LOGICAL_MINIMUM (0)
- 0x25, 0x01, //; LOGICAL_MAXIMUM (1)
- 0x75, 0x01, //; REPORT_SIZE (1)
- 0x95, 0x10, //; REPORT_COUNT (16)
- 0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-
-#ifdef USE_ANALOG
-    0x05, 0x01,  // Usage Page (Generic Desktop Ctrls)
-    0x15, 0x00,  // Logical Minimum (-127)
-    //0x25, 0x7F,  // Logical Maximum (127)
-    0x26, 0xff, 0x00,              //     LOGICAL_MAXIMUM (0xFF)
-    0x09, 0x30,  // Usage (X)
-    0x09, 0x31,  // Usage (Y)
-    0x09, 0x32,  // Usage (Z)
-    0x09, 0x35,  // Usage (Rz)
-    0x75, 0x08,  // Report Size (8)
-    0x95, 0x04,  // Report Count (4)
+    0x05, 0x01, //; USAGE_PAGE (Generic Desktop)
+    0x09, 0x05, //; USAGE (Gamepad)
+    0xA1, 0x01, //; COLLECTION (Application)
+    0x05, 0x09,// ; USAGE_PAGE (Button)
+    0x19, 0x01, //; USAGE_MINIMUM (Button 1)
+    0x29, 0x0C, //; USAGE_MAXIMUM (Button 12)
+    0x15, 0x00, //; LOGICAL_MINIMUM (0)
+    0x25, 0x01, //; LOGICAL_MAXIMUM (1)
+    0x75, 0x01, //; REPORT_SIZE (1)
+    0x95, 0x10, //; REPORT_COUNT (16)
     0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-#endif
+    
+        0x05, 0x01,  // Usage Page (Generic Desktop Ctrls)
+        0x15, 0xFF,  // Logical Minimum (-1)
+        0x25, 0x01,              //     LOGICAL_MAXIMUM (1)
+        0x09, 0x34,  // Usage (X)
+        0x09, 0x35,  // Usage (Y)
+        0x75, 0x08,  // Report Size (8)
+        0x95, 0x02,  // Report Count (2)
+        0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
  0xC0,// ; END_COLLECTION
 };
 
@@ -98,7 +94,7 @@ static int create(int fd)
 
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_CREATE;
-	strcpy((char*)ev.u.create.name, "test-uhid-gamepad");
+	strcpy((char*)ev.u.create.name, "Freeplay Gamepad");
 	ev.u.create.rd_data = rdesc;
 	ev.u.create.rd_size = sizeof(rdesc);
 	ev.u.create.bus = BUS_USB;
@@ -197,11 +193,9 @@ static signed char wheel;
 struct gamepad_report_t
 {
     unsigned char buttons7to0;
-    unsigned char buttons15to8;
-    int8_t left_x;
-    int8_t left_y;
-    int8_t right_x;
-    int8_t right_y;
+    unsigned char buttons12to8;
+    int8_t hat_x;
+    int8_t hat_y;
 } gamepad_report, gamepad_report_prev;
 
 
@@ -212,21 +206,14 @@ static int send_event(int fd)
 
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_INPUT;
-#ifdef USE_ANALOG
-	ev.u.input.size = 6;
-#else
-    ev.u.input.size = 2;
-#endif
+    ev.u.input.size = 4;
     
 	ev.u.input.data[0] = gamepad_report.buttons7to0;
-	ev.u.input.data[1] = gamepad_report.buttons15to8;
+	ev.u.input.data[1] = gamepad_report.buttons12to8;
+    
+    ev.u.input.data[2] = (unsigned char) gamepad_report.hat_x;
+    ev.u.input.data[3] = (unsigned char) gamepad_report.hat_y;
 
-#ifdef USE_ANALOG
-	ev.u.input.data[2] = gamepad_report.left_x;
-	ev.u.input.data[3] = gamepad_report.left_y;
-	ev.u.input.data[4] = gamepad_report.right_x;
-	ev.u.input.data[5] = gamepad_report.right_y;
-#endif
 	return uhid_write(fd, &ev);
 }
 
@@ -248,64 +235,67 @@ void i2c_open()
 
 void i2c_poll_joystick()
 {
-	unsigned char buf[32];
+    int8_t dpad_u, dpad_d, dpad_l, dpad_r;
+    
+    bool btn_a, btn_b, btn_c, btn_x, btn_y, btn_z, btn_l, btn_r, btn_start, btn_select, btn_l2, btn_r2;
+    
+    uint8_t dpad_bits;
+
 	int ret;
-
-        memset(&buf, 0, sizeof(32));
-
-
-	/* Using SMBus commands */
-	//res = i2c_smbus_read_word_data(i2c_file, reg);
-	//if (res < 0) {
-	//  /* ERROR HANDLING: I2C transaction failed */
-	//} else {
-	//  /* res contains the read word */
-	//}
-
-
-//	ret = i2c_smbus_read_block_data(i2c_file, 0, buf);
 
 	ret = i2c_smbus_read_word_data(i2c_file, 0);
 	if(ret < 0)
 		exit(1);
 
-	gamepad_report.buttons7to0 = ~(ret & 0xFF);
-	gamepad_report.buttons15to8 = ~(ret >> 8 & 0xFF);
-	//printf("gamepad_report.buttons7to0 = 0x%02X gamepad_report.buttons15to8 = 0x%02X\n", gamepad_report.buttons7to0, gamepad_report.buttons15to8);
+    ret = ~ret;         //invert all bits 1=pressed 0=unpressed
 
+    dpad_bits = ret & 0x000F;
+        
+    ret >>= 4;
+    btn_a = ret & 0b1;
+    ret >>= 1;
+    btn_b = ret & 0b1;
+    ret >>= 1;
+    btn_c = ret & 0b1;
+    ret >>= 1;
+    btn_z = ret & 0b1;
+    ret >>= 1;
+    btn_x = ret & 0b1;
+    ret >>= 1;
+    btn_y = ret & 0b1;
+    ret >>= 1;
+    btn_start = ret & 0b1;
+    ret >>= 1;
+    btn_select = ret & 0b1;
+    ret >>= 1;
+    btn_l = ret & 0b1;
+    ret >>= 1;
+    btn_r = ret & 0b1;
+    ret >>= 1;
+    btn_l2 = ret & 0b1;
+    ret >>= 1;
+    btn_r2 = ret & 0b1;
     
-#ifdef USE_ANALOG
-#error Broken Analog Stuff
-        ret = i2c_smbus_read_word_data(i2c_file, 2);  //ADC MSBs
-        if(ret < 0)
-                exit(1);
+    gamepad_report.buttons7to0 = (btn_r << 7) | (btn_l << 6) | (btn_z << 5) | (btn_y << 4) | (btn_x << 3) | (btn_c << 2) | (btn_b << 1) | btn_a;
+    gamepad_report.buttons12to8 = (btn_select << 3) | (btn_start << 2) | (btn_r2 << 1) | btn_l2;
 
-        //printf("left_x=%d ", ret);
-	ret = ret >> 2; //0x3FF -> 0xFF
-	//ret = ret - 127; //0-255  ->  -127-127
-        //printf("left_x=%d\n", ret);
-	gamepad_report.left_x = ret;
+    dpad_u = (dpad_bits >> 0 & 0x01);
+    dpad_d = (dpad_bits >> 1 & 0x01);
+    
+    dpad_l = (dpad_bits >> 2 & 0x01);
+    dpad_r = (dpad_bits >> 3 & 0x01);
 
-        ret = i2c_smbus_read_word_data(i2c_file, 6);  //ADC LSBs
-        if(ret < 0)
-                exit(1);
-
-	ret = ret >> 2; //0x3FF -> 0xFF
-	//ret = ret - 127; //0-255  ->  -127-127
-	gamepad_report.left_y = ret;
-        //printf("ret = 0x%04X ", ret);
-#endif
-
-	//printf("\n");
+    gamepad_report.hat_x = dpad_r - dpad_l;
+    gamepad_report.hat_y = dpad_u - dpad_d;
 }
 
 
 #ifdef USE_PIGPIO_IRQ
+#error Somewhat untested code here, use at your own risk
 void gpio_callback(int gpio, int level, uint32_t tick) {
     printf("GPIO %d ",gpio);
     switch (level) {
         case 0: printf("LOW\n");
-		    #error Dont poll the joystick in the interrupt service routine.  Just set a flag for the main thread to handle
                 i2c_poll_joystick();
                 gamepad_report_prev = gamepad_report;
                 send_event(fd);
@@ -426,7 +416,7 @@ int main(int argc, char **argv)
 	while (1) {
 		i2c_poll_joystick();
 
-		if(gamepad_report.buttons7to0 != gamepad_report_prev.buttons7to0 || gamepad_report.buttons15to8 != gamepad_report_prev.buttons15to8)
+		if(gamepad_report.buttons7to0 != gamepad_report_prev.buttons7to0 || gamepad_report.buttons12to8 != gamepad_report_prev.buttons12to8)
 		{
 			gamepad_report_prev = gamepad_report;
 			send_event(fd);
