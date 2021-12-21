@@ -96,7 +96,7 @@ static int create(int fd)
 
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_CREATE;
-	strcpy((char*)ev.u.create.name, "test-uhid-gamepad");
+	strcpy((char*)ev.u.create.name, "Freeplay Analog Joy");
 	ev.u.create.rd_data = rdesc;
 	ev.u.create.rd_size = sizeof(rdesc);
 	ev.u.create.bus = BUS_USB;
@@ -392,6 +392,9 @@ int main(int argc, char **argv)
 	pfds[1].events = POLLIN;
 
 	i2c_open();
+    
+    i2c_smbus_write_byte_data(i2c_file, 0x0A, 0x0F);        //turn on ADC3,2,1,0 in adc_on_bits
+
     
     fprintf(stderr, "Press '^C' to quit...\n");
 
