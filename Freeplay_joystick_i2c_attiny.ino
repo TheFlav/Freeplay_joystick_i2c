@@ -1,4 +1,14 @@
 //Freeplay_joystick_i2c_attiny
+
+/*
+ * 
+ * TODO:  Add poweroff_in, poweroff_out functionality
+ *        Add poweroff control via SECONDARY i2c address
+ * 
+ * MAYBE: Add watchdog shutdown if no "petting" after so long
+ */
+
+
 #include <Wire.h>
 
 #define VERSION_MAJOR   0
@@ -14,14 +24,16 @@
 #define CONFIG_I2C_ADDR     0x20
 #define CONFIG_I2C_2NDADDR  0x40  //0x30 wouldn't work
 
-//#define USE_INTERRUPTS
-#define USE_ADC
-
 //#define CONFIG_SERIAL_DEBUG  //shares pins with L2/R2 IO1_6/IO1_7
+
+#define USE_INTERRUPTS
+//#define USE_ADC
 
 #if defined(USE_ADC) && defined(USE_INTERRUPTS)
  #error ADC0 and nINT_PIN share the same pin
 #endif
+
+#define CONFIG_INVERT_POWER_BUTTON
 
 
 
@@ -42,10 +54,11 @@ struct i2c_joystick_register_struct {
 } i2c_joystick_registers;
 
 struct i2c_secondary_address_register_struct {
-  byte magic;  //set to some magic value, so we know this is the right chip we're talking to
+  byte magic;  //set to some magic value (0xED), so we know this is the right chip we're talking to
   byte ver_major;
   byte ver_minor;
-  byte config_PWM;      // Reg: 0x03
+  byte config_PWM;        // Reg: 0x03
+  byte poweroff_control;  // Reg: 0x04  - write some magic number here to turn off the system
 } i2c_secondary_registers;
 
 volatile byte g_last_sent_input0 = 0xFF;
@@ -66,7 +79,7 @@ byte g_pwm_duty_cycle = 0xFF;  //100% on
  * PB5 = IO0_3 = RIGHT
  * PB6 = IO0_4 = BTN_A
  * PB7 = IO0_5 = BTN_B
- * PA6 = IO0_6 = BTN_C ifndef USE_ADC2
+ * PA6 = IO0_6 = POWER_BUTTON (Hotkey AKA poweroff_in) / BTN_C ifndef USE_ADC2
  * PA7 = IO0_7 = BTN_Z ifndef USE_ADC3
  * 
  * PC0 = IO1_0 = BTN_X
@@ -93,6 +106,8 @@ byte g_pwm_duty_cycle = 0xFF;  //100% on
  #define nINT_PIN 0 //also PIN_PA4
 #endif
 
+#define PIN_POWEROFF_OUT   1
+
 
 
 
@@ -118,6 +133,9 @@ byte g_pwm_duty_cycle = 0xFF;  //100% on
 #define PINB_GPIO_MASK     ((PINB_IN0_MASK | PINB_IN1_MASK) & ~PINB_UART_MASK)
 #define PINC_GPIO_MASK     (PINC_IN1_MASK)
 
+#ifdef CONFIG_INVERT_POWER_BUTTON
+ #define PINA_INVERT_MASK (1 << 6)
+#endif
 
 #define PINA_IN0_SHR       1
 #define PINB_IN0_SHR       2
@@ -139,10 +157,18 @@ void setup_gpio(void)
   PORTA_PIN1CTRL = PORT_PULLUPEN_bm;
   PORTA_PIN2CTRL = PORT_PULLUPEN_bm;
   PORTA_PIN3CTRL = PORT_PULLUPEN_bm;
+#ifndef USE_ADC0
   PORTA_PIN4CTRL = PORT_PULLUPEN_bm; //ADC0
+#endif
+#ifndef USE_ADC1
   PORTA_PIN5CTRL = PORT_PULLUPEN_bm; //ADC1
+#endif
+#if !defined(USE_ADC2) && !defined(CONFIG_INVERT_POWER_BUTTON)
   PORTA_PIN6CTRL = PORT_PULLUPEN_bm; //ADC2
+#endif
+#ifndef USE_ADC3
   PORTA_PIN7CTRL = PORT_PULLUPEN_bm; //ADC3
+#endif
   
 //#define PINB_MASK (0b01110000)
   //PORTB_PIN0CTRL = PORT_PULLUPEN_bm;
@@ -179,6 +205,10 @@ void read_all_gpio(void)
   byte pa_in = PORTA_IN;
   byte pb_in = PORTB_IN;
   byte pc_in = PORTC_IN;
+
+#ifdef CONFIG_INVERT_POWER_BUTTON
+ pa_in ^= PINA_INVERT_MASK;
+#endif
 
   input0 = ((pa_in & PINA_IN0_MASK) >> PINA_IN0_SHR) | ((pb_in & PINB_IN0_MASK) >> PINB_IN0_SHR);
 
@@ -372,17 +402,19 @@ void setup()
 
 
   i2c_joystick_registers.adc_res = ADC_RESOLUTION;
-  i2c_joystick_registers.adc_on_bits = 0xFF;
+  i2c_joystick_registers.adc_on_bits = 0x00;
 
   i2c_secondary_registers.magic = 0xED;
   i2c_secondary_registers.ver_major = VERSION_MAJOR;
   i2c_secondary_registers.ver_minor = VERSION_MINOR;
   i2c_secondary_registers.config_PWM = 0xFF;
+  i2c_secondary_registers.poweroff_control = 0;
 }
 
 void loop() {
+#ifdef USE_ANALOG
   word adc;
-
+#endif
 
 #ifdef CONFIG_SERIAL_DEBUG
   Serial.print("g_i2c_address=");
