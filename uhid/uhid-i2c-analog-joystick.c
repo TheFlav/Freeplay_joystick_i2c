@@ -44,7 +44,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <termios.h>
 #include <unistd.h>
 #include <linux/uhid.h>
 #include <stdint.h>
@@ -375,29 +374,8 @@ void i2c_poll_joystick()
 int main(int argc, char **argv)
 {
 	const char *path = "/dev/uhid";
-	struct pollfd pfds[2];
 	int ret;
-	struct termios state;
 
-	ret = tcgetattr(STDIN_FILENO, &state);
-	if (ret) {
-		fprintf(stderr, "Cannot get tty state\n");
-	} else {
-		state.c_lflag &= ~ICANON;
-		state.c_cc[VMIN] = 1;
-		ret = tcsetattr(STDIN_FILENO, TCSANOW, &state);
-		if (ret)
-			fprintf(stderr, "Cannot set tty state\n");
-	}
-
-	if (argc >= 2) {
-		if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
-			fprintf(stderr, "Usage: %s [%s]\n", argv[0], path);
-			return EXIT_SUCCESS;
-		} else {
-			path = argv[1];
-		}
-	}
 
 	fprintf(stderr, "Open uhid-cdev %s\n", path);
 	fd = open(path, O_RDWR | O_CLOEXEC);
@@ -413,10 +391,6 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	pfds[0].fd = STDIN_FILENO;
-	pfds[0].events = POLLIN;
-	pfds[1].fd = fd;
-	pfds[1].events = POLLIN;
 
 	i2c_open();
     

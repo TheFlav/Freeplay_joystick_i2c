@@ -17,10 +17,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <termios.h>
 #include <unistd.h>
 #include <linux/uhid.h>
 #include <stdint.h>
+
+#include <time.h>
+
 
 
 #include <linux/i2c-dev.h>
@@ -344,29 +346,9 @@ void attiny_irq_handler(void)
 int main(int argc, char **argv)
 {
 	const char *path = "/dev/uhid";
-	struct pollfd pfds[2];
 	int ret;
-	struct termios state;
+	
 
-	ret = tcgetattr(STDIN_FILENO, &state);
-	if (ret) {
-		fprintf(stderr, "Cannot get tty state\n");
-	} else {
-		state.c_lflag &= ~ICANON;
-		state.c_cc[VMIN] = 1;
-		ret = tcsetattr(STDIN_FILENO, TCSANOW, &state);
-		if (ret)
-			fprintf(stderr, "Cannot set tty state\n");
-	}
-
-	if (argc >= 2) {
-		if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
-			fprintf(stderr, "Usage: %s [%s]\n", argv[0], path);
-			return EXIT_SUCCESS;
-		} else {
-			path = argv[1];
-		}
-	}
 
 	fprintf(stderr, "Open uhid-cdev %s\n", path);
 	fd = open(path, O_RDWR | O_CLOEXEC);
@@ -382,15 +364,15 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	pfds[0].fd = STDIN_FILENO;
-	pfds[0].events = POLLIN;
-	pfds[1].fd = fd;
-	pfds[1].events = POLLIN;
-
 	i2c_open();
     
     fprintf(stderr, "Press '^C' to quit...\n");
 
+	
+	clock_t time0, time1;
+    double cpu_time_used;
+     
+	uint32_t counter0, counter1;
    
 #ifdef USE_WIRINGPI_IRQ
     wiringPiSetupGpio();        //use BCM numbering
@@ -398,9 +380,28 @@ int main(int argc, char **argv)
     i2c_poll_joystick();//make sure it's cleared out
     gamepad_report_prev = gamepad_report;
     send_event(fd);
+	
+
+    time0 = clock();
+	ret = i2c_smbus_read_i2c_block_data(i2c_file, 0x0C, 4, (uint8_t *)&counter0);
+	if(ret < 0)
+		exit(1);	
+	
     while(1)
     {
-        
+	    time1 = clock();
+		cpu_time_used = ((double) (time1 - time0)) / CLOCKS_PER_SEC;
+		
+		if(cpu_time_used > 1)
+		{
+			ret = i2c_smbus_read_i2c_block_data(i2c_file, 0x0C, 4, (uint8_t *)&counter1);
+			if(ret < 0)
+				exit(1);
+			
+			printf("  %d loops in %f seconds (0x%04X, 0x%04X)\n", counter1-counter0, cpu_time_used, counter0, counter1);
+			time0 = time1;
+			counter0 = counter1;
+		}
     }
 #endif
     
@@ -436,6 +437,14 @@ int main(int argc, char **argv)
             time_sleep(0.1);
     }
 #endif
+	
+	
+
+
+    time0 = clock();
+	ret = i2c_smbus_read_i2c_block_data(i2c_file, 0x0C, 4, (uint8_t *)&counter0);
+	if(ret < 0)
+		exit(1);
     
 	while (1) {
 		i2c_poll_joystick();
@@ -445,6 +454,23 @@ int main(int argc, char **argv)
 			gamepad_report_prev = gamepad_report;
 			send_event(fd);
 		}
+		
+		
+		
+		
+	    time1 = clock();
+		cpu_time_used = ((double) (time1 - time0)) / CLOCKS_PER_SEC;
+		
+		if(cpu_time_used > 2)
+		{
+			ret = i2c_smbus_read_i2c_block_data(i2c_file, 0x0C, 4, (uint8_t *)&counter1);
+			if(ret < 0)
+				exit(1);
+			
+			printf("  %d loops in %f seconds (0x%04X, 0x%04X)\n", counter1-counter0, cpu_time_used, counter0, counter1);
+			time0 = time1;
+			counter0 = counter1;
+		}		
 	}
 
 	fprintf(stderr, "Destroy uhid device\n");
