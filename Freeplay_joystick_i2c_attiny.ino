@@ -14,6 +14,8 @@
 #define VERSION_MAJOR   0
 #define VERSION_MINOR   2
 
+#define CONFIG_SPEED_PROFILING
+
 
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
 //currently testing on Adafruit 817
@@ -29,7 +31,15 @@
 #define USE_INTERRUPTS
 //#define USE_ADC
 
-#if defined(USE_ADC) && defined(USE_INTERRUPTS)
+// How many ADC's do you want?
+#ifdef USE_ADC
+ #define USE_ADC0
+ #define USE_ADC1
+ #define USE_ADC2
+ #define USE_ADC3
+#endif
+
+#if defined(USE_ADC0) && defined(USE_INTERRUPTS)
  #error ADC0 and nINT_PIN share the same pin
 #endif
 
@@ -51,6 +61,9 @@ struct i2c_joystick_register_struct {
   byte adc_on_bits;     // Reg: 0x0A - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
   byte config0;         // Reg: 0x0B - Configuration port 0
   byte adc_res;         // Reg: 0x0D - current ADC resolution (maybe settable?)
+#ifdef CONFIG_SPEED_PROFILING  
+  uint32_t num_loops;
+#endif
 } i2c_joystick_registers;
 
 struct i2c_secondary_address_register_struct {
@@ -96,18 +109,13 @@ byte g_pwm_duty_cycle = 0x00;  //100% on
  * 
  */
 
-// How many ADC's do you want?
-#ifdef USE_ADC
- #define USE_ADC0
- #define USE_ADC1
- #define USE_ADC2
- #define USE_ADC3
-#endif
+
 
 //I feel like we only want to do interrupts if we're not doing ADCs, but this can change around
 
 #if !defined(USE_ADC0) && defined(USE_INTERRUPTS)
  #define nINT_PIN 0 //also PIN_PA4
+ bool g_nINT_state = false;
 #endif
 
 #define PIN_POWEROFF_OUT   1
@@ -396,6 +404,7 @@ void setup()
   
 #ifdef nINT_PIN
   pinMode(nINT_PIN, OUTPUT);
+  digitalWrite(nINT_PIN, g_nINT_state);
 #endif 
 
 
@@ -422,12 +431,18 @@ void setup()
   i2c_secondary_registers.config_PWM = g_pwm_duty_cycle;
   g_pwm_duty_cycle = ~i2c_secondary_registers.config_PWM; //unset it
   i2c_secondary_registers.poweroff_control = 0;
+
+  i2c_joystick_registers.num_loops=0;
 }
 
 
 void loop() 
 {
-#ifdef USE_ANALOG
+  #ifdef CONFIG_SPEED_PROFILING
+    i2c_joystick_registers.num_loops++;
+  #endif
+  
+#ifdef USE_ADC
   word adc;
 #endif
 
@@ -487,6 +502,11 @@ void loop()
 #endif
 
 #ifdef nINT_PIN
-  digitalWrite(nINT_PIN, ((g_last_sent_input0 == i2c_joystick_registers.input0) && (g_last_sent_input1 == i2c_joystick_registers.input1)));
+  bool new_nINT = ((g_last_sent_input0 == i2c_joystick_registers.input0) && (g_last_sent_input1 == i2c_joystick_registers.input1));
+  if(g_nINT_state != new_nINT)
+  {
+    digitalWrite(nINT_PIN, new_nINT);
+    g_nINT_state = new_nINT;    
+  }
 #endif
 }
