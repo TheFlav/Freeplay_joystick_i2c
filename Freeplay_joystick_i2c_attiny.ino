@@ -70,7 +70,7 @@ volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. W
  volatile byte g_i2c_address = 0;  //if we're using multiple i2c addresses, we need to know which one is in use
 #endif
 
-byte g_pwm_duty_cycle = 0xFF;  //100% on
+byte g_pwm_duty_cycle = 0x00;  //100% on
 
 /*
  * PA1 = IO0_0 = UP
@@ -107,6 +107,7 @@ byte g_pwm_duty_cycle = 0xFF;  //100% on
 #endif
 
 #define PIN_POWEROFF_OUT   1
+#define PIN_PWM             20
 
 
 
@@ -265,9 +266,9 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
   {
     byte temp = Wire.read(); //We might record it, we might throw it away
 
-    //  byte configPWM;       // Reg: 0x08 - set PWM duty cycle
     if(x == 0x03)   //this is a writeable register
     {
+      //set PWM duty cycle
       i2c_secondary_registers.config_PWM = temp;      
     }
   }
@@ -369,10 +370,6 @@ void startI2C()
 }
 
 
-void set_pwm_duty_cycle(byte new_duty_cycle)
-{
-  //output the duty cycle to the pwm pin (PA3?)
-}
 
 
 
@@ -400,6 +397,8 @@ void setup()
   analogReadResolution(ADC_RESOLUTION);
 #endif
 
+  pinMode(PIN_PWM, OUTPUT);  // sets the pin as output
+
 
   i2c_joystick_registers.adc_res = ADC_RESOLUTION;
   i2c_joystick_registers.adc_on_bits = 0x00;
@@ -407,11 +406,14 @@ void setup()
   i2c_secondary_registers.magic = 0xED;
   i2c_secondary_registers.ver_major = VERSION_MAJOR;
   i2c_secondary_registers.ver_minor = VERSION_MINOR;
-  i2c_secondary_registers.config_PWM = 0xFF;
+  i2c_secondary_registers.config_PWM = g_pwm_duty_cycle;
+  g_pwm_duty_cycle = ~i2c_secondary_registers.config_PWM; //unset it
   i2c_secondary_registers.poweroff_control = 0;
 }
 
-void loop() {
+
+void loop() 
+{
 #ifdef USE_ANALOG
   word adc;
 #endif
@@ -427,12 +429,15 @@ void loop() {
   Serial.println();
 #endif
   
-
+#ifdef PIN_PWM
   if(g_pwm_duty_cycle != i2c_secondary_registers.config_PWM)
   {
-    set_pwm_duty_cycle(i2c_secondary_registers.config_PWM);
+    //output the duty cycle to the pwm pin (PA3?)
+    analogWrite(PIN_PWM, i2c_secondary_registers.config_PWM);
     g_pwm_duty_cycle = i2c_secondary_registers.config_PWM;
   }
+#endif
+  
   read_all_gpio();
 
 #ifdef USE_ADC0
