@@ -17,7 +17,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-//#include <termios.h>
 #include <unistd.h>
 #include <linux/uhid.h>
 #include <stdint.h>
@@ -30,10 +29,13 @@
 #include <i2c/smbus.h>
 
 
-#define print_stderr(fmt, ...) do {fprintf(stderr, "%lf: %s:%d: %s(): " fmt, (double)clock()/CLOCKS_PER_SEC, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
-#define print_stdout(fmt, ...) do {fprintf(stdout, "%lf: %s:%d: %s(): " fmt, (double)clock()/CLOCKS_PER_SEC, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
+
+
+
+
 
 //prototypes
+static double get_time_double(void); //get time in double (seconds)
 
 static int uhid_create(int /*fd*/); //create uhid device TODO move header
 static void uhid_destroy(int /*fd*/); //close uhid device  TODO move header
@@ -43,6 +45,11 @@ void i2c_open(void); //open I2C bus
 void i2c_close(void); //close I2C bus
 
 void tty_signal_handler(int /*sig*/);
+
+//tty output functions
+double program_start_time = 0.;
+#define print_stderr(fmt, ...) do {fprintf(stderr, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time /*(double)clock()/CLOCKS_PER_SEC*/, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
+#define print_stdout(fmt, ...) do {fprintf(stdout, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time /*(double)clock()/CLOCKS_PER_SEC*/, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
 
 
 #define USE_WIRINGPI_IRQ //use wiringPi for IRQ
@@ -107,7 +114,12 @@ static unsigned char rdesc[] = {
 
 
 
-
+//Time related functions
+static double get_time_double(void){ //get time in double (seconds)
+	struct timespec tp; int result = clock_gettime(CLOCK_MONOTONIC, &tp);
+	if (result == 0) {return tp.tv_sec + (double)tp.tv_nsec/1e9;}
+	return 0.;
+}
 
 
 //UHID related functions
@@ -448,6 +460,8 @@ void tty_signal_handler(int sig) { //handle signal func
 
 
 int main(int argc, char **argv) {
+	program_start_time = get_time_double();
+
 	const char *path = "/dev/uhid";
 	//struct pollfd pfds[2]; //used for?
 	int ret, main_return = EXIT_SUCCESS;
