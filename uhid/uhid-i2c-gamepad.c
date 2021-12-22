@@ -392,7 +392,7 @@ int main(int argc, char **argv)
 	    time1 = clock();
 		cpu_time_used = ((double) (time1 - time0)) / CLOCKS_PER_SEC;
 		
-		if(cpu_time_used > 1)
+		if(cpu_time_used > 10)
 		{
 			ret = i2c_smbus_read_i2c_block_data(i2c_file, 0x0C, 4, (uint8_t *)&counter1);
 			if(ret < 0)
