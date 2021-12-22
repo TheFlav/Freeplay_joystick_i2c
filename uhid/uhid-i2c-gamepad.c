@@ -33,6 +33,15 @@
 #define print_stderr(fmt, ...) do {fprintf(stderr, "%lf: %s:%d: %s(): " fmt, (double)clock()/CLOCKS_PER_SEC, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
 #define print_stdout(fmt, ...) do {fprintf(stdout, "%lf: %s:%d: %s(): " fmt, (double)clock()/CLOCKS_PER_SEC, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
 
+//prototypes
+
+static int uhid_create(int /*fd*/); //create uhid device TODO move header
+static void uhid_destroy(int /*fd*/); //close uhid device  TODO move header
+static int uhid_write(int /*fd*/, const struct uhid_event* /*ev*/); //write data to uhid device  TODO move header
+
+void i2c_open(void); //open I2C bus
+void i2c_close(void); //close I2C bus
+
 
 
 
@@ -55,6 +64,9 @@ int fd;
 #define I2C_BUSNAME "/dev/i2c-1"
 #define I2C_ADDRESS 0x20
 int i2c_file = -1;
+
+const char* uhid_device_name = "Freeplay Gamepad";
+
 
 const int i2c_poll_rate = 125; //poll per sec
 const double i2c_poll_rate_time = 1. / i2c_poll_rate; //poll interval in sec
@@ -93,30 +105,18 @@ static unsigned char rdesc[] = {
  0xC0,// ; END_COLLECTION
 };
 
-static int uhid_write(int fd, const struct uhid_event *ev)
-{
-	ssize_t ret;
 
-	ret = write(fd, ev, sizeof(*ev));
-	if (ret < 0) {
-		print_stderr(/*fprintf(stderr, */"Cannot write to uhid: %m\n");
-		return -errno;
-	} else if (ret != sizeof(*ev)) {
-		print_stderr(/*fprintf(stderr, */"Wrong size written to uhid: %zd != %zu\n",
-			ret, sizeof(ev));
-		return -EFAULT;
-	} else {
-		return 0;
-	}
-}
 
-static int create(int fd)
-{
+
+
+
+//UHID related functions
+static int uhid_create(int fd) { //create uhid device
 	struct uhid_event ev;
 
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_CREATE;
-	strcpy((char*)ev.u.create.name, "Freeplay Gamepad");
+	strcpy((char*)ev.u.create.name, uhid_device_name);
 	ev.u.create.rd_data = rdesc;
 	ev.u.create.rd_size = sizeof(rdesc);
 	ev.u.create.bus = BUS_USB;
@@ -128,8 +128,7 @@ static int create(int fd)
 	return uhid_write(fd, &ev);
 }
 
-static void destroy(int fd)
-{
+static void uhid_destroy(int fd){ //close uhid device
 	struct uhid_event ev;
 
 	memset(&ev, 0, sizeof(ev));
@@ -137,6 +136,33 @@ static void destroy(int fd)
 
 	uhid_write(fd, &ev);
 }
+
+static int uhid_write(int fd, const struct uhid_event *ev){ //write data to uhid device
+	ssize_t ret = write(fd, ev, sizeof(*ev));
+	if (ret < 0) {
+		print_stderr(/*fprintf(stderr, */"write to uhid device failed with errno:%d (%m)\n", -ret);
+		return -errno;
+	} else if (ret != sizeof(*ev)) {
+		print_stderr(/*fprintf(stderr, */"wrong size wrote to uhid device: %zd != %zu\n", ret, sizeof(ev));
+		return -EFAULT;
+	} else {return 0;}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* This parses raw output reports sent by the kernel to the device. A normal
  * uhid program shouldn't do this but instead just forward the raw report.
@@ -240,19 +266,39 @@ static int send_event(int fd)
 }
 
 
-void i2c_open(){
+
+
+//I2C related
+void i2c_open(void){ //open I2C bus
 	i2c_file = open(I2C_BUSNAME, O_RDWR);
 	if (i2c_file < 0) {
-		print_stderr(/*fprintf(stderr, */"FATAL: open() failed with errno %d\n", i2c_file*-1);
+		print_stderr(/*fprintf(stderr, */"FATAL: failed to open '%s' with errno:%d (%m)\n", I2C_BUSNAME, -i2c_file);
 		exit(EXIT_FAILURE);
 	}
 
 	int ret = ioctl(i2c_file, I2C_SLAVE, I2C_ADDRESS);
 	if (ret < 0) {
-		print_stderr(/*fprintf(stderr, */"FATAL: ioctl() failed with errno %d\n", ret*-1);
+		close(i2c_file);
+		print_stderr(/*fprintf(stderr, */"FATAL: ioctl failed for I2C adress:0x%02x with errno:%d (%m)\n", I2C_ADDRESS, -ret);
 		exit(EXIT_FAILURE);
+	} else {
+		ret = i2c_smbus_read_byte_data(i2c_file, 0);
+		if (ret < 0) {
+			close(i2c_file);
+			print_stderr(/*fprintf(stderr, */"FATAL: failed to read from I2C adress:0x%02x with errno:%d (%m)\n", I2C_ADDRESS, -ret);
+			exit(EXIT_FAILURE);
+		}
 	}
 }
+
+void i2c_close(void){ //close I2C bus
+	if (i2c_file < 0) {print_stderr(/*fprintf(stderr, */"nothing to close\n");
+	} else {
+		if (close(i2c_file) < 0){print_stderr(/*fprintf(stderr, */"failed to close I2C handle\n");
+		} else {print_stderr(/*fprintf(stderr, */"I2C handle succefully closed\n");}
+	}
+}
+
 
 
 /*  From the attiny code
@@ -297,14 +343,14 @@ void i2c_poll_joystick()
 	ret = i2c_smbus_read_word_data(i2c_file, 0);
 	if (ret < 0) {
 		if (ret == -6) {
-			print_stderr(/*fprintf(stderr, */"FATAL: i2c_smbus_read_word_data() failed with errno %d: No such device or address\n", ret*-1);
+			print_stderr(/*fprintf(stderr, */"FATAL: i2c_smbus_read_word_data() failed with errno %d : %m\n", -ret);
 			kill_resquested = true;
 		}
 		i2c_last_error=ret ;i2c_errors_count++; return;
 	}
 
 	if (i2c_errors_count > 0){
-		print_stderr(/*fprintf(stderr, */"DEBUG: last I2C error: %d\n", i2c_last_error);
+		print_stderr(/*fprintf(stderr, */"DEBUG: last I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));
 		i2c_last_error = i2c_errors_count = 0; //reset error count
 	}
 	
@@ -389,22 +435,19 @@ void tty_signal_handler(int sig) { //handle signal func
 
 
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
 	const char *path = "/dev/uhid";
-	struct pollfd pfds[2];
+	//struct pollfd pfds[2]; //used for?
 	int ret;
 	struct termios state;
 
 	ret = tcgetattr(STDIN_FILENO, &state);
-	if (ret) {
-		print_stderr(/*fprintf(stderr, */"Cannot get tty state\n");
+	if (ret) {print_stderr(/*fprintf(stderr, */"Cannot get tty state\n");
 	} else {
 		state.c_lflag &= ~ICANON;
 		state.c_cc[VMIN] = 1;
 		ret = tcsetattr(STDIN_FILENO, TCSANOW, &state);
-		if (ret)
-			print_stderr(/*fprintf(stderr, */"Cannot set tty state\n");
+		if (ret) print_stderr(/*fprintf(stderr, */"Cannot set tty state\n");
 	}
 
 	//tty signal handling
@@ -412,7 +455,7 @@ int main(int argc, char **argv)
 	signal(SIGTERM, tty_signal_handler); //SIGTERM from htop or other, 
 	//signal(SIGKILL, tty_signal_handler); //doesn't work, program get killed before able to handle
 
-	if (argc >= 2) {
+	if (argc >= 2) { //TODO
 		if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
 			fprintf(stderr, "Usage: %s [%s]\n", argv[0], path);
 			return EXIT_SUCCESS;
@@ -421,27 +464,29 @@ int main(int argc, char **argv)
 		}
 	}
 
-	print_stderr(/*fprintf(stderr, */"Open uhid-cdev %s\n", path);
 	fd = open(path, O_RDWR | O_CLOEXEC);
 	if (fd < 0) {
-		print_stderr(/*fprintf(stderr, */"Cannot open uhid-cdev %s: %m\n", path);
+		print_stderr(/*fprintf(stderr, */"failed to open uhid-cdev %s with errno:%d (%m)\n", path, -fd);
 		return EXIT_FAILURE;
-	}
+	} else {print_stderr(/*fprintf(stderr, */"uhid-cdev %s opened\n", path);}
 
-	fprintf(stderr, "Create uhid device\n");
-	ret = create(fd);
+	ret = uhid_create(fd);
 	if (ret) {
 		close(fd);
 		return EXIT_FAILURE;
-	}
+	} else {print_stderr(/*fprintf(stderr, */"uhid device created\n");}
 
+	//used for?
+	/*
 	pfds[0].fd = STDIN_FILENO;
 	pfds[0].events = POLLIN;
 	pfds[1].fd = fd;
 	pfds[1].events = POLLIN;
+*/
 
-	i2c_open();
-    
+	i2c_open(); //open I2C bus
+    print_stderr(/*fprintf(stderr, */"I2C bus '%s', address:0x%02x opened\n", I2C_BUSNAME, I2C_ADDRESS);
+
     fprintf(stderr, "Press '^C' to quit...\n");
 
    
@@ -505,19 +550,20 @@ int main(int argc, char **argv)
 			send_event(fd);
 		}
 		
+		//poll rate implement
+		if (kill_resquested) break;
 		i2c_poll_duration = (double)(clock() - poll_clock_start) / CLOCKS_PER_SEC;
 		if (i2c_poll_duration > i2c_poll_duration_warn){printf ("WARNING: extremily long loop duration: %dms\n", (int)(i2c_poll_duration*1000));}
 		if (i2c_poll_duration < 0){i2c_poll_duration = i2c_poll_rate_time + 1.;} //rollover, force update
 		if (i2c_poll_duration < i2c_poll_rate_time){usleep((useconds_t) ((double)(i2c_poll_rate_time - i2c_poll_duration) * 1000000));} //need to sleep to match poll rate
 	}
 
-	if (i2c_last_error!=0) {print_stderr(/*fprintf(stderr, */"DEBUG: last detected I2C error: %d\n", i2c_last_error*-1);}
+	if (i2c_last_error!=0) {print_stderr(/*fprintf(stderr, */"DEBUG: last detected I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));}
 
-
-
+	i2c_close();
 
 	fprintf(stderr, "Destroy uhid device\n");
-	destroy(fd);
+	uhid_destroy(fd);
 	return EXIT_SUCCESS;
 }
 
