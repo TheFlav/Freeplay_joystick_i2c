@@ -79,8 +79,8 @@ byte g_pwm_duty_cycle = 0x00;  //100% on
  * PB5 = IO0_3 = RIGHT
  * PB6 = IO0_4 = BTN_A
  * PB7 = IO0_5 = BTN_B
- * PA6 = IO0_6 = POWER_BUTTON (Hotkey AKA poweroff_in) / BTN_C ifndef USE_ADC2
- * PA7 = IO0_7 = BTN_Z ifndef USE_ADC3
+ * PA6 = IO0_6 = BTN_L2  ifndef USE_ADC2
+ * PA7 = IO0_7 = BTN_R2  ifndef USE_ADC3
  * 
  * PC0 = IO1_0 = BTN_X
  * PC1 = IO1_1 = BTN_Y
@@ -88,8 +88,12 @@ byte g_pwm_duty_cycle = 0x00;  //100% on
  * PC3 = IO1_3 = BTN_SELECT
  * PC4 = IO1_4 = BTN_L
  * PC5 = IO1_5 = BTN_R
- * PB2 = IO1_6 = BTN_L2 ifndef CONFIG_SERIAL_DEBUG (or can be used for UART TXD0 for debugging)  [MAY NEED TO BE PWM output!!!!]
- * PB3 = IO1_7 = BTN_R2 ifndef CONFIG_SERIAL_DEBUG (or can be used for UART RXD0 for debugging)
+ * PB2 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)   ifndef CONFIG_SERIAL_DEBUG (or can be used for UART TXD0 for debugging)
+ * PA5 = IO1_7 = BTN_C ifndef USE_ADC1
+ * 
+ * PB3 =         POWEROFF_OUT
+ * PA3 =         PWM Backlight OUT
+ * 
  */
 
 // How many ADC's do you want?
@@ -127,26 +131,28 @@ byte g_pwm_duty_cycle = 0x00;  //100% on
 #define PINA_IN0_MASK      (0b00000110)   //the pins from PINA that are used in IN0
 #define PINB_IN0_MASK      (0b11110000)   //the pins from PINB that are used in IN0
 
-#define PINB_IN1_MASK      (0b00001100)   //the pins from PINB that are used in IN1
-#define PINC_IN1_MASK      (0b00111111)   //the pins from PINB that are used in IN1
+#define PINA_IN1_MASK      (0b00100000)   //the pins from PINA that are used in IN1
+#define PINB_IN1_MASK      (0b00000100)   //the pins from PINB that are used in IN1
+#define PINC_IN1_MASK      (0b00111111)   //the pins from PINC that are used in IN1
 
 #define PINA_GPIO_MASK     (PINA_IN0_MASK)
 #define PINB_GPIO_MASK     ((PINB_IN0_MASK | PINB_IN1_MASK) & ~PINB_UART_MASK)
 #define PINC_GPIO_MASK     (PINC_IN1_MASK)
 
 #ifdef CONFIG_INVERT_POWER_BUTTON
- #define PINA_INVERT_MASK (1 << 6)
+ #define PINB_INVERT_MASK (1 << 2)    //PB2 is the power button, but it needs to be inverted (high when pressed)
 #endif
 
 #define PINA_IN0_SHR       1
 #define PINB_IN0_SHR       2
 #define PINB_IN1_SHL       4
+#define PINA_IN1_SHL       2
 
 void setup_gpio(void)
 {
   //set as inputs
 
-  PORTA_DIRCLR = PINA_GPIO_MASK | PINA_ADC0_MASK | PINA_ADC1_MASK | PINA_ADC2_MASK | PINA_ADC3_MASK;
+  PORTA_DIRCLR = PINA_GPIO_MASK | /*PINA_ADC0_MASK |*/ PINA_ADC1_MASK | PINA_ADC2_MASK | PINA_ADC3_MASK;
 
   PORTB_DIRCLR = PINB_GPIO_MASK;
   PORTC_DIRCLR = PINC_GPIO_MASK;
@@ -164,7 +170,7 @@ void setup_gpio(void)
 #ifndef USE_ADC1
   PORTA_PIN5CTRL = PORT_PULLUPEN_bm; //ADC1
 #endif
-#if !defined(USE_ADC2) && !defined(CONFIG_INVERT_POWER_BUTTON)
+#ifndef USE_ADC2
   PORTA_PIN6CTRL = PORT_PULLUPEN_bm; //ADC2
 #endif
 #ifndef USE_ADC3
@@ -175,7 +181,9 @@ void setup_gpio(void)
   //PORTB_PIN0CTRL = PORT_PULLUPEN_bm;
   //PORTB_PIN1CTRL = PORT_PULLUPEN_bm;
 #ifndef CONFIG_SERIAL_DEBUG
+ #if !defined(CONFIG_INVERT_POWER_BUTTON)    //don't use a pullup on the power button
   PORTB_PIN2CTRL = PORT_PULLUPEN_bm;
+ #endif
   PORTB_PIN3CTRL = PORT_PULLUPEN_bm;
 #endif
   PORTB_PIN4CTRL = PORT_PULLUPEN_bm;
@@ -194,6 +202,11 @@ void setup_gpio(void)
   //PORTC_PIN7CTRL = PORT_PULLUPEN_bm;
 }
 
+
+/*
+ * This function is getting out of hand.  We might have to build some macros to do it.
+ * But, it's efficient.
+ */
 void read_all_gpio(void)
 {
   //we may want to turn off interrupts during this function
@@ -208,15 +221,15 @@ void read_all_gpio(void)
   byte pc_in = PORTC_IN;
 
 #ifdef CONFIG_INVERT_POWER_BUTTON
- pa_in ^= PINA_INVERT_MASK;
+ pb_in ^= PINB_INVERT_MASK;
 #endif
 
   input0 = ((pa_in & PINA_IN0_MASK) >> PINA_IN0_SHR) | ((pb_in & PINB_IN0_MASK) >> PINB_IN0_SHR);
 
 #ifndef CONFIG_SERIAL_DEBUG
-  input1 = ((pb_in & PINB_IN1_MASK) << PINB_IN1_SHL) |  (pc_in & PINC_IN1_MASK);
+  input1 = ((pb_in & PINB_IN1_MASK) << PINB_IN1_SHL) |  (pc_in & PINC_IN1_MASK) | ((pa_in & PINA_IN1_MASK) << PINA_IN1_SHL);
 #else
-  input1 = ((pb_in & (PINB_IN1_MASK | PINB_UART_MASK)) << PINB_IN1_SHL) |  (pc_in & PINC_IN1_MASK);   //act like the PINB_UART_MASK pins are never pressed
+  input1 = ((pb_in & (PINB_IN1_MASK | PINB_UART_MASK)) << PINB_IN1_SHL) |  (pc_in & PINC_IN1_MASK) | ((pa_in & PINA_IN1_MASK) << PINA_IN1_SHL);   //act like the PINB_UART_MASK pins are never pressed
 #endif
 
 #if defined(USE_ADC2) && defined(USE_ADC3)
