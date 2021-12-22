@@ -46,13 +46,17 @@ void i2c_close(void); //close I2C bus
 
 void tty_signal_handler(int /*sig*/);
 
+//debug
+bool debug = true; //TODO implement
+bool debug_adv = true; //TODO implement
+
 //tty output functions
 double program_start_time = 0.;
 #define print_stderr(fmt, ...) do {fprintf(stderr, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time /*(double)clock()/CLOCKS_PER_SEC*/, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
 #define print_stdout(fmt, ...) do {fprintf(stdout, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time /*(double)clock()/CLOCKS_PER_SEC*/, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
 
 
-#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
+//#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
 //#define USE_PIGPIO_IRQ //or USE_PIGPIO
 //or comment out both of the above to poll
 
@@ -66,25 +70,33 @@ double program_start_time = 0.;
  #define nINT_GPIO 10   //pigpio won't allow >31
 #endif
 
-int fd;
+//Program related vars
+bool kill_resquested = false; //allow clean close
 
+
+//UHID related vars
+const char* uhid_device_name = "Freeplay Gamepad";
+int uhid_fd;
+
+
+//I2C related vars
 #define I2C_BUSNAME "/dev/i2c-1"
 #define I2C_ADDRESS 0x20
 int i2c_file = -1;
+const int i2c_errors_report = 10; //error count before report to tty
+int i2c_errors_count = 0; //errors count that happen in a row
+int i2c_last_error = 0; //last detected error
 
-const char* uhid_device_name = "Freeplay Gamepad";
 
-
+//poll rate implement
+bool i2c_poll_rate_disable = true; //allow full throttle update if true
 const int i2c_poll_rate = 125; //poll per sec
 const double i2c_poll_rate_time = 1. / i2c_poll_rate; //poll interval in sec
 const double i2c_poll_duration_warn = 0.15; //warning if loop duration over this
 double i2c_poll_duration = 0.; //poll loop duration
-clock_t poll_clock_start/*, poll_clock_end*/;
+double poll_clock_start = 0., poll_benchmark_clock_start = -1.;
+long poll_benchmark_loop = 0;
 
-bool kill_resquested = false; //allow clean close
-const int i2c_errors_report = 10; //error count before report to tty
-int i2c_errors_count = 0; //errors count that happen in a row
-int i2c_last_error = 0; //last detected error
 
 
 
@@ -118,7 +130,7 @@ static unsigned char rdesc[] = {
 static double get_time_double(void){ //get time in double (seconds)
 	struct timespec tp; int result = clock_gettime(CLOCK_MONOTONIC, &tp);
 	if (result == 0) {return tp.tv_sec + (double)tp.tv_nsec/1e9;}
-	return 0.;
+	return 0.; //failed
 }
 
 
@@ -142,6 +154,8 @@ static int uhid_create(int fd) { //create uhid device
 
 static void uhid_destroy(int fd){ //close uhid device
 	struct uhid_event ev;
+
+	if (fd < 0) return; //already failed
 
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_DESTROY;
@@ -421,7 +435,7 @@ void i2c_poll_joystick()
 	int report_prev_val = gamepad_report_prev.buttons7to0 + gamepad_report_prev.buttons12to8 + gamepad_report_prev.hat_x + gamepad_report_prev.hat_y;
 	if (report_val != report_prev_val){
 		gamepad_report_prev = gamepad_report;
-		send_event(fd);
+		send_event(uhid_fd);
 	}
 }
 
@@ -490,13 +504,13 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	fd = open(path, O_RDWR | O_CLOEXEC);
-	if (fd < 0) {
-		print_stderr(/*fprintf(stderr, */"failed to open uhid-cdev %s with errno:%d (%m)\n", path, -fd);return EXIT_FAILURE;
+	uhid_fd = open(path, O_RDWR | O_CLOEXEC);
+	if (uhid_fd < 0) {
+		print_stderr(/*fprintf(stderr, */"failed to open uhid-cdev %s with errno:%d (%m)\n", path, -uhid_fd);return EXIT_FAILURE;
 	} else {print_stderr(/*fprintf(stderr, */"uhid-cdev %s opened\n", path);}
 
-	ret = uhid_create(fd);
-	if (ret) {close(fd); return EXIT_FAILURE;
+	ret = uhid_create(uhid_fd);
+	if (ret) {close(uhid_fd); return EXIT_FAILURE;
 	} else {print_stderr(/*fprintf(stderr, */"uhid device created\n");}
 
 	//used for?
@@ -568,23 +582,41 @@ int main(int argc, char **argv) {
 #else
 	fprintf(stderr, "no IRQ defined, polling at %dhz\n", i2c_poll_rate);
 	while (!kill_resquested) {
-		poll_clock_start = clock();
+		poll_clock_start = get_time_double();
+		if (debug_adv && poll_benchmark_clock_start < 0.) {poll_benchmark_clock_start = poll_clock_start;} //benchmark
 
 		i2c_poll_joystick();
 
 		//poll rate implement
+		
 		if (kill_resquested) break;
-		i2c_poll_duration = (double)(clock() - poll_clock_start) / CLOCKS_PER_SEC;
-		if (i2c_poll_duration > i2c_poll_duration_warn){printf ("WARNING: extremily long loop duration: %dms\n", (int)(i2c_poll_duration*1000));}
-		if (i2c_poll_duration < 0){i2c_poll_duration = i2c_poll_rate_time + 1.;} //rollover, force update
-		if (i2c_poll_duration < i2c_poll_rate_time){usleep((useconds_t) ((double)(i2c_poll_rate_time - i2c_poll_duration) * 1000000));} //need to sleep to match poll rate
+		i2c_poll_duration = get_time_double() - poll_clock_start;
+		//printf ("DEBUG: poll_clock_start:%lf, i2c_poll_duration:%lf\n", poll_clock_start, i2c_poll_duration);
+
+
+
+
+		if (!i2c_poll_rate_disable){
+			if (i2c_poll_duration > i2c_poll_duration_warn){printf ("WARNING: extremely long loop duration: %dms\n", (int)(i2c_poll_duration*1000));}
+			if (i2c_poll_duration < 0){i2c_poll_duration = 0;} //hum, how???
+			if (i2c_poll_duration < i2c_poll_rate_time){usleep((useconds_t) ((double)(i2c_poll_rate_time - i2c_poll_duration) * 1000000));} //need to sleep to match poll rate
+			//printf ("DEBUG: loop duration:%lf, i2c_poll_rate_time:%lf\n", get_time_double() - poll_clock_start, i2c_poll_rate_time);
+		}// else {printf ("DEBUG: loop duration:%lf\n", get_time_double() - poll_clock_start);}
+
+		if (debug_adv){ //benchmark mode
+			poll_benchmark_loop++;
+			if ((get_time_double() - poll_benchmark_clock_start) > 2.) { //report every seconds
+				printf ("DEBUG: poll loops per sec (2secs samples) : %ld\n", poll_benchmark_loop/2);
+				poll_benchmark_loop = 0; poll_benchmark_clock_start = -1.;
+			}
+		}
 	}
 #endif
 
 	app_close:
-	if (i2c_last_error!=0) {print_stderr(/*fprintf(stderr, */"DEBUG: last detected I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));}
+	if (i2c_last_error != 0) {print_stderr(/*fprintf(stderr, */"DEBUG: last detected I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));}
 
 	i2c_close();
-	uhid_destroy(fd);
+	uhid_destroy(uhid_fd);
 	return main_return;
 }
