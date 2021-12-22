@@ -233,6 +233,30 @@ void i2c_open()
 }
 
 
+/*  From the attiny code
+ 
+ * PA1 = IO0_0 = UP
+ * PA2 = IO0_1 = DOWN
+ * PB4 = IO0_2 = LEFT
+ * PB5 = IO0_3 = RIGHT
+ * PB6 = IO0_4 = BTN_A
+ * PB7 = IO0_5 = BTN_B
+ * PA6 = IO0_6 = BTN_L2  ifndef USE_ADC2
+ * PA7 = IO0_7 = BTN_R2  ifndef USE_ADC3
+ *
+ * PC0 = IO1_0 = BTN_X
+ * PC1 = IO1_1 = BTN_Y
+ * PC2 = IO1_2 = BTN_START
+ * PC3 = IO1_3 = BTN_SELECT
+ * PC4 = IO1_4 = BTN_L
+ * PC5 = IO1_5 = BTN_R
+ * PB2 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)   ifndef CONFIG_SERIAL_DEBUG (or can be used for UART TXD0 for debugging)
+ * PA5 = IO1_7 = BTN_C ifndef USE_ADC1
+ *
+ * PB3 =         POWEROFF_OUT
+ * PA3 =         PWM Backlight OUT
+ *
+ */
 void i2c_poll_joystick()
 {
     int8_t dpad_u, dpad_d, dpad_l, dpad_r;
@@ -256,9 +280,9 @@ void i2c_poll_joystick()
     ret >>= 1;
     btn_b = ret & 0b1;
     ret >>= 1;
-    btn_c = ret & 0b1;
+    btn_l2 = ret & 0b1;
     ret >>= 1;
-    btn_z = ret & 0b1;
+    btn_r2 = ret & 0b1;
     ret >>= 1;
     btn_x = ret & 0b1;
     ret >>= 1;
@@ -272,9 +296,9 @@ void i2c_poll_joystick()
     ret >>= 1;
     btn_r = ret & 0b1;
     ret >>= 1;
-    btn_l2 = ret & 0b1;
+    btn_z = ret & 0b1;
     ret >>= 1;
-    btn_r2 = ret & 0b1;
+    btn_c = ret & 0b1;
     
     gamepad_report.buttons7to0 = (btn_r << 7) | (btn_l << 6) | (btn_z << 5) | (btn_y << 4) | (btn_x << 3) | (btn_c << 2) | (btn_b << 1) | btn_a;
     gamepad_report.buttons12to8 = (btn_select << 3) | (btn_start << 2) | (btn_r2 << 1) | btn_l2;

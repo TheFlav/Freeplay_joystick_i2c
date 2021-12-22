@@ -10,6 +10,33 @@
  	    On the Pi Zero 2 W, I had to use "git clone https://github.com/PinkFreud/WiringPi.git" to get a WiringPi that knew about the Pi02
  
  */
+
+#error  The layout of the attiny chip changed a bit.  This will need to be reconfigured to use this layout but with ADCs turned on, I guess.
+
+/*
+ * PA1 = IO0_0 = UP
+ * PA2 = IO0_1 = DOWN
+ * PB4 = IO0_2 = LEFT
+ * PB5 = IO0_3 = RIGHT
+ * PB6 = IO0_4 = BTN_A
+ * PB7 = IO0_5 = BTN_B
+ * PA6 = IO0_6 = BTN_L2  ifndef USE_ADC2
+ * PA7 = IO0_7 = BTN_R2  ifndef USE_ADC3
+ *
+ * PC0 = IO1_0 = BTN_X
+ * PC1 = IO1_1 = BTN_Y
+ * PC2 = IO1_2 = BTN_START
+ * PC3 = IO1_3 = BTN_SELECT
+ * PC4 = IO1_4 = BTN_L
+ * PC5 = IO1_5 = BTN_R
+ * PB2 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)   ifndef CONFIG_SERIAL_DEBUG (or can be used for UART TXD0 for debugging)
+ * PA5 = IO1_7 = BTN_C ifndef USE_ADC1
+ *
+ * PB3 =         POWEROFF_OUT
+ * PA3 =         PWM Backlight OUT
+ *
+ */
+
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
