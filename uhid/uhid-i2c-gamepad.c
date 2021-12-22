@@ -17,7 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <termios.h>
+//#include <termios.h>
 #include <unistd.h>
 #include <linux/uhid.h>
 #include <stdint.h>
@@ -451,16 +451,16 @@ int main(int argc, char **argv) {
 	const char *path = "/dev/uhid";
 	//struct pollfd pfds[2]; //used for?
 	int ret, main_return = EXIT_SUCCESS;
-	struct termios state;
-
+	//struct termios state;
+/*
 	ret = tcgetattr(STDIN_FILENO, &state);
-	if (ret) {print_stderr(/*fprintf(stderr, */"Cannot get tty state\n");
+	if (ret) {print_stderr("Cannot get tty state\n");
 	} else {
 		state.c_lflag &= ~ICANON;
 		state.c_cc[VMIN] = 1;
 		ret = tcsetattr(STDIN_FILENO, TCSANOW, &state);
-		if (ret) print_stderr(/*fprintf(stderr, */"Cannot set tty state\n");
-	}
+		if (ret) print_stderr("Cannot set tty state\n");
+	}*/
 
 	//tty signal handling
 	signal(SIGINT, tty_signal_handler); //ctrl-c
