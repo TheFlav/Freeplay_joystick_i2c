@@ -21,14 +21,42 @@
 #include <linux/uhid.h>
 #include <stdint.h>
 
+#include <signal.h>
 #include <time.h>
-
-
+//#include <math.h>
 
 #include <linux/i2c-dev.h>
 #include <i2c/smbus.h>
 
-#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
+
+
+
+
+
+
+//prototypes
+static double get_time_double(void); //get time in double (seconds)
+
+static int uhid_create(int /*fd*/); //create uhid device TODO move header
+static void uhid_destroy(int /*fd*/); //close uhid device  TODO move header
+static int uhid_write(int /*fd*/, const struct uhid_event* /*ev*/); //write data to uhid device  TODO move header
+
+void i2c_open(void); //open I2C bus
+void i2c_close(void); //close I2C bus
+
+void tty_signal_handler(int /*sig*/);
+
+//debug
+bool debug = true; //TODO implement
+bool debug_adv = true; //TODO implement
+
+//tty output functions
+double program_start_time = 0.;
+#define print_stderr(fmt, ...) do {fprintf(stderr, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time /*(double)clock()/CLOCKS_PER_SEC*/, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
+#define print_stdout(fmt, ...) do {fprintf(stdout, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time /*(double)clock()/CLOCKS_PER_SEC*/, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
+
+
+//#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
 //#define USE_PIGPIO_IRQ //or USE_PIGPIO
 //or comment out both of the above to poll
 
@@ -42,11 +70,34 @@
  #define nINT_GPIO 10   //pigpio won't allow >31
 #endif
 
-int fd;
+//Program related vars
+bool kill_resquested = false; //allow clean close
 
+
+//UHID related vars
+const char* uhid_device_name = "Freeplay Gamepad";
+int uhid_fd;
+
+
+//I2C related vars
 #define I2C_BUSNAME "/dev/i2c-1"
 #define I2C_ADDRESS 0x20
 int i2c_file = -1;
+const int i2c_errors_report = 10; //error count before report to tty
+int i2c_errors_count = 0; //errors count that happen in a row
+int i2c_last_error = 0; //last detected error
+
+
+//poll rate implement
+bool i2c_poll_rate_disable = true; //allow full throttle update if true
+const int i2c_poll_rate = 125; //poll per sec
+const double i2c_poll_rate_time = 1. / i2c_poll_rate; //poll interval in sec
+const double i2c_poll_duration_warn = 0.15; //warning if loop duration over this
+double i2c_poll_duration = 0.; //poll loop duration
+double poll_clock_start = 0., poll_benchmark_clock_start = -1.;
+long poll_benchmark_loop = 0;
+
+
 
 
 static unsigned char rdesc[] = {
@@ -73,30 +124,23 @@ static unsigned char rdesc[] = {
  0xC0,// ; END_COLLECTION
 };
 
-static int uhid_write(int fd, const struct uhid_event *ev)
-{
-	ssize_t ret;
 
-	ret = write(fd, ev, sizeof(*ev));
-	if (ret < 0) {
-		fprintf(stderr, "Cannot write to uhid: %m\n");
-		return -errno;
-	} else if (ret != sizeof(*ev)) {
-		fprintf(stderr, "Wrong size written to uhid: %zd != %zu\n",
-			ret, sizeof(ev));
-		return -EFAULT;
-	} else {
-		return 0;
-	}
+
+//Time related functions
+static double get_time_double(void){ //get time in double (seconds)
+	struct timespec tp; int result = clock_gettime(CLOCK_MONOTONIC, &tp);
+	if (result == 0) {return tp.tv_sec + (double)tp.tv_nsec/1e9;}
+	return 0.; //failed
 }
 
-static int create(int fd)
-{
+
+//UHID related functions
+static int uhid_create(int fd) { //create uhid device
 	struct uhid_event ev;
 
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_CREATE;
-	strcpy((char*)ev.u.create.name, "Freeplay Gamepad");
+	strcpy((char*)ev.u.create.name, uhid_device_name);
 	ev.u.create.rd_data = rdesc;
 	ev.u.create.rd_size = sizeof(rdesc);
 	ev.u.create.bus = BUS_USB;
@@ -108,15 +152,43 @@ static int create(int fd)
 	return uhid_write(fd, &ev);
 }
 
-static void destroy(int fd)
-{
+static void uhid_destroy(int fd){ //close uhid device
 	struct uhid_event ev;
+
+	if (fd < 0) return; //already failed
 
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_DESTROY;
 
-	uhid_write(fd, &ev);
+	if(uhid_write(fd, &ev) == 0){fprintf(stderr, "uhid device destroyed\n");}
 }
+
+static int uhid_write(int fd, const struct uhid_event *ev){ //write data to uhid device
+	ssize_t ret = write(fd, ev, sizeof(*ev));
+	if (ret < 0) {
+		print_stderr(/*fprintf(stderr, */"write to uhid device failed with errno:%d (%m)\n", -ret);
+		return -errno;
+	} else if (ret != sizeof(*ev)) {
+		print_stderr(/*fprintf(stderr, */"wrong size wrote to uhid device: %zd != %zu\n", ret, sizeof(ev));
+		return -EFAULT;
+	} else {return 0;}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* This parses raw output reports sent by the kernel to the device. A normal
  * uhid program shouldn't do this but instead just forward the raw report.
@@ -135,8 +207,7 @@ static void handle_output(struct uhid_event *ev)
 		return;
 
 	/* print flags payload */
-	fprintf(stderr, "LED output report received with flags %x\n",
-		ev->u.output.data[1]);
+	print_stderr(/*fprintf(stderr, */"LED output report received with flags %x\n", ev->u.output.data[1]);
 }
 
 static int event(int fd)
@@ -147,39 +218,38 @@ static int event(int fd)
 	memset(&ev, 0, sizeof(ev));
 	ret = read(fd, &ev, sizeof(ev));
 	if (ret == 0) {
-		fprintf(stderr, "Read HUP on uhid-cdev\n");
+		print_stderr(/*fprintf(stderr, */"Read HUP on uhid-cdev\n");
 		return -EFAULT;
 	} else if (ret < 0) {
-		fprintf(stderr, "Cannot read uhid-cdev: %m\n");
+		print_stderr(/*fprintf(stderr, */"Cannot read uhid-cdev: %m\n");
 		return -errno;
 	} else if (ret != sizeof(ev)) {
-		fprintf(stderr, "Invalid size read from uhid-dev: %zd != %zu\n",
-			ret, sizeof(ev));
+		print_stderr(/*fprintf(stderr, */"Invalid size read from uhid-dev: %zd != %zu\n", ret, sizeof(ev));
 		return -EFAULT;
 	}
 
 	switch (ev.type) {
 	case UHID_START:
-		fprintf(stderr, "UHID_START from uhid-dev\n");
+		print_stderr(/*fprintf(stderr, */"UHID_START from uhid-dev\n");
 		break;
 	case UHID_STOP:
-		fprintf(stderr, "UHID_STOP from uhid-dev\n");
+		print_stderr(/*fprintf(stderr, */"UHID_STOP from uhid-dev\n");
 		break;
 	case UHID_OPEN:
-		fprintf(stderr, "UHID_OPEN from uhid-dev\n");
+		print_stderr(/*fprintf(stderr, */"UHID_OPEN from uhid-dev\n");
 		break;
 	case UHID_CLOSE:
-		fprintf(stderr, "UHID_CLOSE from uhid-dev\n");
+		print_stderr(/*fprintf(stderr, */"UHID_CLOSE from uhid-dev\n");
 		break;
 	case UHID_OUTPUT:
-		fprintf(stderr, "UHID_OUTPUT from uhid-dev\n");
+		print_stderr(/*fprintf(stderr, */"UHID_OUTPUT from uhid-dev\n");
 		handle_output(&ev);
 		break;
 	case UHID_OUTPUT_EV:
-		fprintf(stderr, "UHID_OUTPUT_EV from uhid-dev\n");
+		print_stderr(/*fprintf(stderr, */"UHID_OUTPUT_EV from uhid-dev\n");
 		break;
 	default:
-		fprintf(stderr, "Invalid event from uhid-dev: %u\n", ev.type);
+		print_stderr(/*fprintf(stderr, */"Invalid event from uhid-dev: %u\n", ev.type);
 	}
 
 	return 0;
@@ -220,19 +290,39 @@ static int send_event(int fd)
 }
 
 
-void i2c_open()
-{
+
+
+//I2C related
+void i2c_open(void){ //open I2C bus
 	i2c_file = open(I2C_BUSNAME, O_RDWR);
 	if (i2c_file < 0) {
-	  /* ERROR HANDLING; you can check errno to see what went wrong */
-	  exit(1);
+		print_stderr(/*fprintf(stderr, */"FATAL: failed to open '%s' with errno:%d (%m)\n", I2C_BUSNAME, -i2c_file);
+		exit(EXIT_FAILURE);
 	}
 
-	if (ioctl(i2c_file, I2C_SLAVE, I2C_ADDRESS) < 0) {
-	  /* ERROR HANDLING; you can check errno to see what went wrong */
-	  exit(1);
+	int ret = ioctl(i2c_file, I2C_SLAVE, I2C_ADDRESS);
+	if (ret < 0) {
+		close(i2c_file);
+		print_stderr(/*fprintf(stderr, */"FATAL: ioctl failed for I2C adress:0x%02x with errno:%d (%m)\n", I2C_ADDRESS, -ret);
+		exit(EXIT_FAILURE);
+	} else {
+		ret = i2c_smbus_read_byte_data(i2c_file, 0);
+		if (ret < 0) {
+			close(i2c_file);
+			print_stderr(/*fprintf(stderr, */"FATAL: failed to read from I2C adress:0x%02x with errno:%d (%m)\n", I2C_ADDRESS, -ret);
+			exit(EXIT_FAILURE);
+		}
 	}
 }
+
+void i2c_close(void){ //close I2C bus
+	if (i2c_file < 0) {print_stderr(/*fprintf(stderr, */"nothing to close\n");
+	} else {
+		if (close(i2c_file) < 0){print_stderr(/*fprintf(stderr, */"failed to close I2C handle\n");
+		} else {print_stderr(/*fprintf(stderr, */"I2C handle succefully closed\n");}
+	}
+}
+
 
 
 /*  From the attiny code
@@ -259,6 +349,11 @@ void i2c_open()
  * PA3 =         PWM Backlight OUT
  *
  */
+
+
+
+
+
 void i2c_poll_joystick()
 {
     int8_t dpad_u, dpad_d, dpad_l, dpad_r;
@@ -267,16 +362,37 @@ void i2c_poll_joystick()
     
     uint8_t dpad_bits;
 
-	int ret;
+	int ret=0;
 
 	ret = i2c_smbus_read_word_data(i2c_file, 0);
-	if(ret < 0)
-		exit(1);
+	if (ret < 0) {
+		i2c_errors_count++;
+
+		if (ret == -6) {
+			print_stderr(/*fprintf(stderr, */"FATAL: i2c_smbus_read_word_data() failed with errno %d : %m\n", -ret);
+			kill_resquested = true;
+		}
+
+		if (i2c_errors_count >= i2c_errors_report) { //report i2c heavy fail
+			print_stderr(/*fprintf(stderr, */"WARNING: I2C requests failed %d times in a row\n", i2c_errors_count);
+			i2c_errors_count = 0;
+		}
+
+		i2c_last_error=ret; return;
+	}
+
+	if (i2c_errors_count > 0){
+		print_stderr(/*fprintf(stderr, */"DEBUG: last I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));
+		i2c_last_error = i2c_errors_count = 0; //reset error count
+	}
+	
+
+
 
     ret = ~ret;         //invert all bits 1=pressed 0=unpressed
 
     dpad_bits = ret & 0x000F;
-        
+    
     ret >>= 4;
     btn_a = ret & 0b1;
     ret >>= 1;
@@ -313,172 +429,194 @@ void i2c_poll_joystick()
 
     gamepad_report.hat_x = dpad_r - dpad_l;
     gamepad_report.hat_y = dpad_u - dpad_d;
+
+	//report
+	int report_val = gamepad_report.buttons7to0 + gamepad_report.buttons12to8 + gamepad_report.hat_x + gamepad_report.hat_y;
+	int report_prev_val = gamepad_report_prev.buttons7to0 + gamepad_report_prev.buttons12to8 + gamepad_report_prev.hat_x + gamepad_report_prev.hat_y;
+	if (report_val != report_prev_val){
+		gamepad_report_prev = gamepad_report;
+		send_event(uhid_fd);
+	}
 }
 
 
 #ifdef USE_PIGPIO_IRQ
-#error Somewhat untested code here, use at your own risk
-void gpio_callback(int gpio, int level, uint32_t tick) {
-    printf("GPIO %d ",gpio);
-    switch (level) {
-        case 0: printf("LOW\n");
-                i2c_poll_joystick();
-                gamepad_report_prev = gamepad_report;
-                send_event(fd);
-                break;
-        case 1: printf("HIGH\n");
-                break;
-        case 2: printf("WATCHDOG\n");
-                break;
-    }
+//#error Somewhat untested code here, use at your own risk
+void gpio_callback(int gpio, int level, uint32_t tick) { //look to work
+	switch (level) {
+		case 0:
+			print_stderr(/*fprintf(stderr, */"DEBUG: GPIO%d low\n", gpio);
+			i2c_poll_joystick();
+			break;
+		case 1:
+			print_stderr(/*fprintf(stderr, */"DEBUG: GPIO%d high\n", gpio);
+			break;
+		case 2:
+			print_stderr(/*fprintf(stderr, */"DEBUG: GPIO%d WATCHDOG\n", gpio);
+			break;
+	}
 }
 #endif
 
 #ifdef USE_WIRINGPI_IRQ
-void attiny_irq_handler(void)
-{
+void attiny_irq_handler(void) {
+	print_stderr(/*fprintf(stderr, */"DEBUG: GPIO%d triggered\n", nINT_GPIO);
     i2c_poll_joystick();
-    gamepad_report_prev = gamepad_report;
-    send_event(fd);
 }
 #endif
 
-int main(int argc, char **argv)
-{
+void tty_signal_handler(int sig) { //handle signal func
+	print_stderr(/*fprintf(stderr, */"DEBUG: signal received: %d\n", sig);
+	kill_resquested = true;
+}
+
+
+
+
+int main(int argc, char **argv) {
+	program_start_time = get_time_double();
+
 	const char *path = "/dev/uhid";
-	int ret;
+	//struct pollfd pfds[2]; //used for?
+	int ret, main_return = EXIT_SUCCESS;
+	//struct termios state;
+/*
+	ret = tcgetattr(STDIN_FILENO, &state);
+	if (ret) {print_stderr("Cannot get tty state\n");
+	} else {
+		state.c_lflag &= ~ICANON;
+		state.c_cc[VMIN] = 1;
+		ret = tcsetattr(STDIN_FILENO, TCSANOW, &state);
+		if (ret) print_stderr("Cannot set tty state\n");
+	}*/
+
+	//tty signal handling
+	signal(SIGINT, tty_signal_handler); //ctrl-c
+	signal(SIGTERM, tty_signal_handler); //SIGTERM from htop or other
+	//signal(SIGKILL, tty_signal_handler); //doesn't work, program get killed before able to handle
+
+	if (argc >= 2) { //TODO
+		if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
+			fprintf(stderr, "Usage: %s [%s]\n", argv[0], path);
+			return EXIT_SUCCESS;
+		} else {
+			path = argv[1];
+		}
+	}
+
+	uhid_fd = open(path, O_RDWR | O_CLOEXEC);
+	if (uhid_fd < 0) {
+		print_stderr(/*fprintf(stderr, */"failed to open uhid-cdev %s with errno:%d (%m)\n", path, -uhid_fd);return EXIT_FAILURE;
+	} else {print_stderr(/*fprintf(stderr, */"uhid-cdev %s opened\n", path);}
+
+	ret = uhid_create(uhid_fd);
+	if (ret) {close(uhid_fd); return EXIT_FAILURE;
+	} else {print_stderr(/*fprintf(stderr, */"uhid device created\n");}
+
+	//used for?
+	/*
+	pfds[0].fd = STDIN_FILENO;
+	pfds[0].events = POLLIN;
+	pfds[1].fd = fd;
+	pfds[1].events = POLLIN;
+*/
+
+	i2c_open(); //open I2C bus
+    print_stderr(/*fprintf(stderr, */"I2C bus '%s', address:0x%02x opened\n", I2C_BUSNAME, I2C_ADDRESS);
+
+	i2c_poll_joystick(); //initial poll
+
+#ifdef USE_WIRINGPI_IRQ
+	#define WIRINGPI_CODES 1 //allow error code return
+	int err;
+	if ((err = wiringPiSetupGpio()) < 0){ //use BCM numbering
+		print_stderr("FATAL: failed to initialize wiringPi (errno:%d)\n", -err);
+		main_return = EXIT_FAILURE; goto app_close;
+	}
+
+	if ((err = wiringPiISR(nINT_GPIO, INT_EDGE_FALLING, &attiny_irq_handler)) < 0){
+		print_stderr("FATAL: wiringPi failed to set callback for GPIO%d\n", nINT_GPIO);
+		main_return = EXIT_FAILURE; goto app_close;
+	} else {fprintf(stderr, "using wiringPi IRQ\n");}
+#endif
+    
+#ifdef USE_PIGPIO_IRQ
+	int ver, err;
+	if ((ver = gpioInitialise()) > 0){print_stderr("pigpio: version: %d\n",ver);
+	} else {print_stderr("FATAL: failed to detect pigpio version\n"); exit(EXIT_FAILURE);}
+
+	if (nINT_GPIO > 31){ //check pin
+		print_stderr("FATAL: pigpio limited to GPIO0-31, asked for %d\n", nINT_GPIO);
+		main_return = EXIT_FAILURE; goto app_close;
+	}
+
+	if ((err = gpioSetMode(nINT_GPIO, PI_INPUT)) != 0){ //set as input
+		print_stderr("FATAL: pigpio failed to set GPIO%d to input\n", nINT_GPIO);
+		main_return = EXIT_FAILURE; goto app_close;
+	}
 	
-
-
-	fprintf(stderr, "Open uhid-cdev %s\n", path);
-	fd = open(path, O_RDWR | O_CLOEXEC);
-	if (fd < 0) {
-		fprintf(stderr, "Cannot open uhid-cdev %s: %m\n", path);
-		return EXIT_FAILURE;
+	if ((err = gpioSetPullUpDown(nINT_GPIO, PI_PUD_UP)) != 0){ //set pull up
+		print_stderr("FATAL: pigpio failed to set PullUp for GPIO%d\n", nINT_GPIO);
+		main_return = EXIT_FAILURE; goto app_close;
 	}
 
-	fprintf(stderr, "Create uhid device\n");
-	ret = create(fd);
-	if (ret) {
-		close(fd);
-		return EXIT_FAILURE;
+	if ((err = gpioGlitchFilter(nINT_GPIO, 100)) != 0){ //glitch filter to avoid bounce
+		print_stderr("FATAL: pigpio failed to set glitch filter for GPIO%d\n", nINT_GPIO);
+		main_return = EXIT_FAILURE; goto app_close;
 	}
 
-	i2c_open();
+	if ((err = gpioSetAlertFunc(nINT_GPIO, gpio_callback)) != 0){ //callback setup
+		print_stderr("FATAL: pigpio failed to set callback for GPIO%d\n", nINT_GPIO);
+		main_return = EXIT_FAILURE; goto app_close;
+	} else {fprintf(stderr, "using pigpio IRQ\n");}
+
+	//signal callbacks setup
+	gpioSetSignalFunc(SIGINT, tty_signal_handler); //ctrl-c
+	gpioSetSignalFunc(SIGTERM, tty_signal_handler); //SIGTERM from htop or other
+#endif
     
     fprintf(stderr, "Press '^C' to quit...\n");
-
 	
-	clock_t time0, time1;
-    double cpu_time_used;
-     
-	uint32_t counter0, counter1;
-   
-#ifdef USE_WIRINGPI_IRQ
-    wiringPiSetupGpio();        //use BCM numbering
-    wiringPiISR(nINT_GPIO, INT_EDGE_FALLING, &attiny_irq_handler);
-    i2c_poll_joystick();//make sure it's cleared out
-    gamepad_report_prev = gamepad_report;
-    send_event(fd);
-	
+#if defined USE_WIRINGPI_IRQ || defined USE_PIGPIO_IRQ
+	while (!kill_resquested){usleep(100000);} //sleep until app close requested
+#else
+	fprintf(stderr, "no IRQ defined, polling at %dhz\n", i2c_poll_rate);
+	while (!kill_resquested) {
+		poll_clock_start = get_time_double();
+		if (debug_adv && poll_benchmark_clock_start < 0.) {poll_benchmark_clock_start = poll_clock_start;} //benchmark
 
-    time0 = clock();
-	ret = i2c_smbus_read_i2c_block_data(i2c_file, 0x0C, 4, (uint8_t *)&counter0);
-	if(ret < 0)
-		exit(1);	
-	
-    while(1)
-    {
-	    time1 = clock();
-		cpu_time_used = ((double) (time1 - time0)) / CLOCKS_PER_SEC;
-		
-		if(cpu_time_used > 10)
-		{
-			ret = i2c_smbus_read_i2c_block_data(i2c_file, 0x0C, 4, (uint8_t *)&counter1);
-			if(ret < 0)
-				exit(1);
-			
-			printf("  %d loops in %f seconds (0x%04X, 0x%04X)\n", counter1-counter0, cpu_time_used, counter0, counter1);
-			time0 = time1;
-			counter0 = counter1;
-		}
-    }
-#endif
-    
-#ifdef USE_PIGPIO_IRQ
- {
-        int ver;
-        int err;
-        
-        if ((ver =gpioInitialise()) > 0)
-            printf("pigpio version: %d\n",ver);
-        else
-            exit(1);
-
-        // sets the GPIO to input
-        if ((err = gpioSetMode(nINT_GPIO,PI_INPUT)) != 0)
-            exit(1);
-
-        // sets the pull up to high so I can ground it with the push button
-        if ((err = gpioSetPullUpDown(nINT_GPIO,PI_PUD_UP)) != 0)
-            exit(1);
-
-        // this is here because I'm testing with a push button that will bounce
-        if ((err = gpioGlitchFilter(nINT_GPIO,100)) != 0)
-            exit(1);
-
-        // set the call back function on the GPIO level change
-        #error Investigate why this wont work with nINT_GPIO set to 40!
-        if ((err = gpioSetAlertFunc(nINT_GPIO,gpio_callback)) != 0)
-            exit(1);
-
-        // sleep indefinitely
-        while (1)
-            time_sleep(0.1);
-    }
-#endif
-	
-	
-
-
-    time0 = clock();
-	ret = i2c_smbus_read_i2c_block_data(i2c_file, 0x0C, 4, (uint8_t *)&counter0);
-	if(ret < 0)
-		exit(1);
-    
-	while (1) {
 		i2c_poll_joystick();
 
-		if(gamepad_report.buttons7to0 != gamepad_report_prev.buttons7to0 || gamepad_report.buttons12to8 != gamepad_report_prev.buttons12to8)
-		{
-			gamepad_report_prev = gamepad_report;
-			send_event(fd);
+		//poll rate implement
+		
+		if (kill_resquested) break;
+		i2c_poll_duration = get_time_double() - poll_clock_start;
+		//printf ("DEBUG: poll_clock_start:%lf, i2c_poll_duration:%lf\n", poll_clock_start, i2c_poll_duration);
+
+
+
+
+		if (!i2c_poll_rate_disable){
+			if (i2c_poll_duration > i2c_poll_duration_warn){printf ("WARNING: extremely long loop duration: %dms\n", (int)(i2c_poll_duration*1000));}
+			if (i2c_poll_duration < 0){i2c_poll_duration = 0;} //hum, how???
+			if (i2c_poll_duration < i2c_poll_rate_time){usleep((useconds_t) ((double)(i2c_poll_rate_time - i2c_poll_duration) * 1000000));} //need to sleep to match poll rate
+			//printf ("DEBUG: loop duration:%lf, i2c_poll_rate_time:%lf\n", get_time_double() - poll_clock_start, i2c_poll_rate_time);
+		}// else {printf ("DEBUG: loop duration:%lf\n", get_time_double() - poll_clock_start);}
+
+		if (debug_adv){ //benchmark mode
+			poll_benchmark_loop++;
+			if ((get_time_double() - poll_benchmark_clock_start) > 2.) { //report every seconds
+				printf ("DEBUG: poll loops per sec (2secs samples) : %ld\n", poll_benchmark_loop/2);
+				poll_benchmark_loop = 0; poll_benchmark_clock_start = -1.;
+			}
 		}
-		
-		
-		
-		
-	    time1 = clock();
-		cpu_time_used = ((double) (time1 - time0)) / CLOCKS_PER_SEC;
-		
-		if(cpu_time_used > 2)
-		{
-			ret = i2c_smbus_read_i2c_block_data(i2c_file, 0x0C, 4, (uint8_t *)&counter1);
-			if(ret < 0)
-				exit(1);
-			
-			printf("  %d loops in %f seconds (0x%04X, 0x%04X)\n", counter1-counter0, cpu_time_used, counter0, counter1);
-			time0 = time1;
-			counter0 = counter1;
-		}		
 	}
+#endif
 
-	fprintf(stderr, "Destroy uhid device\n");
-	destroy(fd);
-	return EXIT_SUCCESS;
+	app_close:
+	if (i2c_last_error != 0) {print_stderr(/*fprintf(stderr, */"DEBUG: last detected I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));}
+
+	i2c_close();
+	uhid_destroy(uhid_fd);
+	return main_return;
 }
-
-
-
-
-
