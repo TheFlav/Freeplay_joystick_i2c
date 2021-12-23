@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <linux/hid.h>
 #include <linux/uhid.h>
 #include <stdint.h>
 
@@ -59,7 +60,7 @@ double program_start_time = 0.;
 #define print_stdout(fmt, ...) do {fprintf(stdout, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time /*(double)clock()/CLOCKS_PER_SEC*/, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
 
 //IRQ related
-#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
+//#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
 //#define USE_PIGPIO_IRQ //or USE_PIGPIO
 //or comment out both of the above to poll
 
@@ -105,46 +106,39 @@ double poll_clock_start = 0., poll_benchmark_clock_start = -1.;
 long poll_benchmark_loop = 0;
 
 
-
-
 static unsigned char rdesc[] = { //TODO: dynamic build
-    0x05, 0x01, //; USAGE_PAGE (Generic Desktop)
-    0x09, 0x05, //; USAGE (Gamepad)
-    0xA1, 0x01, //; COLLECTION (Application)
-    0x05, 0x09,// ; USAGE_PAGE (Button)
-    0x19, 0x01, //; USAGE_MINIMUM (Button 1)
-    0x29, 0x0C, //; USAGE_MAXIMUM (Button 12)
-    0x15, 0x00, //; LOGICAL_MINIMUM (0)
-    0x25, 0x01, //; LOGICAL_MAXIMUM (1)
-    0x75, 0x01, //; REPORT_SIZE (1)
-    0x95, 0x10, //; REPORT_COUNT (16)
-    0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-    
-        0x05, 0x01,  // Usage Page (Generic Desktop Ctrls)
-        0x15, 0xFF,  // Logical Minimum (-1)
-        0x25, 0x01,              //     LOGICAL_MAXIMUM (1)
-        0x09, 0x34,  // Usage (X)
-        0x09, 0x35,  // Usage (Y)
-        0x75, 0x08,  // Report Size (8)
-        0x95, 0x02,  // Report Count (2)
-        0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+0x05, 0x01, //; USAGE_PAGE (Generic Desktop)
+0x09, 0x05, //; USAGE (Gamepad)
+0xA1, 0x01, //; COLLECTION (Application)
+	0x05, 0x09, //; USAGE_PAGE (Button)
+	0x19, 0x01, //; USAGE_MINIMUM (Button 1)
+	0x29, 0x0C, //; USAGE_MAXIMUM (Button 12)
+	0x15, 0x00, //; LOGICAL_MINIMUM (0)
+	0x25, 0x01, //; LOGICAL_MAXIMUM (1)
+	0x75, 0x01, //; REPORT_SIZE (1)
+	0x95, 0x10, //; REPORT_COUNT (16)
+	0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
 
+	0x05, 0x01, // Usage Page (Generic Desktop)
+	0x15, 0xFF, // Logical Minimum (-1)
+	0x25, 0x01, // LOGICAL_MAXIMUM (1)
+	0x09, 0x34, // Usage (RY)
+	0x09, 0x35, // Usage (RZ)
+	0x75, 0x08, // Report Size (8)
+	0x95, 0x02, // Report Count (2)
+	0x81, 0x02, // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
 
-       0x05, 0x01,  // Usage Page (Generic Desktop Ctrls)
-    0x15, 0x00,                    //     LOGICAL_MINIMUM (0)
-    0x26, 0xFF, 0xFF, 0x00,              //     LOGICAL_MAXIMUM (0xFFFF)
-//       0x15, 0x00,  // Logical Minimum (0)
-//       0x26, 0xff, 0xFF, 0x00,              //     LOGICAL_MAXIMUM (0xFFFF)
-       0x09, 0x30,  // Usage (X)
-       0x09, 0x31,  // Usage (Y)
-       0x09, 0x32,  // Usage (Z)
-       0x09, 0x33,  // Usage (?)
-       0x75, 0x10,  // Report Size (16)
-       0x95, 0x04,  // Report Count (4)
-       0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-     
-
- 0xC0,// ; END_COLLECTION
+	0x05, 0x01, // Usage Page (Generic Desktop)
+	0x15, 0x00, // LOGICAL_MINIMUM (0)
+	0x26, 0xFF, 0xFF, 0x00, // LOGICAL_MAXIMUM (0xFFFF)
+	0x09, 0x30,  // Usage (X)
+	0x09, 0x31,  // Usage (Y)
+	0x09, 0x32,  // Usage (Z)
+	0x09, 0x33,  // Usage (RX)
+	0x75, 0x10,  // Report Size (16)
+	0x95, 0x04,  // Report Count (4)
+	0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+0xC0,// ; END_COLLECTION
 };
 
 
@@ -217,66 +211,60 @@ static int uhid_write(int fd, const struct uhid_event *ev){ //write data to uhid
  * uhid program shouldn't do this but instead just forward the raw report.
  * However, for ducomentational purposes, we try to detect LED events here and
  * print debug messages for it. */
-static void handle_output(struct uhid_event *ev)
-{
-	/* LED messages are adverised via OUTPUT reports; ignore the rest */
-	if (ev->u.output.rtype != UHID_OUTPUT_REPORT)
-		return;
-	/* LED reports have length 2 bytes */
-	if (ev->u.output.size != 2)
-		return;
-	/* first byte is report-id which is 0x02 for LEDs in our rdesc */
-	if (ev->u.output.data[0] != 0x2)
-		return;
-
-	/* print flags payload */
-	print_stderr(/*fprintf(stderr, */"LED output report received with flags %x\n", ev->u.output.data[1]);
+/*
+static void handle_output(struct uhid_event *ev){
+	if (ev->u.output.rtype != UHID_OUTPUT_REPORT) return; //LED messages are adverised via OUTPUT reports; ignore the rest
+	if (ev->u.output.size != 2) return; //LED reports have length 2 bytes
+	if (ev->u.output.data[0] != 0x2) return; //first byte is report-id which is 0x02 for LEDs in our rdesc
+	print_stderr("LED output report received with flags %x\n", ev->u.output.data[1]); //print flags payload
 }
-
-static int event(int fd)
-{
+*/
+/*
+static int event(int fd) {
 	struct uhid_event ev;
 	ssize_t ret;
 
 	memset(&ev, 0, sizeof(ev));
 	ret = read(fd, &ev, sizeof(ev));
 	if (ret == 0) {
-		print_stderr(/*fprintf(stderr, */"Read HUP on uhid-cdev\n");
+		print_stderr("Read HUP on uhid-cdev\n");
 		return -EFAULT;
 	} else if (ret < 0) {
-		print_stderr(/*fprintf(stderr, */"Cannot read uhid-cdev: %m\n");
+		print_stderr("Cannot read uhid-cdev: %m\n");
 		return -errno;
 	} else if (ret != sizeof(ev)) {
-		print_stderr(/*fprintf(stderr, */"Invalid size read from uhid-dev: %zd != %zu\n", ret, sizeof(ev));
+		print_stderr("Invalid size read from uhid-dev: %zd != %zu\n", ret, sizeof(ev));
 		return -EFAULT;
 	}
 
 	switch (ev.type) {
 	case UHID_START:
-		print_stderr(/*fprintf(stderr, */"UHID_START from uhid-dev\n");
+		print_stderr("UHID_START from uhid-dev\n");
 		break;
 	case UHID_STOP:
-		print_stderr(/*fprintf(stderr, */"UHID_STOP from uhid-dev\n");
+		print_stderr("UHID_STOP from uhid-dev\n");
 		break;
 	case UHID_OPEN:
-		print_stderr(/*fprintf(stderr, */"UHID_OPEN from uhid-dev\n");
+		print_stderr("UHID_OPEN from uhid-dev\n");
 		break;
 	case UHID_CLOSE:
-		print_stderr(/*fprintf(stderr, */"UHID_CLOSE from uhid-dev\n");
+		print_stderr("UHID_CLOSE from uhid-dev\n");
 		break;
 	case UHID_OUTPUT:
-		print_stderr(/*fprintf(stderr, */"UHID_OUTPUT from uhid-dev\n");
+		print_stderr("UHID_OUTPUT from uhid-dev\n");
 		handle_output(&ev);
 		break;
 	case UHID_OUTPUT_EV:
-		print_stderr(/*fprintf(stderr, */"UHID_OUTPUT_EV from uhid-dev\n");
+		print_stderr("UHID_OUTPUT_EV from uhid-dev\n");
 		break;
 	default:
-		print_stderr(/*fprintf(stderr, */"Invalid event from uhid-dev: %u\n", ev.type);
+		print_stderr("Invalid event from uhid-dev: %u\n", ev.type);
 	}
 
 	return 0;
 }
+*/
+
 /*
 static bool btn1_down;
 static bool btn2_down;
@@ -314,15 +302,14 @@ struct gamepad_report_t {
 } gamepad_report, gamepad_report_prev;
 
 
-static int send_event(int fd) {
+static int send_event(int fd) { //send event to uhid device
 	struct uhid_event ev;
-	int index = 4;
 
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_INPUT;
-    ev.u.input.size = 4;
-	if (uhid_js_left_enable) {ev.u.input.size += 4;}
-	if (uhid_js_right_enable) {ev.u.input.size += 4;}
+    ev.u.input.size = 12;
+	//if (uhid_js_left_enable) {ev.u.input.size += 4;}
+	//if (uhid_js_right_enable) {ev.u.input.size += 4;}
 
 	ev.u.input.data[0] = gamepad_report.buttons7to0;
 	ev.u.input.data[1] = gamepad_report.buttons15to8;
@@ -331,19 +318,23 @@ static int send_event(int fd) {
 	ev.u.input.data[3] = (unsigned char) gamepad_report.hat_y;
 
 	if (uhid_js_left_enable) {
-		ev.u.input.data[index] = gamepad_report.left_x & 0xFF;
-		ev.u.input.data[index+1] = gamepad_report.left_x >> 8;
-		ev.u.input.data[index+2] = gamepad_report.left_y & 0xFF;
-		ev.u.input.data[index+3] = gamepad_report.left_y >> 8;
-		index += 4;
+		ev.u.input.data[4] = gamepad_report.left_x & 0xFF;
+		ev.u.input.data[5] = gamepad_report.left_x >> 8;
+		ev.u.input.data[6] = gamepad_report.left_y & 0xFF;
+		ev.u.input.data[7] = gamepad_report.left_y >> 8;
+	} else {
+		ev.u.input.data[4] = 0xFF; ev.u.input.data[5] = 0x7F;
+		ev.u.input.data[6] = 0xFF; ev.u.input.data[7] = 0x7F;
 	}
 
 	if (uhid_js_right_enable) {
-		ev.u.input.data[index] = gamepad_report.right_x & 0xFF;
-		ev.u.input.data[index+1] = gamepad_report.right_x >> 8;
-		ev.u.input.data[index+2] = gamepad_report.right_y & 0xFF;
-		ev.u.input.data[index+3] = gamepad_report.right_y >> 8;
-		//index += 4;
+		ev.u.input.data[8] = gamepad_report.right_x & 0xFF;
+		ev.u.input.data[9] = gamepad_report.right_x >> 8;
+		ev.u.input.data[10] = gamepad_report.right_y & 0xFF;
+		ev.u.input.data[11] = gamepad_report.right_y >> 8;
+	} else {
+		ev.u.input.data[8] = 0xFF; ev.u.input.data[9] = 0x7F;
+		ev.u.input.data[10] = 0xFF; ev.u.input.data[11] = 0x7F;
 	}
 
 	return uhid_write(fd, &ev);
@@ -415,29 +406,21 @@ void i2c_close(void){ //close I2C bus
 
 
 void i2c_poll_joystick(){
-    //int8_t dpad_u, dpad_d, dpad_l, dpad_r;
-    
-    //bool btn_a, btn_b, btn_c, btn_x, btn_y, btn_z, btn_l, btn_r, btn_start, btn_select, btn_l2, btn_r2;
+	/*
+	* Benchmark:
+	* i2c_smbus_read_word_data : 2660 polls per sec
+	* i2c_smbus_read_i2c_block_data (2) : 2650 polls per sec
+	* i2c_smbus_read_i2c_block_data (10) : 1312 polls per sec
+	* 10x i2c_smbus_read_byte_data : 323 polls per sec
+	*/
 
-    //uint8_t buttons_count = 24;
-	//bool btn [buttons_count];
-	//for (uint8_t i=0; i < buttons_count; i++){btn[i]=false;} //bool reset
+	int read_limit = 2; if (uhid_js_left_enable + uhid_js_right_enable){read_limit = 10;}
+	int ret = i2c_smbus_read_i2c_block_data(i2c_file, 0, read_limit, (uint8_t *)&i2c_registers);
 
-	//int ret = i2c_smbus_read_word_data(i2c_file, 0);
-	int ret = i2c_smbus_read_i2c_block_data(i2c_file, 0, 10 /*sizeof(i2c_registers)*/, (uint8_t *)&i2c_registers);
 	if (ret < 0) {
 		i2c_errors_count++;
-
-		if (ret == -6) {
-			print_stderr(/*fprintf(stderr, */"FATAL: i2c_smbus_read_word_data() failed with errno %d : %m\n", -ret);
-			kill_resquested = true;
-		}
-
-		if (i2c_errors_count >= i2c_errors_report) { //report i2c heavy fail
-			print_stderr(/*fprintf(stderr, */"WARNING: I2C requests failed %d times in a row\n", i2c_errors_count);
-			i2c_errors_count = 0;
-		}
-
+		if (ret == -6) {print_stderr(/*fprintf(stderr, */"FATAL: i2c_smbus_read_word_data() failed with errno %d : %m\n", -ret); kill_resquested = true;}
+		if (i2c_errors_count >= i2c_errors_report) {print_stderr(/*fprintf(stderr, */"WARNING: I2C requests failed %d times in a row\n", i2c_errors_count); i2c_errors_count = 0;}
 		i2c_last_error = ret; return;
 	}
 
@@ -469,53 +452,11 @@ void i2c_poll_joystick(){
 		report_val = gamepad_report.buttons7to0 + gamepad_report.buttons15to8 + gamepad_report.hat_x + gamepad_report.hat_y;
 		report_prev_val = gamepad_report_prev.buttons7to0 + gamepad_report_prev.buttons15to8 + gamepad_report_prev.hat_x + gamepad_report_prev.hat_y;
 	}
-
-	//report
-	if (report_val != report_prev_val){
+	
+	if (report_val != report_prev_val){ //report
 		gamepad_report_prev = gamepad_report;
 		send_event(uhid_fd);
 	}
-
-/*
-    ret = ~ret;         //invert all bits 1=pressed 0=unpressed
-
-    dpad_u = (dpad_bits >> 0 & 0x01);
-    dpad_d = (dpad_bits >> 1 & 0x01);
-    
-    dpad_l = (dpad_bits >> 2 & 0x01);
-    dpad_r = (dpad_bits >> 3 & 0x01);
-
-    ret >>= 4;
-    btn_a = ret & 0b1;
-    ret >>= 1;
-    btn_b = ret & 0b1;
-    ret >>= 1;
-    btn_l2 = ret & 0b1;
-    ret >>= 1;
-    btn_r2 = ret & 0b1;
-    ret >>= 1;
-    btn_x = ret & 0b1;
-    ret >>= 1;
-    btn_y = ret & 0b1;
-    ret >>= 1;
-    btn_start = ret & 0b1;
-    ret >>= 1;
-    btn_select = ret & 0b1;
-    ret >>= 1;
-    btn_l = ret & 0b1;
-    ret >>= 1;
-    btn_r = ret & 0b1;
-    ret >>= 1;
-    btn_z = ret & 0b1;
-    ret >>= 1;
-    btn_c = ret & 0b1;
-    
-    gamepad_report.buttons7to0 = (btn_r << 7) | (btn_l << 6) | (btn_z << 5) | (btn_y << 4) | (btn_x << 3) | (btn_c << 2) | (btn_b << 1) | btn_a;
-    gamepad_report.buttons12to8 = (btn_select << 3) | (btn_start << 2) | (btn_r2 << 1) | btn_l2;
-
-    gamepad_report.hat_x = dpad_r - dpad_l;
-    gamepad_report.hat_y = dpad_u - dpad_d;
-*/
 }
 
 
