@@ -10,6 +10,36 @@
  	    On the Pi Zero 2 W, I had to use "git clone https://github.com/PinkFreud/WiringPi.git" to get a WiringPi that knew about the Pi02
  
  */
+
+
+/*  From the attiny code
+ 
+ * PA1 = IO0_0 = UP
+ * PA2 = IO0_1 = DOWN
+ * PB4 = IO0_2 = LEFT
+ * PB5 = IO0_3 = RIGHT
+ * PB6 = IO0_4 = BTN_A
+ * PB7 = IO0_5 = BTN_B
+ * PA6 = IO0_6 = BTN_L2  ifndef USE_ADC2
+ * PA7 = IO0_7 = BTN_R2  ifndef USE_ADC3
+ *
+ * PC0 = IO1_0 = BTN_X
+ * PC1 = IO1_1 = BTN_Y
+ * PC2 = IO1_2 = BTN_START
+ * PC3 = IO1_3 = BTN_SELECT
+ * PC4 = IO1_4 = BTN_L
+ * PC5 = IO1_5 = BTN_R
+ * PB2 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)   ifndef CONFIG_SERIAL_DEBUG (or can be used for UART TXD0 for debugging)
+ * PA5 = IO1_7 = BTN_C ifndef USE_ADC1
+ *
+ * PB3 =         POWEROFF_OUT
+ * PA3 =         PWM Backlight OUT
+ *
+ */
+
+
+
+
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -24,30 +54,55 @@
 
 #include <signal.h>
 #include <time.h>
-//#include <math.h>
+#include <ctype.h>
 
 #include <linux/i2c-dev.h>
 #include <i2c/smbus.h>
 
 
 
+//IRQ specific
+int nINT_GPIO = 40; //gpio pin used for irq, limited to 31 for pigpio, set to -1 to disable
+#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
+//#define USE_PIGPIO_IRQ //or USE_PIGPIO
+//or comment out both of the above to poll
+
+#if defined(USE_PIGPIO_IRQ) && defined(USE_WIRINGPI_IRQ)
+	#error Cannot do both IRQ styles
+#elif defined(USE_WIRINGPI_IRQ)
+	#include <wiringPi.h>
+#elif defined(USE_PIGPIO_IRQ)
+	#include <pigpio.h>
+#endif
 
 
-
-
-//prototypes
+//Prototypes
 static double get_time_double(void); //get time in double (seconds)
 
-static int uhid_create(int /*fd*/); //create uhid device TODO move header
-static void uhid_destroy(int /*fd*/); //close uhid device  TODO move header
-static int uhid_write(int /*fd*/, const struct uhid_event* /*ev*/); //write data to uhid device  TODO move header
+static int cstring_in_cstring_array (char** /*arr*/, char* /*value*/, unsigned int /*arrSize*/, bool /*skipNl*/); //search in char array, return index if found, -1 if not
+static bool config_save (bool /*reset*/); //save config file
+static void config_parse (void); //parse/create program config file
 
-void i2c_open(void); //open I2C bus
-void i2c_close(void); //close I2C bus
+static int uhid_create(int /*fd*/); //create uhid device
+static void uhid_destroy(int /*fd*/); //close uhid device
+static int uhid_write(int /*fd*/, const struct uhid_event* /*ev*/); //write data to uhid device
+static int uhid_send_event(int /*fd*/); //send event to uhid device
 
-void tty_signal_handler(int /*sig*/);
+static void i2c_open(void); //open I2C bus
+static void i2c_close(void); //close I2C bus
+static int adc_correct_offset_center(int /*adc_resolution*/, int /*adc_value*/, int /*adc_min*/, int /*adc_max*/, int /*adc_offsets*/, int /*inside_flat*/, int /*outside_flat*/); //apply offset center, expand adc range, inside/ouside flat
+static void i2c_poll_joystick(void); //poll data from i2c device
 
-void debug_print_binary_int (int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format
+#ifdef USE_PIGPIO_IRQ
+static void gpio_callback(int /*gpio*/, int /*level*/, uint32_t /*tick*/);
+#elif defined(USE_WIRINGPI_IRQ)
+static void attiny_irq_handler(void);
+#endif
+
+static void tty_signal_handler(int /*sig*/); //handle signal func
+
+static void debug_print_binary_int (int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format
+
 
 //debug
 bool debug = true; //TODO implement
@@ -60,24 +115,10 @@ double program_start_time = 0.;
 #define print_stdout(fmt, ...) do {fprintf(stdout, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time /*(double)clock()/CLOCKS_PER_SEC*/, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
 
 //IRQ related
-//#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
-//#define USE_PIGPIO_IRQ //or USE_PIGPIO
-//or comment out both of the above to poll
-
-#if defined(USE_PIGPIO_IRQ) && defined(USE_WIRINGPI_IRQ)
-	#error Cannot do both IRQ styles
-#elif defined(USE_WIRINGPI_IRQ)
-	#include <wiringPi.h>
-	#define nINT_GPIO 40
-#elif defined(USE_PIGPIO_IRQ)
-	#include <pigpio.h>
-	#define nINT_GPIO 10   //pigpio won't allow >31
-#endif
 bool irq_enable = false; //is set during runtime, do not edit
 
 //Program related vars
 bool kill_resquested = false; //allow clean close
-
 
 //UHID related vars
 const char* uhid_device_name = "Freeplay Gamepad";
@@ -85,209 +126,25 @@ int uhid_fd;
 bool uhid_js_left_enable = false;
 bool uhid_js_right_enable = false;
 
-
-//ADC related vars
-bool adc_firstrun = true;
-int adc_res = 16; unsigned int adc_res_limit = 0xFFFF;
-int adc_min[] = {8896,9280,0,0}, adc_max[] = {48570, 49990, 0xFFFF, 0xFFFF}; //store axis min-max values
-//int adc_min[] = {0,0,0,0}, adc_max[] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF}; //store axis min-max values
-int adc_offsets[] = {0xFFFF/2, 0xFFFF/2, 0xFFFF/2, 0xFFFF/2}; //store axis offset values
-bool adc_reversed[] = {false,false,false,false}; //store axis reversed bools
-int adc_values_min[] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF}, adc_values_max[] = {0,0,0,0}; //store raw axis detected limits during usage for driver exit report
-//int adc_mux_map[] = {-1,-1,-1,-1}; //is main client of mux device, mux map
-
-int/*int16_t*/ /*adc_fuzz[] = {16,16,16,16}, */adc_flat[] = {5,5,5,5}, adc_flat_outside[] = {5,5,5,5}; //store axis fuzz-flat values TODO convert flat to percent
-bool adc_autocenter[] = {false,false,false,false}; //store axis autocenter bools
-
-
-
-
+struct gamepad_report_t {
+    int8_t hat_x;
+    int8_t hat_y;
+    uint8_t buttons7to0;
+    uint8_t buttons15to8;
+    uint16_t left_x;
+    uint16_t left_y;
+    uint16_t right_x;
+    uint16_t right_y;
+} gamepad_report, gamepad_report_prev;
 
 //I2C related vars
-#define I2C_BUSNAME "/dev/i2c-1"
-#define I2C_ADDRESS 0x20
+int i2c_bus = 1;
+int i2c_addr = 0x20;
 int i2c_file = -1;
 const int i2c_errors_report = 10; //error count before report to tty
 int i2c_errors_count = 0; //errors count that happen in a row
 int i2c_last_error = 0; //last detected error
 
-
-//poll rate implement
-const int i2c_poll_rate = 125; //poll per sec
-const double i2c_poll_rate_time = 1. / i2c_poll_rate; //poll interval in sec
-const double i2c_poll_duration_warn = 0.15; //warning if loop duration over this
-double i2c_poll_duration = 0.; //poll loop duration
-double poll_clock_start = 0., poll_benchmark_clock_start = -1.;
-long poll_benchmark_loop = 0;
-
-
-static unsigned char rdesc[] = { //TODO: dynamic build
-0x05, 0x01, //; USAGE_PAGE (Generic Desktop)
-0x09, 0x05, //; USAGE (Gamepad)
-0xA1, 0x01, //; COLLECTION (Application)
-	0x05, 0x09, //; USAGE_PAGE (Button)
-	0x19, 0x01, //; USAGE_MINIMUM (Button 1)
-	0x29, 0x0C, //; USAGE_MAXIMUM (Button 12)
-	0x15, 0x00, //; LOGICAL_MINIMUM (0)
-	0x25, 0x01, //; LOGICAL_MAXIMUM (1)
-	0x75, 0x01, //; REPORT_SIZE (1)
-	0x95, 0x10, //; REPORT_COUNT (16)
-	0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-
-	0x05, 0x01, // Usage Page (Generic Desktop)
-	0x15, 0xFF, // Logical Minimum (-1)
-	0x25, 0x01, // LOGICAL_MAXIMUM (1)
-	0x09, 0x34, // Usage (RY)
-	0x09, 0x35, // Usage (RZ)
-	0x75, 0x08, // Report Size (8)
-	0x95, 0x02, // Report Count (2)
-	0x81, 0x02, // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-
-	0x05, 0x01, // Usage Page (Generic Desktop)
-	0x15, 0x00, // LOGICAL_MINIMUM (0)
-	0x26, 0xFF, 0xFF, 0x00, // LOGICAL_MAXIMUM (0xFFFF)
-	0x09, 0x30,  // Usage (X)
-	0x09, 0x31,  // Usage (Y)
-	0x09, 0x32,  // Usage (Z)
-	0x09, 0x33,  // Usage (RX)
-	0x75, 0x10,  // Report Size (16)
-	0x95, 0x04,  // Report Count (4)
-	0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-0xC0,// ; END_COLLECTION
-};
-
-
-
-//Time related functions
-static double get_time_double(void){ //get time in double (seconds)
-	struct timespec tp; int result = clock_gettime(CLOCK_MONOTONIC, &tp);
-	if (result == 0) {return tp.tv_sec + (double)tp.tv_nsec/1e9;}
-	return 0.; //failed
-}
-
-
-//UHID related functions
-static int uhid_create(int fd) { //create uhid device
-	struct uhid_event ev;
-
-	memset(&ev, 0, sizeof(ev));
-	ev.type = UHID_CREATE;
-	strcpy((char*)ev.u.create.name, uhid_device_name);
-	ev.u.create.rd_data = rdesc;
-	ev.u.create.rd_size = sizeof(rdesc);
-	ev.u.create.bus = BUS_USB;
-	ev.u.create.vendor = 0x15d9;
-	ev.u.create.product = 0x0a37;
-	ev.u.create.version = 0;
-	ev.u.create.country = 0;
-
-	return uhid_write(fd, &ev);
-}
-
-static void uhid_destroy(int fd){ //close uhid device
-	struct uhid_event ev;
-
-	if (fd < 0) return; //already failed
-
-	memset(&ev, 0, sizeof(ev));
-	ev.type = UHID_DESTROY;
-
-	if(uhid_write(fd, &ev) == 0){fprintf(stderr, "uhid device destroyed\n");}
-}
-
-static int uhid_write(int fd, const struct uhid_event *ev){ //write data to uhid device
-	ssize_t ret = write(fd, ev, sizeof(*ev));
-	if (ret < 0) {
-		print_stderr(/*fprintf(stderr, */"write to uhid device failed with errno:%d (%m)\n", -ret);
-		return -errno;
-	} else if (ret != sizeof(*ev)) {
-		print_stderr(/*fprintf(stderr, */"wrong size wrote to uhid device: %zd != %zu\n", ret, sizeof(ev));
-		return -EFAULT;
-	} else {return 0;}
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* This parses raw output reports sent by the kernel to the device. A normal
- * uhid program shouldn't do this but instead just forward the raw report.
- * However, for ducomentational purposes, we try to detect LED events here and
- * print debug messages for it. */
-/*
-static void handle_output(struct uhid_event *ev){
-	if (ev->u.output.rtype != UHID_OUTPUT_REPORT) return; //LED messages are adverised via OUTPUT reports; ignore the rest
-	if (ev->u.output.size != 2) return; //LED reports have length 2 bytes
-	if (ev->u.output.data[0] != 0x2) return; //first byte is report-id which is 0x02 for LEDs in our rdesc
-	print_stderr("LED output report received with flags %x\n", ev->u.output.data[1]); //print flags payload
-}
-*/
-/*
-static int event(int fd) {
-	struct uhid_event ev;
-	ssize_t ret;
-
-	memset(&ev, 0, sizeof(ev));
-	ret = read(fd, &ev, sizeof(ev));
-	if (ret == 0) {
-		print_stderr("Read HUP on uhid-cdev\n");
-		return -EFAULT;
-	} else if (ret < 0) {
-		print_stderr("Cannot read uhid-cdev: %m\n");
-		return -errno;
-	} else if (ret != sizeof(ev)) {
-		print_stderr("Invalid size read from uhid-dev: %zd != %zu\n", ret, sizeof(ev));
-		return -EFAULT;
-	}
-
-	switch (ev.type) {
-	case UHID_START:
-		print_stderr("UHID_START from uhid-dev\n");
-		break;
-	case UHID_STOP:
-		print_stderr("UHID_STOP from uhid-dev\n");
-		break;
-	case UHID_OPEN:
-		print_stderr("UHID_OPEN from uhid-dev\n");
-		break;
-	case UHID_CLOSE:
-		print_stderr("UHID_CLOSE from uhid-dev\n");
-		break;
-	case UHID_OUTPUT:
-		print_stderr("UHID_OUTPUT from uhid-dev\n");
-		handle_output(&ev);
-		break;
-	case UHID_OUTPUT_EV:
-		print_stderr("UHID_OUTPUT_EV from uhid-dev\n");
-		break;
-	default:
-		print_stderr("Invalid event from uhid-dev: %u\n", ev.type);
-	}
-
-	return 0;
-}
-*/
-
-/*
-static bool btn1_down;
-static bool btn2_down;
-static bool btn3_down;
-static signed char abs_hor;
-static signed char abs_ver;
-static signed char wheel;
-*/
 struct i2c_register_struct {
     uint8_t input0;          // Reg: 0x00 - INPUT port 0
     uint8_t input1;          // Reg: 0x01 - INPUT port 1
@@ -305,19 +162,282 @@ struct i2c_register_struct {
     uint8_t adc_res;         // Reg: 0x0D - current ADC resolution (maybe settable?)
 } i2c_registers;
 
-struct gamepad_report_t {
-    int8_t hat_x;
-    int8_t hat_y;
-    uint8_t buttons7to0;
-    uint8_t buttons15to8;
-    uint16_t left_x;
-    uint16_t left_y;
-    uint16_t right_x;
-    uint16_t right_y;
-} gamepad_report, gamepad_report_prev;
+//ADC related vars
+bool adc_firstrun = true;
+int adc_res = 16; unsigned int adc_res_limit = 0xFFFF;
+int adc_min[] = {0,0,0,0}, adc_max[] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF}; //store axis min-max values
+int adc_offsets[] = {0xFFFF/2, 0xFFFF/2, 0xFFFF/2, 0xFFFF/2}; //store axis offset values
+bool adc_reversed[] = {false,false,false,false}; //store axis reversed bools
+int adc_values_min[] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF}, adc_values_max[] = {0,0,0,0}; //store raw axis detected limits during usage for driver exit report
+//int adc_mux_map[] = {-1,-1,-1,-1}; //is main client of mux device, mux map
+int/*int16_t*/ /*adc_fuzz[] = {16,16,16,16}, */adc_flat[] = {5,5,5,5}, adc_flat_outside[] = {5,5,5,5}; //store axis /*fuzz-*/flat values (in percent)
+bool adc_autocenter[] = {false,false,false,false}; //store axis autocenter bools
+
+//Poll rate vars
+const int i2c_poll_rate = 125; //poll per sec
+const double i2c_poll_rate_time = 1. / i2c_poll_rate; //poll interval in sec
+const double i2c_poll_duration_warn = 0.15; //warning if loop duration over this
+double i2c_poll_duration = 0.; //poll loop duration
+double poll_clock_start = 0., poll_benchmark_clock_start = -1.;
+long poll_benchmark_loop = 0;
+
+//Config related vars
+const char cfg_filename[] = "config.cfg";
+
+//vars names in config file, IMPORTANT: no space
+const char *cfg_vars_name[] = {	"debug","debug_adv","disable_pollrate",
+								"\ni2c_bus", "i2c_address", "i2c_irq",
+								"\nadc0_min", "adc0_max", "adc0_flat", "adc0_flat_outside", "adc0_reversed", "adc0_autocenter",
+								"\nadc1_min", "adc1_max", "adc1_flat", "adc1_flat_outside", "adc1_reversed", "adc1_autocenter",
+								"\nadc2_min", "adc2_max", "adc2_flat", "adc2_flat_outside", "adc2_reversed", "adc2_autocenter",
+								"\nadc3_min", "adc3_max", "adc3_flat", "adc3_flat_outside", "adc3_reversed", "adc3_autocenter",};
+
+//types : 0:int, 1:uint, 2:float, 3:double, 4:bool, 5:int array (split by comma in cfg file), 6:hex8, 7:hex16, 8:hex32, 9:bin8, 10:bin16, 11:bin32
+const int cfg_vars_type[] = {	4/*debug*/,4/*debug_adv*/,4/*disable_pollrate*/,
+								0/*i2c_bus*/, 6/*i2c_address*/, 0/*i2c_irq*/,
+								0/*adc0_min*/, 0/*adc0_max*/, 0/*adc0_flat*/, 0/*adc0_flat_outside*/, 4/*adc0_reversed*/, 4/*adc0_autocenter*/,
+								0/*adc1_min*/, 0/*adc1_max*/, 0/*adc1_flat*/, 0/*adc1_flat_outside*/, 4/*adc1_reversed*/, 4/*adc1_autocenter*/,
+								0/*adc2_min*/, 0/*adc2_max*/, 0/*adc2_flat*/, 0/*adc2_flat_outside*/, 4/*adc2_reversed*/, 4/*adc2_autocenter*/,
+								0/*adc3_min*/, 0/*adc3_max*/, 0/*adc3_flat*/, 0/*adc3_flat_outside*/, 4/*adc3_reversed*/, 4/*adc3_autocenter*/,};
+
+/*pointers to real vars
+* important note:
+* - 8(int array) need to use format : {(int*)&array_prt, (int)&array_size}
+*/
+const void *cfg_vars_ptr[] = {	&debug, &debug_adv, &i2c_poll_rate_disable,
+								&i2c_bus, &i2c_addr, &nINT_GPIO,
+								&adc_min[0], &adc_max[0], &adc_flat[0], &adc_flat_outside[0], &adc_reversed[0], &adc_autocenter[0],
+								&adc_min[1], &adc_max[1], &adc_flat[1], &adc_flat_outside[1], &adc_reversed[1], &adc_autocenter[1],
+								&adc_min[2], &adc_max[2], &adc_flat[2], &adc_flat_outside[2], &adc_reversed[2], &adc_autocenter[2],
+								&adc_min[3], &adc_max[3], &adc_flat[3], &adc_flat_outside[3], &adc_reversed[3], &adc_autocenter[3],};
+
+const unsigned int cfg_vars_arr_size = sizeof(cfg_vars_type) / sizeof(*cfg_vars_type); //config pointers array size
 
 
-static int send_event(int fd) { //send event to uhid device
+//Config related functions
+static int cstring_in_cstring_array (char **arr, char *value, unsigned int arrSize, bool skipNl) { //search in char array, return index if found, -1 if not
+    char *rowPtr;
+    for (unsigned int i = 0; i < arrSize; i++) {
+        if (skipNl && arr[i][0]=='\n') {rowPtr = ++(arr[i]);} else {rowPtr = arr[i];}
+        if (strcmp (rowPtr, value) == 0) {return i;}
+    }
+    return -1;
+}
+
+static bool config_save (bool reset) { //save config file
+    if (reset) {
+        if(remove(cfg_filename) != 0) {print_stderr("failed to delete '%s'\n", cfg_filename);}
+    }
+
+    FILE *filehandle = fopen(cfg_filename, "wb");
+    if (filehandle != NULL) {
+        char strBuffer [4096], strBuffer1 [33]; int strBufferSize;
+        for (unsigned int i = 0; i < cfg_vars_arr_size; i++) {
+            int tmpType = cfg_vars_type[i];
+            if (tmpType == 0) {fprintf (filehandle, "%s=%d;\n", cfg_vars_name[i], *(int*)cfg_vars_ptr[i]); //int
+            } else if (tmpType == 1) {fprintf (filehandle, "%s=%u;\n", cfg_vars_name[i], *(unsigned int*)cfg_vars_ptr[i]); //unsigned int
+            } else if (tmpType == 2) {fprintf (filehandle, "%s=%f;\n", cfg_vars_name[i], *(float*)cfg_vars_ptr[i]); //float
+            } else if (tmpType == 3) {fprintf (filehandle, "%s=%lf;\n", cfg_vars_name[i], *(double*)cfg_vars_ptr[i]); //double
+            } else if (tmpType == 4) {fprintf (filehandle, "%s=%d;\n", cfg_vars_name[i], (*(bool*)cfg_vars_ptr[i])?1:0); //bool
+            } else if (tmpType == 5) { //int array, output format: var=%d,%d,%d,...;
+                int arrSize = *(int*)((int*)cfg_vars_ptr[i])[1];
+                sprintf (strBuffer, "%s=", cfg_vars_name[i]); int strBufferSize = strlen(strBuffer);
+                for (unsigned int j = 0; j < arrSize; j++) {strBufferSize += sprintf (strBuffer1, "%d,", ((int*)((int*)cfg_vars_ptr[i])[0])[j]); strcat (strBuffer, strBuffer1);} *(strBuffer+strBufferSize-1) = '\0';
+                fprintf (filehandle, "%s;\n", strBuffer);
+            } else if (tmpType >= 6 && tmpType < 9) { //hex8-32
+                int ind = 2; for(int j=0; j<tmpType-6; j++){ind*=2;}
+                sprintf (strBuffer, "%%s=0x%%0%dx;\n", ind); //build that way to limit var size
+                fprintf (filehandle, strBuffer, cfg_vars_name[i], *(int*)cfg_vars_ptr[i]);
+            } else if (tmpType >= 9 && tmpType < 12) { //bin8-32 (itoa bypass)
+                int ind = 8; for(int j=0; j<tmpType-9; j++){ind*=2;}
+                for(int j = 0; j < ind; j++){strBuffer[ind-j-1] = ((*(int*)cfg_vars_ptr[i] >> j) & 0b1) +'0';} strBuffer[ind]='\0';
+                fprintf (filehandle, "%s=%s;\n", cfg_vars_name[i], strBuffer);
+            }
+        }
+        fclose(filehandle);
+        print_stdout("%s: %s\n", reset ? "config reset successfully" : "config saved successfully", cfg_filename);
+
+		int err = chown(cfg_filename, (uid_t) 1000, (gid_t) 1000);
+		if (err < 0) {print_stderr("changing %s owner failed with errno:%d (%m)\n", cfg_filename, -err);
+		}else {print_stdout("%s owner changed successfully (uid:1000, gid:1000)\n", cfg_filename);}
+
+        return true;
+    } else {print_stderr("failed to write config: %s\n", cfg_filename);}
+    return false;
+}
+
+static void config_parse (void) { //parse/create program config file
+    FILE *filehandle = fopen(cfg_filename, "r");
+    if (filehandle != NULL) {
+        char strBuffer [4096], strTmpBuffer [4096]; //string buffer
+        char *tmpPtr, *tmpPtr1; //pointers
+        int line=0;
+        while (fgets (strBuffer, 4095, filehandle) != NULL) { //line loop
+            //clean line from utf8 bom and whitespaces
+            tmpPtr = strBuffer; tmpPtr1 = strTmpBuffer; //pointers
+            if (strstr (strBuffer,"\xEF\xBB\xBF") != NULL) {tmpPtr += 3;} //remove utf8 bom, overkill security?
+            while (*tmpPtr != '\0') {if(!isspace(*tmpPtr)) {*tmpPtr1++ = *tmpPtr++;}else{tmpPtr++;}} //read all chars, copy if not whitespace
+            *tmpPtr1='\0'; strcpy(strBuffer, strTmpBuffer); line++; //copy char array
+
+            //parse line
+            tmpPtr = strtok (strBuffer, ";"); //split element
+            while (tmpPtr != NULL) { //var=val loop
+                char strElementBuffer [strlen(tmpPtr)]; strcpy (strElementBuffer, tmpPtr); //copy element to new buffer to avoid pointer mess
+                tmpPtr1 = strchr(strElementBuffer, '='); //'=' char position
+                if (tmpPtr1 != NULL) { //contain '='
+                    *tmpPtr1='\0'; int tmpVarSize = strlen(strElementBuffer), tmpValSize = strlen(tmpPtr1+1); //var and val sizes
+                    char tmpVar [tmpVarSize+1]; strcpy (tmpVar, strElementBuffer); //extract var
+                    char tmpVal [tmpValSize+1]; strcpy (tmpVal, tmpPtr1 + 1); //extract val
+                    int tmpIndex = cstring_in_cstring_array ((char**)cfg_vars_name, tmpVar, cfg_vars_arr_size, true); //var in config array
+                    if (tmpIndex != -1) { //found in config array
+                        int tmpType = cfg_vars_type[tmpIndex];
+                        if (tmpType == 0) {
+                            *(int*)cfg_vars_ptr[tmpIndex] = atoi (tmpVal); //int
+                            if(debug){print_stderr("DEBUG: %s=%d (file:%s)(int:%d)\n", tmpVar, *(int*)cfg_vars_ptr[tmpIndex], tmpVal, tmpType);}
+                        } else if (tmpType == 1) {
+                            *(unsigned int*)cfg_vars_ptr[tmpIndex] = atoi (tmpVal); //unsigned int
+                            if(debug){print_stderr("DEBUG: %s=%u (file:%s)(uint:%d)\n", tmpVar, *(unsigned int*)cfg_vars_ptr[tmpIndex], tmpVal, tmpType);}
+                        } else if (tmpType == 2) {
+                            *(float*)cfg_vars_ptr[tmpIndex] = atof (tmpVal); //float
+                            if(debug){print_stderr("DEBUG: %s=%f (file:%s)(float:%d)\n", tmpVar, *(float*)cfg_vars_ptr[tmpIndex], tmpVal, tmpType);}
+                        } else if (tmpType == 3) {
+                            *(double*)cfg_vars_ptr[tmpIndex] = atof (tmpVal); //double
+                            if(debug){print_stderr("DEBUG: %s=%lf (file:%s)(double:%d)\n", tmpVar, *(double*)cfg_vars_ptr[tmpIndex], tmpVal, tmpType);}
+                        } else if (tmpType == 4) {
+                            *(bool*)cfg_vars_ptr[tmpIndex] = (atoi (tmpVal) > 0)?true:false; //bool
+                            if(debug){print_stderr("DEBUG: %s=%d (file:%s)(bool:%d)\n", tmpVar, *(bool*)cfg_vars_ptr[tmpIndex]?1:0, tmpVal, tmpType);}
+                        } else if (tmpType == 5) { //int array, input format: var=%d,%d,%d,...;
+                            int arrSize = *(int*)((int*)cfg_vars_ptr[tmpIndex])[1]; int j = 0;
+                            char tmpVal1 [tmpValSize+1]; strcpy(tmpVal1, tmpVal); char *tmpPtr2 = strtok(tmpVal1, ",");
+                            while (tmpPtr2 != NULL) {
+                                if (j < arrSize) {((int*)((int*)cfg_vars_ptr[tmpIndex])[0])[j] = atoi (tmpPtr2);} //no overflow
+                                j++; tmpPtr2 = strtok (NULL, ","); //next element
+                            }
+
+                            if(debug){
+                                if (j!=arrSize) {print_stderr("DEBUG: Warning var '%s' elements count mismatch, should have %d but has %d\n", tmpVar, arrSize, j);}
+                                char strBuffer1 [4096]={'\0'}; strTmpBuffer[0]='\0'; int strBufferSize = 0;
+                                for (j = 0; j < arrSize; j++) {strBufferSize += sprintf (strBuffer1, "%d,", ((int*)((int*)cfg_vars_ptr[tmpIndex])[0])[j]); strcat (strTmpBuffer, strBuffer1);} *(strTmpBuffer+strBufferSize-1) = '\0';
+                                print_stderr("DEBUG: %s=%s (file:%s)(int array:%d)\n", tmpVar, strTmpBuffer, tmpVal, tmpType);
+                            }
+                        } else if (tmpType >= 6 && tmpType < 9) { //hex8-32
+                            int ind = 2; for(int j=0; j<tmpType-6; j++){ind*=2;}
+                            char *tmpPtr2 = strchr(tmpVal,'x');
+                            if(tmpPtr2!=NULL){
+                                sprintf(strTmpBuffer, "0x%%0%dx", ind);
+                                sscanf(tmpVal, strTmpBuffer, cfg_vars_ptr[tmpIndex]);
+                            }else{
+                                if(debug){print_stderr("DEBUG: Warning var '%s' should have a hex value, assumed a int\n", tmpVar);}
+                                *(int*)cfg_vars_ptr[tmpIndex] = atoi (tmpVal);
+                            }
+
+                            if(debug){
+                                //sprintf(strTmpBuffer, "DEBUG: %%s=0x%%0%dx(%%d) (file:%%s)(hex:%%d)\n", ind);
+                                print_stderr("DEBUG: %s=0x%x(%d) (file:%s)(hex:%d)\n"/*strTmpBuffer*/, tmpVar, *(int*)cfg_vars_ptr[tmpIndex], *(int*)cfg_vars_ptr[tmpIndex], tmpVal, tmpType);
+                            }
+                        } else if (tmpType >= 9 && tmpType < 12) { //bin8-32
+                            int ind = 8; for(int j=0; j<tmpType-9; j++){ind*=2;}
+                            if (debug && tmpValSize!=ind) {print_stderr("DEBUG: Warning var '%s' value lenght mismatch, needs %d but has %d\n", tmpVar, ind, tmpValSize);}
+                            
+                            int tmp = 0; for(int j = 0; j < ind; j++){if (j<tmpValSize) {if(tmpVal[tmpValSize-j-1] > 0+'0'){tmp ^= 1U << j;}}}
+                            *(int*)cfg_vars_ptr[tmpIndex] = tmp;
+
+                            if(debug){
+                                for(int j = 0; j < ind; j++){strTmpBuffer[ind-j-1] = ((*(int*)cfg_vars_ptr[tmpIndex] >> j) & 0b1) +'0';} strTmpBuffer[ind]='\0';
+                                print_stderr("DEBUG: %s=%s(%d) (file:%s)(int array:%d)\n", tmpVar, strTmpBuffer, *(int*)cfg_vars_ptr[tmpIndex], tmpVal, tmpType);
+                            }
+                        }
+                    } else if (debug) {print_stderr("DEBUG: var '%s'(line:%d) not allowed, typo?\n", tmpVar, line);}
+                }
+                tmpPtr = strtok (NULL, ";"); //next element
+            }
+        }
+        fclose(filehandle);
+    } else {config_save (false);}
+}
+
+
+//Time related functions
+static double get_time_double(void){ //get time in double (seconds)
+	struct timespec tp; int result = clock_gettime(CLOCK_MONOTONIC, &tp);
+	if (result == 0) {return tp.tv_sec + (double)tp.tv_nsec/1e9;}
+	return 0.; //failed
+}
+
+
+//UHID related functions
+static int uhid_create(int fd) { //create uhid device
+	struct uhid_event ev;
+
+	static unsigned char rdesc[] = { //TODO: dynamic build
+	0x05, 0x01, //; USAGE_PAGE (Generic Desktop)
+	0x09, 0x05, //; USAGE (Gamepad)
+	0xA1, 0x01, //; COLLECTION (Application)
+		0x05, 0x09, //; USAGE_PAGE (Button)
+		0x19, 0x01, //; USAGE_MINIMUM (Button 1)
+		0x29, 0x0C, //; USAGE_MAXIMUM (Button 12)
+		0x15, 0x00, //; LOGICAL_MINIMUM (0)
+		0x25, 0x01, //; LOGICAL_MAXIMUM (1)
+		0x75, 0x01, //; REPORT_SIZE (1)
+		0x95, 0x10, //; REPORT_COUNT (16)
+		0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+
+		0x05, 0x01, // Usage Page (Generic Desktop)
+		0x15, 0xFF, // Logical Minimum (-1)
+		0x25, 0x01, // LOGICAL_MAXIMUM (1)
+		0x09, 0x34, // Usage (RY)
+		0x09, 0x35, // Usage (RZ)
+		0x75, 0x08, // Report Size (8)
+		0x95, 0x02, // Report Count (2)
+		0x81, 0x02, // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+
+		0x05, 0x01, // Usage Page (Generic Desktop)
+		0x15, 0x00, // LOGICAL_MINIMUM (0)
+		0x26, 0xFF, 0xFF, 0x00, // LOGICAL_MAXIMUM (0xFFFF)
+		0x09, 0x30,  // Usage (X)
+		0x09, 0x31,  // Usage (Y)
+		0x09, 0x32,  // Usage (Z)
+		0x09, 0x33,  // Usage (RX)
+		0x75, 0x10,  // Report Size (16)
+		0x95, 0x04,  // Report Count (4)
+		0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+	0xC0,// ; END_COLLECTION
+	};
+
+	memset(&ev, 0, sizeof(ev));
+	ev.type = UHID_CREATE;
+	strcpy((char*)ev.u.create.name, uhid_device_name);
+	ev.u.create.rd_data = rdesc;
+	ev.u.create.rd_size = sizeof(rdesc);
+	ev.u.create.bus = BUS_USB;
+	ev.u.create.vendor = 0x15d9;
+	ev.u.create.product = 0x0a37;
+	ev.u.create.version = 0;
+	ev.u.create.country = 0;
+
+	return uhid_write(fd, &ev);
+}
+
+static void uhid_destroy(int fd){ //close uhid device
+	struct uhid_event ev;
+	if (fd < 0) return; //already failed
+	memset(&ev, 0, sizeof(ev));
+	ev.type = UHID_DESTROY;
+	if(uhid_write(fd, &ev) == 0){print_stdout("uhid device destroyed\n");}
+}
+
+static int uhid_write(int fd, const struct uhid_event *ev){ //write data to uhid device
+	ssize_t ret = write(fd, ev, sizeof(*ev));
+	if (ret < 0) {
+		print_stderr("write to uhid device failed with errno:%d (%m)\n", -ret);
+		return -errno;
+	} else if (ret != sizeof(*ev)) {
+		print_stderr("wrong size wrote to uhid device: %zd != %zu\n", ret, sizeof(ev));
+		return -EFAULT;
+	} else {return 0;}
+}
+
+static int uhid_send_event(int fd) { //send event to uhid device
 	struct uhid_event ev;
 
 	memset(&ev, 0, sizeof(ev));
@@ -356,67 +476,40 @@ static int send_event(int fd) { //send event to uhid device
 }
 
 
-
-
 //I2C related
-void i2c_open(void){ //open I2C bus
-	i2c_file = open(I2C_BUSNAME, O_RDWR);
+static void i2c_open(void){ //open I2C bus
+	char i2c_path[13]; sprintf(i2c_path, "/dev/i2c-%d", i2c_bus);
+
+	i2c_file = open(i2c_path, O_RDWR);
 	if (i2c_file < 0) {
-		print_stderr(/*fprintf(stderr, */"FATAL: failed to open '%s' with errno:%d (%m)\n", I2C_BUSNAME, -i2c_file);
+		print_stderr("FATAL: failed to open '%s' with errno:%d (%m)\n", i2c_path, -i2c_file);
 		exit(EXIT_FAILURE);
 	}
 
-	int ret = ioctl(i2c_file, I2C_SLAVE, I2C_ADDRESS);
+	int ret = ioctl(i2c_file, I2C_SLAVE, i2c_addr);
 	if (ret < 0) {
 		close(i2c_file);
-		print_stderr(/*fprintf(stderr, */"FATAL: ioctl failed for I2C adress:0x%02x with errno:%d (%m)\n", I2C_ADDRESS, -ret);
+		print_stderr("FATAL: ioctl failed for I2C adress:0x%02x with errno:%d (%m)\n", i2c_addr, -ret);
 		exit(EXIT_FAILURE);
 	} else {
 		ret = i2c_smbus_read_byte_data(i2c_file, 0);
 		if (ret < 0) {
 			close(i2c_file);
-			print_stderr(/*fprintf(stderr, */"FATAL: failed to read from I2C adress:0x%02x with errno:%d (%m)\n", I2C_ADDRESS, -ret);
+			print_stderr("FATAL: failed to read from I2C adress:0x%02x with errno:%d (%m)\n", i2c_addr, -ret);
 			exit(EXIT_FAILURE);
 		}
 	}
+	print_stdout("I2C bus '%s', address:0x%02x opened\n", i2c_path, i2c_addr);
 }
 
-void i2c_close(void){ //close I2C bus
-	if (i2c_file < 0) {print_stderr(/*fprintf(stderr, */"nothing to close\n");
+static void i2c_close(void){ //close I2C bus
+	if (i2c_file < 0) {print_stdout("nothing to close\n");
 	} else {
-		if (close(i2c_file) < 0){print_stderr(/*fprintf(stderr, */"failed to close I2C handle\n");
-		} else {print_stderr(/*fprintf(stderr, */"I2C handle succefully closed\n");}
+		if (close(i2c_file) < 0){print_stderr("failed to close I2C handle\n");
+		} else {print_stdout("I2C handle succefully closed\n");}
 	}
 }
 
-
-
-/*  From the attiny code
- 
- * PA1 = IO0_0 = UP
- * PA2 = IO0_1 = DOWN
- * PB4 = IO0_2 = LEFT
- * PB5 = IO0_3 = RIGHT
- * PB6 = IO0_4 = BTN_A
- * PB7 = IO0_5 = BTN_B
- * PA6 = IO0_6 = BTN_L2  ifndef USE_ADC2
- * PA7 = IO0_7 = BTN_R2  ifndef USE_ADC3
- *
- * PC0 = IO1_0 = BTN_X
- * PC1 = IO1_1 = BTN_Y
- * PC2 = IO1_2 = BTN_START
- * PC3 = IO1_3 = BTN_SELECT
- * PC4 = IO1_4 = BTN_L
- * PC5 = IO1_5 = BTN_R
- * PB2 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)   ifndef CONFIG_SERIAL_DEBUG (or can be used for UART TXD0 for debugging)
- * PA5 = IO1_7 = BTN_C ifndef USE_ADC1
- *
- * PB3 =         POWEROFF_OUT
- * PA3 =         PWM Backlight OUT
- *
- */
-
-//ADC related
 static int adc_correct_offset_center(int adc_resolution, int adc_value, int adc_min, int adc_max, int adc_offsets, int inside_flat, int outside_flat){ //apply offset center, expand adc range, inside/ouside flat
 	double adc_center = adc_resolution / 2; int range; int ratio; int corrected_value;
 
@@ -436,8 +529,7 @@ static int adc_correct_offset_center(int adc_resolution, int adc_value, int adc_
 	return corrected_value;
 }
 
-
-void i2c_poll_joystick(){
+static void i2c_poll_joystick(void){ //poll data from i2c device
 	/*
 	* Benchmark:
 	* i2c_smbus_read_word_data : 2660 polls per sec
@@ -450,13 +542,13 @@ void i2c_poll_joystick(){
 
 	if (ret < 0) {
 		i2c_errors_count++;
-		if (ret == -6) {print_stderr(/*fprintf(stderr, */"FATAL: i2c_smbus_read_word_data() failed with errno %d : %m\n", -ret); kill_resquested = true;}
-		if (i2c_errors_count >= i2c_errors_report) {print_stderr(/*fprintf(stderr, */"WARNING: I2C requests failed %d times in a row\n", i2c_errors_count); i2c_errors_count = 0;}
+		if (ret == -6) {print_stderr("FATAL: i2c_smbus_read_word_data() failed with errno %d : %m\n", -ret); kill_resquested = true;}
+		if (i2c_errors_count >= i2c_errors_report) {print_stderr("WARNING: I2C requests failed %d times in a row\n", i2c_errors_count); i2c_errors_count = 0;}
 		i2c_last_error = ret; return;
 	}
 
 	if (i2c_errors_count > 0){
-		print_stderr(/*fprintf(stderr, */"DEBUG: last I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));
+		print_stderr("last I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));
 		i2c_last_error = i2c_errors_count = 0; //reset error count
 	}
 	
@@ -508,59 +600,57 @@ void i2c_poll_joystick(){
 	
 	if (report_val != report_prev_val){
 		gamepad_report_prev = gamepad_report;
-		send_event(uhid_fd);
+		uhid_send_event(uhid_fd);
 	}
 }
 
 
+//IRQ related functions
 #ifdef USE_PIGPIO_IRQ
-//#error Somewhat untested code here, use at your own risk
-void gpio_callback(int gpio, int level, uint32_t tick) { //look to work
+static void gpio_callback(int gpio, int level, uint32_t tick) { //look to work
 	switch (level) {
 		case 0:
-			print_stderr(/*fprintf(stderr, */"DEBUG: GPIO%d low\n", gpio);
+			if(debug) print_stdout("DEBUG: GPIO%d low\n", gpio);
 			i2c_poll_joystick();
 			break;
 		case 1:
-			print_stderr(/*fprintf(stderr, */"DEBUG: GPIO%d high\n", gpio);
+			if(debug) print_stdout("DEBUG: GPIO%d high\n", gpio);
 			break;
 		case 2:
-			print_stderr(/*fprintf(stderr, */"DEBUG: GPIO%d WATCHDOG\n", gpio);
+			if(debug) print_stdout("DEBUG: GPIO%d WATCHDOG\n", gpio);
 			break;
 	}
 }
-#endif
-
-#ifdef USE_WIRINGPI_IRQ
-void attiny_irq_handler(void) {
-	print_stderr(/*fprintf(stderr, */"DEBUG: GPIO%d triggered\n", nINT_GPIO);
+#elif defined(USE_WIRINGPI_IRQ)
+static void attiny_irq_handler(void) {
+	if(debug) print_stdout("DEBUG: GPIO%d triggered\n", nINT_GPIO);
     i2c_poll_joystick();
 }
 #endif
 
-void tty_signal_handler(int sig) { //handle signal func
-	print_stderr(/*fprintf(stderr, */"DEBUG: signal received: %d\n", sig);
+
+//TTY related functions
+static void tty_signal_handler(int sig) { //handle signal func
+	if(debug) print_stderr("DEBUG: signal received: %d\n", sig);
 	kill_resquested = true;
 }
 
 
-
-void debug_print_binary_int (int val, int bits, char* var) { //print given var in binary format
+//Debug related functions
+static void debug_print_binary_int (int val, int bits, char* var) { //print given var in binary format
+	if(!debug) return;
 	printf("DEBUG: BIN: %s : ", var);
 	for(int mask_shift = bits-1; mask_shift > -1; mask_shift--){printf("%d", (val >> mask_shift) & 0b1);}
 	printf("\n");
 }
 
 
-
-
-
-
-
 int main(int argc, char **argv) {
 	program_start_time = get_time_double();
 	const char *path = "/dev/uhid";
 	int ret, main_return = EXIT_SUCCESS;
+
+	config_parse ();
 
 	//tty signal handling
 	signal(SIGINT, tty_signal_handler); //ctrl-c
@@ -577,13 +667,12 @@ int main(int argc, char **argv) {
 	}
 
 	i2c_open(); //open I2C bus
-    print_stderr(/*fprintf(stderr, */"I2C bus '%s', address:0x%02x opened\n", I2C_BUSNAME, I2C_ADDRESS);
 
 	//detect analog config
 	ret = i2c_smbus_read_byte_data(i2c_file, 0x0A); //turn ON bits here to activate ADC0 - ADC3
 	if (ret < 0){
 		i2c_close();
-		print_stderr(/*fprintf(stderr, */"FATAL: reading ADC configuration failed with errno %d (%s)\n", -ret, strerror(-ret));
+		print_stderr("FATAL: reading ADC configuration failed with errno %d (%s)\n", -ret, strerror(-ret));
 		return EXIT_FAILURE;
 	} else {
 		bool tmp_adc[4];
@@ -592,9 +681,9 @@ int main(int argc, char **argv) {
 		uhid_js_right_enable = /*true; //*/tmp_adc[2] && tmp_adc[3]; //DEBUG
 
 		if (uhid_js_left_enable + uhid_js_right_enable) {
-			printf("detected ADC configuration: %s %s\n", uhid_js_left_enable?"left":"", uhid_js_right_enable?"right":"");
+			print_stdout("detected ADC configuration: %s %s\n", uhid_js_left_enable ? "left" : "", uhid_js_right_enable ? "right" : "");
 			#if defined(USE_WIRINGPI_IRQ) || defined(USE_PIGPIO_IRQ)
-			printf("IRQ disabled\n");
+			print_stdout("IRQ disabled\n");
 			#endif
 			/*
 			ret = i2c_smbus_read_byte_data(i2c_file, 0x0C); //current ADC resolution
@@ -605,24 +694,24 @@ int main(int argc, char **argv) {
 			} else {
 				adc_res = ret;
 				adc_res_limit = adc_res_limit >> (sizeof(adc_res_limit)*8 - adc_res);
-				printf("detected ADC resolution: %dbits (%d)\n", adc_res, adc_res_limit);
+				print_stdout("detected ADC resolution: %dbits (%d)\n", adc_res, adc_res_limit);
 			}*/
 		}
 	}
 
 	uhid_fd = open(path, O_RDWR | O_CLOEXEC);
 	if (uhid_fd < 0) {
-		print_stderr(/*fprintf(stderr, */"failed to open uhid-cdev %s with errno:%d (%m)\n", path, -uhid_fd); return EXIT_FAILURE;
-	} else {print_stderr(/*fprintf(stderr, */"uhid-cdev %s opened\n", path);}
+		print_stderr("failed to open uhid-cdev %s with errno:%d (%m)\n", path, -uhid_fd); return EXIT_FAILURE;
+	} else {print_stdout("uhid-cdev %s opened\n", path);}
 
 	ret = uhid_create(uhid_fd);
 	if (ret) {close(uhid_fd); return EXIT_FAILURE;
-	} else {print_stderr(/*fprintf(stderr, */"uhid device created\n");}
+	} else {print_stdout("uhid device created\n");}
 
 	i2c_poll_joystick(); //initial poll
 
-	if (!(uhid_js_left_enable + uhid_js_right_enable)) {
-		#ifdef USE_WIRINGPI_IRQ
+	if (!(uhid_js_left_enable + uhid_js_right_enable) && nINT_GPIO >= 0) {
+	#ifdef USE_WIRINGPI_IRQ
 		#define WIRINGPI_CODES 1 //allow error code return
 		int err;
 		if ((err = wiringPiSetupGpio()) < 0){ //use BCM numbering
@@ -631,16 +720,14 @@ int main(int argc, char **argv) {
 			if ((err = wiringPiISR(nINT_GPIO, INT_EDGE_FALLING, &attiny_irq_handler)) < 0){
 				print_stderr("wiringPi failed to set callback for GPIO%d\n", nINT_GPIO);
 			} else {
-				fprintf(stderr, "using wiringPi IRQ\n");
+				print_stdout("using wiringPi IRQ on GPIO%d\n", nINT_GPIO);
 				irq_enable = true;
 			}
 		}
-		#endif
-		
-		#ifdef USE_PIGPIO_IRQ
+	#elif defined(USE_PIGPIO_IRQ)
 		int ver, err; bool irq_failed=false;
 		if ((ver = gpioInitialise()) > 0){
-			print_stderr("pigpio: version: %d\n",ver);
+			print_stdout("pigpio: version: %d\n",ver);
 		} else {
 			print_stderr("failed to detect pigpio version\n"); irq_failed = true
 		}
@@ -650,26 +737,26 @@ int main(int argc, char **argv) {
 		}
 
 		if (!irq_failed && (err = gpioSetMode(nINT_GPIO, PI_INPUT)) != 0){ //set as input
-			print_stderr("FATAL: pigpio failed to set GPIO%d to input\n", nINT_GPIO); irq_failed = true;
+			print_stderr("pigpio failed to set GPIO%d to input\n", nINT_GPIO); irq_failed = true;
 		}
 		
 		if (!irq_failed && (err = gpioSetPullUpDown(nINT_GPIO, PI_PUD_UP)) != 0){ //set pull up
-			print_stderr("FATAL: pigpio failed to set PullUp for GPIO%d\n", nINT_GPIO); irq_failed = true;
+			print_stderr("pigpio failed to set PullUp for GPIO%d\n", nINT_GPIO); irq_failed = true;
 		}
 
 		if (!irq_failed && (err = gpioGlitchFilter(nINT_GPIO, 100)) != 0){ //glitch filter to avoid bounce
-			print_stderr("FATAL: pigpio failed to set glitch filter for GPIO%d\n", nINT_GPIO); irq_failed = true;
+			print_stderr("pigpio failed to set glitch filter for GPIO%d\n", nINT_GPIO); irq_failed = true;
 		}
 
 		if (!irq_failed && (err = gpioSetAlertFunc(nINT_GPIO, gpio_callback)) != 0){ //callback setup
-			print_stderr("FATAL: pigpio failed to set callback for GPIO%d\n", nINT_GPIO); irq_failed = true;
+			print_stderr("pigpio failed to set callback for GPIO%d\n", nINT_GPIO); irq_failed = true;
 		} else {
-			fprintf(stderr, "using pigpio IRQ\n");
+			print_stdout("using pigpio IRQ on GPIO%d\n", nINT_GPIO);
 			gpioSetSignalFunc(SIGINT, tty_signal_handler); //ctrl-c
 			gpioSetSignalFunc(SIGTERM, tty_signal_handler); //SIGTERM from htop or other
 			irq_enable = true;
 		}
-		#endif
+	#endif
 	}
 
     fprintf(stderr, "Press '^C' to quit...\n");
@@ -677,8 +764,8 @@ int main(int argc, char **argv) {
 	if (irq_enable){
 		while (!kill_resquested){usleep(100000);} //sleep until app close requested
 	} else {
-		if (!i2c_poll_rate_disable){fprintf(stderr, "polling at %dhz\n", i2c_poll_rate);
-		} else {fprintf(stderr, "poll speed not limited\n");}
+		if (!i2c_poll_rate_disable){print_stdout("polling at %dhz\n", i2c_poll_rate);
+		} else {print_stdout("poll speed not limited\n");}
 
 		while (!kill_resquested) {
 			poll_clock_start = get_time_double();
@@ -690,19 +777,19 @@ int main(int argc, char **argv) {
 			
 			if (kill_resquested) break;
 			i2c_poll_duration = get_time_double() - poll_clock_start;
-			//printf ("DEBUG: poll_clock_start:%lf, i2c_poll_duration:%lf\n", poll_clock_start, i2c_poll_duration);
+			//if(debug) print_stdout ("DEBUG: poll_clock_start:%lf, i2c_poll_duration:%lf\n", poll_clock_start, i2c_poll_duration);
 
 			if (!i2c_poll_rate_disable){
-				if (i2c_poll_duration > i2c_poll_duration_warn){printf ("WARNING: extremely long loop duration: %dms\n", (int)(i2c_poll_duration*1000));}
+				if (i2c_poll_duration > i2c_poll_duration_warn){print_stderr ("WARNING: extremely long loop duration: %dms\n", (int)(i2c_poll_duration*1000));}
 				if (i2c_poll_duration < 0){i2c_poll_duration = 0;} //hum, how???
 				if (i2c_poll_duration < i2c_poll_rate_time){usleep((useconds_t) ((double)(i2c_poll_rate_time - i2c_poll_duration) * 1000000));} //need to sleep to match poll rate
-				//printf ("DEBUG: loop duration:%lf, i2c_poll_rate_time:%lf\n", get_time_double() - poll_clock_start, i2c_poll_rate_time);
-			}// else {printf ("DEBUG: loop duration:%lf\n", get_time_double() - poll_clock_start);}
+				//if(debug) print_stdout ("DEBUG: loop duration:%lf, i2c_poll_rate_time:%lf\n", get_time_double() - poll_clock_start, i2c_poll_rate_time);
+			}// else {if(debug) print_stdout ("DEBUG: loop duration:%lf\n", get_time_double() - poll_clock_start);}
 
 			if (debug_adv){ //benchmark mode
 				poll_benchmark_loop++;
 				if ((get_time_double() - poll_benchmark_clock_start) > 2.) { //report every seconds
-					print_stderr("DEBUG: poll loops per sec (2secs samples) : %ld\n", poll_benchmark_loop/2);
+					print_stdout("poll loops per sec (2secs samples) : %ld\n", poll_benchmark_loop/2);
 					poll_benchmark_loop = 0; poll_benchmark_clock_start = -1.;
 				}
 			}
@@ -710,14 +797,14 @@ int main(int argc, char **argv) {
 	}
 
 	app_close:
-	if (i2c_last_error != 0) {print_stderr(/*fprintf(stderr, */"DEBUG: last detected I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));}
+	if (i2c_last_error != 0) {print_stderr("last detected I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));}
 
 	i2c_close();
 	uhid_destroy(uhid_fd);
 
 	if(uhid_js_left_enable + uhid_js_right_enable){
-		printf("detected adc limits:\n");
-		for (uint8_t i=0; i<4; i++) {printf("adc%d: min:%d max:%d\n", i, adc_values_min[i], adc_values_max[i]);}
+		print_stdout("detected adc limits:\n");
+		for (uint8_t i=0; i<4; i++) {print_stdout("adc%d: min:%d max:%d\n", i, adc_values_min[i], adc_values_max[i]);}
 	}
 
 	return main_return;
