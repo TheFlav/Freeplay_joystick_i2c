@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <linux/hid.h>
+//#include <linux/hid.h>
 #include <linux/uhid.h>
 #include <stdint.h>
 
@@ -84,6 +84,21 @@ const char* uhid_device_name = "Freeplay Gamepad";
 int uhid_fd;
 bool uhid_js_left_enable = false;
 bool uhid_js_right_enable = false;
+
+
+//ADC related vars
+bool adc_firstrun = true;
+int adc_res = 16; unsigned int adc_res_limit = 0xFFFF;
+int adc_min[] = {8896,9280,0,0}, adc_max[] = {48570, 49990, 0xFFFF, 0xFFFF}; //store axis min-max values
+//int adc_min[] = {0,0,0,0}, adc_max[] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF}; //store axis min-max values
+int adc_offsets[] = {0xFFFF/2, 0xFFFF/2, 0xFFFF/2, 0xFFFF/2}; //store axis offset values
+bool adc_reversed[] = {false,false,false,false}; //store axis reversed bools
+int adc_values_min[] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF}, adc_values_max[] = {0,0,0,0}; //store raw axis detected limits during usage for driver exit report
+//int adc_mux_map[] = {-1,-1,-1,-1}; //is main client of mux device, mux map
+
+int/*int16_t*/ /*adc_fuzz[] = {16,16,16,16}, */adc_flat[] = {5,5,5,5}, adc_flat_outside[] = {5,5,5,5}; //store axis fuzz-flat values TODO convert flat to percent
+bool adc_autocenter[] = {false,false,false,false}; //store axis autocenter bools
+
 
 
 
@@ -401,8 +416,25 @@ void i2c_close(void){ //close I2C bus
  *
  */
 
+//ADC related
+static int adc_correct_offset_center(int adc_resolution, int adc_value, int adc_min, int adc_max, int adc_offsets, int inside_flat, int outside_flat){ //apply offset center, expand adc range, inside/ouside flat
+	double adc_center = adc_resolution / 2; int range; int ratio; int corrected_value;
 
+	if (adc_value < (adc_center + adc_offsets)){ //value under center offset
+		range = (adc_center + adc_offsets) - adc_min;
+		if (range != 0){corrected_value = (adc_value - adc_min) * (adc_center / range);
+		} else {corrected_value = adc_value;} //range=0, setting problems?
+	} else { //value over center offset
+		range = adc_max - (adc_center + adc_offsets);
+		if(range != 0){corrected_value = adc_center + (adc_value - (adc_center + adc_offsets)) * (adc_center / range);
+		} else {corrected_value = adc_value;} //range=0, setting problems?
+	}
 
+	if (abs(corrected_value - adc_center) < (inside_flat / 100.)){return adc_center;} //inside flat
+	corrected_value = ((corrected_value - adc_center) * (100. + outside_flat) / 100.) + adc_center; //apply outside flat
+	if (corrected_value < 0){return 0;}else if(corrected_value > adc_resolution){return adc_resolution;} //constrain computed value to adc resolution
+	return corrected_value;
+}
 
 
 void i2c_poll_joystick(){
@@ -413,7 +445,6 @@ void i2c_poll_joystick(){
 	* i2c_smbus_read_i2c_block_data (10) : 1312 polls per sec
 	* 10x i2c_smbus_read_byte_data : 323 polls per sec
 	*/
-
 	int read_limit = 2; if (uhid_js_left_enable + uhid_js_right_enable){read_limit = 10;}
 	int ret = i2c_smbus_read_i2c_block_data(i2c_file, 0, read_limit, (uint8_t *)&i2c_registers);
 
@@ -429,6 +460,7 @@ void i2c_poll_joystick(){
 		i2c_last_error = i2c_errors_count = 0; //reset error count
 	}
 	
+	//digital
 	int8_t dpad[4];
 	for (int8_t i=0; i<4; i++){dpad[i] = (~i2c_registers.input0 >> i & 0x01);}
 	gamepad_report.hat_y = dpad[0] - dpad[1];
@@ -437,23 +469,44 @@ void i2c_poll_joystick(){
 	gamepad_report.buttons7to0 = ~(i2c_registers.input0 >> 4 | i2c_registers.input1 << 4);
 	gamepad_report.buttons15to8 = ~(i2c_registers.input1 >> 4);
 
+	//analog
+	int js_values[4] = {0,0,0,0};
 	if (uhid_js_left_enable) {
-		gamepad_report.left_x = i2c_registers.a0_msb << 8 | i2c_registers.a0_lsb;
-		gamepad_report.left_y = i2c_registers.a1_msb << 8 | i2c_registers.a1_lsb;
+		js_values[0] = i2c_registers.a0_msb << 8 | i2c_registers.a0_lsb;
+		js_values[1] = i2c_registers.a1_msb << 8 | i2c_registers.a1_lsb;
 	}
 
 	if (uhid_js_right_enable) {
-		gamepad_report.right_x = i2c_registers.a2_msb << 8 | i2c_registers.a2_lsb;
-		gamepad_report.right_y = i2c_registers.a3_msb << 8 | i2c_registers.a3_lsb;
+		js_values[2] = i2c_registers.a2_msb << 8 | i2c_registers.a2_lsb;
+		js_values[3] = i2c_registers.a3_msb << 8 | i2c_registers.a3_lsb;
 	}
 
-	int report_val = 0, report_prev_val = 1;
+	for (uint8_t i=0; i<4; i++) {
+		if (uhid_js_left_enable && i < 2 || uhid_js_right_enable && i > 1){
+			if (adc_firstrun) {
+				if(adc_autocenter[i]){adc_offsets[i] = js_values[i] - (adc_res_limit / 2); //auto center enable
+				} else {adc_offsets[i] = (((adc_max[i] - adc_min[i]) / 2) + adc_min[i]) - (adc_res_limit / 2);}
+			}
+			
+			if(js_values[i] < adc_values_min[i]){adc_values_min[i] = js_values[i];} //update min value
+			if(js_values[i] > adc_values_max[i]){adc_values_max[i] = js_values[i];} //update max value
+
+			js_values[i] = adc_correct_offset_center(adc_res_limit, js_values[i], adc_min[i], adc_max[i], adc_offsets[i], adc_flat[i], adc_flat_outside[i]); //re-center adc value, apply flats and extend to adc range
+			if(adc_reversed[i]){js_values[i] = abs(adc_res_limit - js_values[i]);} //reverse 12bits value
+		}
+	}
+
+	if (uhid_js_left_enable) {gamepad_report.left_x = js_values[0]; gamepad_report.left_y = js_values[1];}
+	if (uhid_js_right_enable) {gamepad_report.right_x = js_values[2]; gamepad_report.right_y = js_values[3];}
+	
+	//report
+	int report_val = 0, report_prev_val = 1; adc_firstrun = false;
 	if (!(uhid_js_left_enable + uhid_js_right_enable)) {
 		report_val = gamepad_report.buttons7to0 + gamepad_report.buttons15to8 + gamepad_report.hat_x + gamepad_report.hat_y;
 		report_prev_val = gamepad_report_prev.buttons7to0 + gamepad_report_prev.buttons15to8 + gamepad_report_prev.hat_x + gamepad_report_prev.hat_y;
 	}
 	
-	if (report_val != report_prev_val){ //report
+	if (report_val != report_prev_val){
 		gamepad_report_prev = gamepad_report;
 		send_event(uhid_fd);
 	}
@@ -527,7 +580,7 @@ int main(int argc, char **argv) {
     print_stderr(/*fprintf(stderr, */"I2C bus '%s', address:0x%02x opened\n", I2C_BUSNAME, I2C_ADDRESS);
 
 	//detect analog config
-	ret = i2c_smbus_read_byte_data(i2c_file, 0x0a);
+	ret = i2c_smbus_read_byte_data(i2c_file, 0x0A); //turn ON bits here to activate ADC0 - ADC3
 	if (ret < 0){
 		i2c_close();
 		print_stderr(/*fprintf(stderr, */"FATAL: reading ADC configuration failed with errno %d (%s)\n", -ret, strerror(-ret));
@@ -535,14 +588,25 @@ int main(int argc, char **argv) {
 	} else {
 		bool tmp_adc[4];
 		for (uint8_t i=0; i<4; i++){tmp_adc[i] = (ret >> i) & 0b1;}
-		uhid_js_left_enable = tmp_adc[0] && tmp_adc[1];
-		uhid_js_right_enable = tmp_adc[2] && tmp_adc[3];
+		uhid_js_left_enable = /*true; //*/tmp_adc[0] && tmp_adc[1]; //DEBUG
+		uhid_js_right_enable = /*true; //*/tmp_adc[2] && tmp_adc[3]; //DEBUG
 
 		if (uhid_js_left_enable + uhid_js_right_enable) {
 			printf("detected ADC configuration: %s %s\n", uhid_js_left_enable?"left":"", uhid_js_right_enable?"right":"");
 			#if defined(USE_WIRINGPI_IRQ) || defined(USE_PIGPIO_IRQ)
 			printf("IRQ disabled\n");
 			#endif
+			/*
+			ret = i2c_smbus_read_byte_data(i2c_file, 0x0C); //current ADC resolution
+			if (ret < 0){
+				i2c_close();
+				print_stderr("FATAL: reading ADC resolution failed with errno %d (%s)\n", -ret, strerror(-ret));
+				return EXIT_FAILURE;
+			} else {
+				adc_res = ret;
+				adc_res_limit = adc_res_limit >> (sizeof(adc_res_limit)*8 - adc_res);
+				printf("detected ADC resolution: %dbits (%d)\n", adc_res, adc_res_limit);
+			}*/
 		}
 	}
 
@@ -650,5 +714,11 @@ int main(int argc, char **argv) {
 
 	i2c_close();
 	uhid_destroy(uhid_fd);
+
+	if(uhid_js_left_enable + uhid_js_right_enable){
+		printf("detected adc limits:\n");
+		for (uint8_t i=0; i<4; i++) {printf("adc%d: min:%d max:%d\n", i, adc_values_min[i], adc_values_max[i]);}
+	}
+
 	return main_return;
 }
