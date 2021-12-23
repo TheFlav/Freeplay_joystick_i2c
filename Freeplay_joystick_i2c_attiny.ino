@@ -43,7 +43,17 @@
  #error ADC0 and nINT_PIN share the same pin
 #endif
 
+//I feel like we only want to do interrupts if we're not doing ADCs, but this can change around
+#if !defined(USE_ADC0) && defined(USE_INTERRUPTS)
+ #define nINT_PIN 0 //also PIN_PA4
+ bool g_nINT_state = false;
+#endif
+
 #define CONFIG_INVERT_POWER_BUTTON
+
+#define NUM_BACKLIGHT_PWM_STEPS 11
+uint8_t backlight_pwm_steps[NUM_BACKLIGHT_PWM_STEPS] = {0x00, 0x10, 0x20, 0x30, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xD0, 0xFF};
+#define CONFIG_BACKLIGHT_STEP_DEFAULT  4
 
 
 
@@ -70,7 +80,7 @@ struct i2c_secondary_address_register_struct {
   byte magic;  //set to some magic value (0xED), so we know this is the right chip we're talking to
   byte ver_major;
   byte ver_minor;
-  byte config_PWM;        // Reg: 0x03
+  byte config_backlight;  // Reg: 0x03
   byte poweroff_control;  // Reg: 0x04  - write some magic number here to turn off the system
 } i2c_secondary_registers;
 
@@ -83,7 +93,7 @@ volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. W
  volatile byte g_i2c_address = 0;  //if we're using multiple i2c addresses, we need to know which one is in use
 #endif
 
-byte g_pwm_duty_cycle = 0x00;  //100% on
+byte g_pwm_step = 0x00;  //100% on
 
 /*
  * PA1 = IO0_0 = UP
@@ -109,14 +119,59 @@ byte g_pwm_duty_cycle = 0x00;  //100% on
  * 
  */
 
+#define INPUT0_DPAD_UP    (1 << 0)      //IO0_0
+#define INPUT0_DPAD_DOWN  (1 << 1)      //IO0_1
+#define INPUT0_BTN_A      (1 << 4)      //IO0_4
+#define INPUT0_BTN_B      (1 << 5)      //IO0_5
+#define INPUT1_BTN_L      (1 << 4)      //IO1_4
+#define INPUT1_BTN_R      (1 << 5)      //IO1_5
 
 
-//I feel like we only want to do interrupts if we're not doing ADCs, but this can change around
 
-#if !defined(USE_ADC0) && defined(USE_INTERRUPTS)
- #define nINT_PIN 0 //also PIN_PA4
- bool g_nINT_state = false;
-#endif
+#define PINA_DPAD_UP    (1 << 1)      //PA1
+#define PINA_DPAD_DOWN  (1 << 2)      //PA2
+#define PINA_BTN_C      (1 << 5)      //PA5
+#define PINA_BTN_L2     (1 << 6)      //PA6
+#define PINA_BTN_R2     (1 << 7)      //PA7
+
+#define PINB_BTN_PWR    (1 << 2)      //PB2
+#define PINB_DPAD_LEFT  (1 << 4)      //PB4
+#define PINB_DPAD_RIGHT (1 << 5)      //PB5
+#define PINB_BTN_A      (1 << 6)      //PB6
+#define PINB_BTN_B      (1 << 7)      //PB7
+
+#define PINC_BTN_X      (1 << 0)      //PC0
+#define PINC_BTN_Y      (1 << 1)      //PC1
+#define PINC_BTN_START  (1 << 2)      //PC2
+#define PINC_BTN_SELECT (1 << 3)      //PC3
+#define PINC_BTN_L      (1 << 4)      //PC4
+#define PINC_BTN_R      (1 << 5)      //PC5
+
+
+//PRESSED means that the bit is 0
+#define IS_PRESSED_PINB_BTN_A(pinb_test) ((pinb_test & PINB_BTN_A) != PINB_BTN_A)
+#define IS_PRESSED_PINB_BTN_B(pinb_test) ((pinb_test & PINB_BTN_B) != PINB_BTN_B)
+
+#define IS_PRESSED_PINC_BTN_L(pinc_test) ((pinc_test & PINC_BTN_L) != PINC_BTN_L)
+#define IS_PRESSED_PINC_BTN_R(pinc_test) ((pinc_test & PINC_BTN_R) != PINC_BTN_R)
+
+#define IS_PRESSED_PINA_DPAD_UP(pina_test) ((pina_test & PINA_DPAD_UP) != PINA_DPAD_UP)
+#define IS_PRESSED_PINA_DPAD_DOWN(pina_test) ((pina_test & PINA_DPAD_DOWN) != PINA_DPAD_DOWN)
+
+
+#define IS_PRESSED_DPAD_UP() ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP) != INPUT0_DPAD_UP)
+#define IS_PRESSED_DPAD_DOWN() ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN)
+
+#define IS_PRESSED_BTN_A() ((i2c_joystick_registers.input0 & INPUT0_BTN_A) != INPUT0_BTN_A)
+#define IS_PRESSED_BTN_B() ((i2c_joystick_registers.input0 & INPUT0_BTN_B) != INPUT0_BTN_B)
+
+#define IS_PRESSED_BTN_L() ((i2c_joystick_registers.input1 & INPUT1_BTN_L) != INPUT1_BTN_L)
+#define IS_PRESSED_BTN_R() ((i2c_joystick_registers.input1 & INPUT1_BTN_R) != INPUT1_BTN_R)
+
+#define IS_SPECIAL_INPUT_MODE() (IS_PRESSED_BTN_A() && IS_PRESSED_BTN_B() && IS_PRESSED_BTN_L() && IS_PRESSED_BTN_R())
+
+
+
 
 #define PIN_POWEROFF_OUT   1
 #define PIN_PWM             20
@@ -255,8 +310,49 @@ void read_all_gpio(void)
 
   i2c_joystick_registers.input0 = input0;
   i2c_joystick_registers.input1 = input1;
-
 }
+
+#define LOOP_DELAY 0x3FFF
+
+void process_special_inputs()
+{  
+  static uint16_t special_inputs_loop_counter = 0;
+  static bool was_pressed_last_time = false;
+
+  if(IS_SPECIAL_INPUT_MODE() && (IS_PRESSED_DPAD_UP() || IS_PRESSED_DPAD_DOWN()))
+  {
+    if(special_inputs_loop_counter)   
+    {
+      //we're delay looping
+      special_inputs_loop_counter--;
+    }
+    else
+    {
+      special_inputs_loop_counter = LOOP_DELAY;
+
+      if(IS_PRESSED_DPAD_UP())
+      {
+        if(i2c_secondary_registers.config_backlight < (NUM_BACKLIGHT_PWM_STEPS-1))
+          i2c_secondary_registers.config_backlight++;
+      }
+      else if(IS_PRESSED_DPAD_DOWN())
+      {
+        if(i2c_secondary_registers.config_backlight > 0)
+          i2c_secondary_registers.config_backlight--;
+      }
+    } 
+
+    was_pressed_last_time = true;
+  }
+  else
+  {
+    if(was_pressed_last_time)
+      special_inputs_loop_counter = 0x10;  //tiny delay just for debounce
+    else if(special_inputs_loop_counter)
+      special_inputs_loop_counter--;
+  }
+}
+
 
 //this is the function that receives bytes from the i2c master for the PRIMARY
 // i2c address (which is for the joystick functionality)
@@ -289,8 +385,9 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
 
     if(x == 0x03)   //this is a writeable register
     {
-      //set PWM duty cycle
-      i2c_secondary_registers.config_PWM = temp;      
+      //set backlight value
+      if(temp >= 0 && temp < NUM_BACKLIGHT_PWM_STEPS)
+        i2c_secondary_registers.config_backlight = temp;      
     }
   }
 }
@@ -428,8 +525,8 @@ void setup()
   i2c_secondary_registers.magic = 0xED;
   i2c_secondary_registers.ver_major = VERSION_MAJOR;
   i2c_secondary_registers.ver_minor = VERSION_MINOR;
-  i2c_secondary_registers.config_PWM = g_pwm_duty_cycle;
-  g_pwm_duty_cycle = ~i2c_secondary_registers.config_PWM; //unset it
+  i2c_secondary_registers.config_backlight = CONFIG_BACKLIGHT_STEP_DEFAULT;
+  g_pwm_step = ~i2c_secondary_registers.config_backlight; //unset it
   i2c_secondary_registers.poweroff_control = 0;
 
   i2c_joystick_registers.num_loops=0;
@@ -456,17 +553,23 @@ void loop()
 
   Serial.println();
 #endif
-  
+
+  read_all_gpio();
+  process_special_inputs();
+
 #ifdef PIN_PWM
-  if(g_pwm_duty_cycle != i2c_secondary_registers.config_PWM)
+
+  if(g_pwm_step != i2c_secondary_registers.config_backlight)
   {
     //output the duty cycle to the pwm pin (PA3?)
-    analogWrite(PIN_PWM, i2c_secondary_registers.config_PWM);
-    g_pwm_duty_cycle = i2c_secondary_registers.config_PWM;
+    if(i2c_secondary_registers.config_backlight >= NUM_BACKLIGHT_PWM_STEPS)
+      i2c_secondary_registers.config_backlight = NUM_BACKLIGHT_PWM_STEPS-1;
+    
+    analogWrite(PIN_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
+    g_pwm_step = i2c_secondary_registers.config_backlight;
   }
 #endif
   
-  read_all_gpio();
 
 #ifdef USE_ADC0
   if(i2c_joystick_registers.adc_on_bits & (1 << 0))
