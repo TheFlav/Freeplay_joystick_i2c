@@ -64,7 +64,7 @@ struct i2c_joystick_register_struct {
 #ifdef CONFIG_SPEED_PROFILING  
   uint32_t num_loops;
 #endif
-} i2c_joystick_registers;
+} volatile i2c_joystick_registers;
 
 struct i2c_secondary_address_register_struct {
   byte magic;  //set to some magic value (0xED), so we know this is the right chip we're talking to
