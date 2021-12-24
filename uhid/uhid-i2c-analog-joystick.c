@@ -11,31 +11,7 @@
  
  */
 
-#error  The layout of the attiny chip changed a bit.  This will need to be reconfigured to use this layout but with ADCs turned on, I guess.
 
-/*
- * PA1 = IO0_0 = UP
- * PA2 = IO0_1 = DOWN
- * PB4 = IO0_2 = LEFT
- * PB5 = IO0_3 = RIGHT
- * PB6 = IO0_4 = BTN_A
- * PB7 = IO0_5 = BTN_B
- * PA6 = IO0_6 = BTN_L2  ifndef USE_ADC2
- * PA7 = IO0_7 = BTN_R2  ifndef USE_ADC3
- *
- * PC0 = IO1_0 = BTN_X
- * PC1 = IO1_1 = BTN_Y
- * PC2 = IO1_2 = BTN_START
- * PC3 = IO1_3 = BTN_SELECT
- * PC4 = IO1_4 = BTN_L
- * PC5 = IO1_5 = BTN_R
- * PB2 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)   ifndef CONFIG_SERIAL_DEBUG (or can be used for UART TXD0 for debugging)
- * PA5 = IO1_7 = BTN_C ifndef USE_ADC1
- *
- * PB3 =         POWEROFF_OUT
- * PA3 =         PWM Backlight OUT
- *
- */
 
 #include <errno.h>
 #include <fcntl.h>
@@ -44,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
 #include <unistd.h>
 #include <linux/uhid.h>
 #include <stdint.h>
@@ -211,12 +188,6 @@ static int event(int fd)
 	return 0;
 }
 
-static bool btn1_down;
-static bool btn2_down;
-static bool btn3_down;
-static signed char abs_hor;
-static signed char abs_ver;
-static signed char wheel;
 
 /*
  * input0
@@ -241,20 +212,17 @@ static signed char wheel;
  */
 
 struct i2c_register_struct {
-    uint8_t input0;          // Reg: 0x00 - INPUT port 0
-    uint8_t input1;          // Reg: 0x01 - INPUT port 1
-    uint8_t a0_msb;          // Reg: 0x02 - ADC0 most significant 8 bits
-    uint8_t a1_msb;          // Reg: 0x03 - ADC1 most significant 8 bits
-    uint8_t a2_msb;          // Reg: 0x04 - ADC2 most significant 8 bits
-    uint8_t a3_msb;          // Reg: 0x05 - ADC3 most significant 8 bits
-    uint8_t a0_lsb;          // Reg: 0x06 - ADC0 least significant 8 bits
-    uint8_t a1_lsb;          // Reg: 0x07 - ADC1 least significant 8 bits
-    uint8_t a2_lsb;          // Reg: 0x08 - ADC2 least significant 8 bits
-    uint8_t a3_lsb;          // Reg: 0x09 - ADC3 least significant 8 bits
-    uint8_t adc_on_bits;     // Reg: 0x0A - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
-    uint8_t config0;         // Reg: 0x0B - Configuration port 0
-    uint8_t configPWM;       // Reg: 0x0C - set PWM duty cycle
-    uint8_t adc_res;         // Reg: 0x0D - current ADC resolution (maybe settable?)
+  uint8_t input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
+  uint8_t input1;          // Reg: 0x01 - INPUT port 1 (digital buttons/dpad)
+  uint8_t a0_msb;          // Reg: 0x02 - ADC0 most significant 8 bits
+  uint8_t a1_msb;          // Reg: 0x03 - ADC1 most significant 8 bits
+  uint8_t a1a0_lsb;        // Reg: 0x04 - high nibble is a1 least significant 4 bits, low nibble is a0 least significant 4 bits
+  uint8_t a2_msb;          // Reg: 0x05 - ADC2 most significant 8 bits
+  uint8_t a3_msb;          // Reg: 0x06 - ADC2 most significant 8 bits
+  uint8_t a3a2_lsb;        // Reg: 0x07 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
+  uint8_t adc_on_bits;     // Reg: 0x08 - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
+  uint8_t config0;         // Reg: 0x09 - Configuration port 0
+  uint8_t adc_res;         // Reg: 0x0A - current ADC resolution (maybe settable?)
 } i2c_registers;
 
 struct gamepad_report_t
@@ -262,7 +230,7 @@ struct gamepad_report_t
     int8_t hat_x;
     int8_t hat_y;
     uint8_t buttons7to0;
-    uint8_t buttons15to8;
+    uint8_t buttons12to8;
     uint16_t left_x;
     uint16_t left_y;
     uint16_t right_x;
@@ -281,7 +249,7 @@ static int send_event(int fd)
 	ev.u.input.size = 12;
     
 	ev.u.input.data[0] = gamepad_report.buttons7to0;
-	ev.u.input.data[1] = gamepad_report.buttons15to8;
+	ev.u.input.data[1] = gamepad_report.buttons12to8;
 
     ev.u.input.data[2] = (unsigned char) gamepad_report.hat_x;
 	ev.u.input.data[3] = (unsigned char) gamepad_report.hat_y;
@@ -319,6 +287,12 @@ void i2c_open()
 
 void i2c_poll_joystick()
 {
+    
+    bool btn_a, btn_b, btn_c, btn_x, btn_y, btn_z, btn_l, btn_r, btn_start, btn_select, btn_l2, btn_r2;
+    
+    uint8_t dpad_bits;
+	
+	
     int8_t dpad_u, dpad_d, dpad_l, dpad_r;
 	unsigned char buf[32];
 	int ret;
@@ -341,30 +315,50 @@ void i2c_poll_joystick()
 	if(ret < 0)
 		exit(1);
 
-	gamepad_report.buttons7to0 = ~(i2c_registers.input0 >> 4 | i2c_registers.input1 << 4);
-	gamepad_report.buttons15to8 = ~(i2c_registers.input1 >> 4);
-	//printf("gamepad_report.buttons7to0 = 0x%02X gamepad_report.buttons15to8 = 0x%02X\n", gamepad_report.buttons7to0, gamepad_report.buttons15to8);
 
-    dpad_u = (~i2c_registers.input0 >> 0 & 0x01);
-    dpad_d = (~i2c_registers.input0 >> 1 & 0x01);
+
+
+    ret = ~ret;         //invert all bits 1=pressed 0=unpressed
+
+    dpad_bits = ret & 0x000F;
     
-    dpad_l = (~i2c_registers.input0 >> 2 & 0x01);
-    dpad_r = (~i2c_registers.input0 >> 3 & 0x01);
+    ret >>= 4;
+    btn_a = ret & 0b1;
+    ret >>= 1;
+    btn_b = ret & 0b1;
+    ret >>= 1;
+    btn_l2 = ret & 0b1;
+    ret >>= 1;
+    btn_r2 = ret & 0b1;
+    ret >>= 1;
+    btn_x = ret & 0b1;
+    ret >>= 1;
+    btn_y = ret & 0b1;
+    ret >>= 1;
+    btn_start = ret & 0b1;
+    ret >>= 1;
+    btn_select = ret & 0b1;
+    ret >>= 1;
+    btn_l = ret & 0b1;
+    ret >>= 1;
+    btn_r = ret & 0b1;
+    ret >>= 1;
+    btn_z = ret & 0b1;
+    ret >>= 1;
+    btn_c = ret & 0b1;
+    
+    gamepad_report.buttons7to0 = (btn_r << 7) | (btn_l << 6) | (btn_z << 5) | (btn_y << 4) | (btn_x << 3) | (btn_c << 2) | (btn_b << 1) | btn_a;
+    gamepad_report.buttons12to8 = (btn_select << 3) | (btn_start << 2) | (btn_r2 << 1) | btn_l2;
+
+    dpad_u = (dpad_bits >> 0 & 0x01);
+    dpad_d = (dpad_bits >> 1 & 0x01);
+    
+    dpad_l = (dpad_bits >> 2 & 0x01);
+    dpad_r = (dpad_bits >> 3 & 0x01);
 
     gamepad_report.hat_x = dpad_r - dpad_l;
     gamepad_report.hat_y = dpad_u - dpad_d;
-    
-    //printf("i2c_registers.input0=0x%02X u=%d d=%d l=%d r=%d hat_x=%d hat_x=%d\n", i2c_registers.input0, dpad_u, dpad_d, dpad_l, dpad_r, gamepad_report.hat_x, gamepad_report.hat_y);
 
-
-    gamepad_report.left_x = i2c_registers.a0_msb << 8 | i2c_registers.a0_lsb;
-    gamepad_report.left_y = i2c_registers.a1_msb << 8 | i2c_registers.a1_lsb;
-    
-    gamepad_report.right_x = i2c_registers.a2_msb << 8 | i2c_registers.a2_lsb;
-    gamepad_report.right_y = i2c_registers.a3_msb << 8 | i2c_registers.a3_lsb;
-
-    
-	//printf("\n");
 }
 
 
@@ -374,8 +368,29 @@ void i2c_poll_joystick()
 int main(int argc, char **argv)
 {
 	const char *path = "/dev/uhid";
+	struct pollfd pfds[2];
 	int ret;
+	struct termios state;
 
+	ret = tcgetattr(STDIN_FILENO, &state);
+	if (ret) {
+		fprintf(stderr, "Cannot get tty state\n");
+	} else {
+		state.c_lflag &= ~ICANON;
+		state.c_cc[VMIN] = 1;
+		ret = tcsetattr(STDIN_FILENO, TCSANOW, &state);
+		if (ret)
+			fprintf(stderr, "Cannot set tty state\n");
+	}
+
+	if (argc >= 2) {
+		if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
+			fprintf(stderr, "Usage: %s [%s]\n", argv[0], path);
+			return EXIT_SUCCESS;
+		} else {
+			path = argv[1];
+		}
+	}
 
 	fprintf(stderr, "Open uhid-cdev %s\n", path);
 	fd = open(path, O_RDWR | O_CLOEXEC);
@@ -391,6 +406,10 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
+	pfds[0].fd = STDIN_FILENO;
+	pfds[0].events = POLLIN;
+	pfds[1].fd = fd;
+	pfds[1].events = POLLIN;
 
 	i2c_open();
     
@@ -404,7 +423,7 @@ int main(int argc, char **argv)
 	while (1) {
 		i2c_poll_joystick();
 
-		//if(gamepad_report.buttons7to0 != gamepad_report_prev.buttons7to0 || gamepad_report.buttons15to8 != gamepad_report_prev.buttons15to8)
+		if(memcmp(&gamepad_report, &gamepad_report_prev, sizeof(gamepad_report)) != 0)
 		{
 			gamepad_report_prev = gamepad_report;
 			send_event(fd);

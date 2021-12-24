@@ -46,6 +46,7 @@ void i2c_close(void); //close I2C bus
 
 void tty_signal_handler(int /*sig*/);
 
+
 //debug
 bool debug = true; //TODO implement
 bool debug_adv = true; //TODO implement
@@ -56,7 +57,7 @@ double program_start_time = 0.;
 #define print_stdout(fmt, ...) do {fprintf(stdout, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time /*(double)clock()/CLOCKS_PER_SEC*/, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
 
 
-//#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
+#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
 //#define USE_PIGPIO_IRQ //or USE_PIGPIO
 //or comment out both of the above to poll
 
@@ -96,6 +97,7 @@ const double i2c_poll_duration_warn = 0.15; //warning if loop duration over this
 double i2c_poll_duration = 0.; //poll loop duration
 double poll_clock_start = 0., poll_benchmark_clock_start = -1.;
 long poll_benchmark_loop = 0;
+
 
 
 
@@ -161,6 +163,7 @@ static void uhid_destroy(int fd){ //close uhid device
 	ev.type = UHID_DESTROY;
 
 	if(uhid_write(fd, &ev) == 0){fprintf(stderr, "uhid device destroyed\n");}
+
 }
 
 static int uhid_write(int fd, const struct uhid_event *ev){ //write data to uhid device
@@ -504,6 +507,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
+
 	uhid_fd = open(path, O_RDWR | O_CLOEXEC);
 	if (uhid_fd < 0) {
 		print_stderr(/*fprintf(stderr, */"failed to open uhid-cdev %s with errno:%d (%m)\n", path, -uhid_fd);return EXIT_FAILURE;
@@ -544,6 +548,33 @@ int main(int argc, char **argv) {
 	int ver, err;
 	if ((ver = gpioInitialise()) > 0){print_stderr("pigpio: version: %d\n",ver);
 	} else {print_stderr("FATAL: failed to detect pigpio version\n"); exit(EXIT_FAILURE);}
+<<<<<<< HEAD
+
+	if (nINT_GPIO > 31){ //check pin
+		print_stderr("FATAL: pigpio limited to GPIO0-31, asked for %d\n", nINT_GPIO);
+		main_return = EXIT_FAILURE; goto app_close;
+	}
+
+	if ((err = gpioSetMode(nINT_GPIO, PI_INPUT)) != 0){ //set as input
+		print_stderr("FATAL: pigpio failed to set GPIO%d to input\n", nINT_GPIO);
+		main_return = EXIT_FAILURE; goto app_close;
+	}
+	
+	if ((err = gpioSetPullUpDown(nINT_GPIO, PI_PUD_UP)) != 0){ //set pull up
+		print_stderr("FATAL: pigpio failed to set PullUp for GPIO%d\n", nINT_GPIO);
+		main_return = EXIT_FAILURE; goto app_close;
+	}
+
+	if ((err = gpioGlitchFilter(nINT_GPIO, 100)) != 0){ //glitch filter to avoid bounce
+		print_stderr("FATAL: pigpio failed to set glitch filter for GPIO%d\n", nINT_GPIO);
+		main_return = EXIT_FAILURE; goto app_close;
+	}
+
+	if ((err = gpioSetAlertFunc(nINT_GPIO, gpio_callback)) != 0){ //callback setup
+		print_stderr("FATAL: pigpio failed to set callback for GPIO%d\n", nINT_GPIO);
+		main_return = EXIT_FAILURE; goto app_close;
+	} else {fprintf(stderr, "using pigpio IRQ\n");}
+=======
 
 	if (nINT_GPIO > 31){ //check pin
 		print_stderr("FATAL: pigpio limited to GPIO0-31, asked for %d\n", nINT_GPIO);
@@ -593,7 +624,23 @@ int main(int argc, char **argv) {
 		i2c_poll_duration = get_time_double() - poll_clock_start;
 		//printf ("DEBUG: poll_clock_start:%lf, i2c_poll_duration:%lf\n", poll_clock_start, i2c_poll_duration);
 
+>>>>>>> 87129036368c5893b6a70db0f21d11b38d7aff7a
 
+	//signal callbacks setup
+	gpioSetSignalFunc(SIGINT, tty_signal_handler); //ctrl-c
+	gpioSetSignalFunc(SIGTERM, tty_signal_handler); //SIGTERM from htop or other
+#endif
+    
+    fprintf(stderr, "Press '^C' to quit...\n");
+	
+#if defined USE_WIRINGPI_IRQ || defined USE_PIGPIO_IRQ
+	while (!kill_resquested){usleep(100000);} //sleep until app close requested
+#else
+	fprintf(stderr, "no IRQ defined, polling at %dhz\n", i2c_poll_rate);
+	while (!kill_resquested) {
+		poll_clock_start = clock();
+
+		i2c_poll_joystick();
 
 
 		if (!i2c_poll_rate_disable){
