@@ -9,6 +9,8 @@
  */
 
 
+//TODO:  save backlight value to eeprom
+
 #include <Wire.h>
 
 #define VERSION_MAJOR   0
@@ -65,6 +67,7 @@ struct i2c_joystick_register_struct
   uint8_t a2_msb;          // Reg: 0x05 - ADC2 most significant 8 bits
   uint8_t a3_msb;          // Reg: 0x06 - ADC2 most significant 8 bits
   uint8_t a3a2_lsb;        // Reg: 0x07 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
+#define REGISTER_ADC_ON_BITS 0x08
   uint8_t adc_on_bits;     // Reg: 0x08 - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
   uint8_t config0;         // Reg: 0x09 - Configuration port 0
   uint8_t adc_res;         // Reg: 0x0A - current ADC resolution (maybe settable?)
@@ -75,6 +78,7 @@ struct i2c_secondary_address_register_struct
   uint8_t magic;             //set to some magic value (0xED), so we know this is the right chip we're talking to
   uint8_t ver_major;
   uint8_t ver_minor;
+#define REGISTER_CONFIG_BACKLIGHT 0x03
   uint8_t config_backlight;  // Reg: 0x03
   uint8_t poweroff_control;  // Reg: 0x04  - write some magic number here to turn off the system
 } i2c_secondary_registers;
@@ -359,7 +363,7 @@ inline void receive_i2c_callback_main_address(int i2c_bytes_received)
   {
     byte temp = Wire.read(); //We might record it, we might throw it away
 
-    if(x == 0x0A)   //this is a writeable register
+    if(x == REGISTER_ADC_ON_BITS)   //this is a writeable register
     {
       i2c_joystick_registers.adc_on_bits = temp;
     }
@@ -378,7 +382,7 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
   {
     byte temp = Wire.read(); //We might record it, we might throw it away
 
-    if(x == 0x03)   //this is a writeable register
+    if(x == REGISTER_CONFIG_BACKLIGHT)   //this is a writeable register
     {
       //set backlight value
       if(temp >= 0 && temp < NUM_BACKLIGHT_PWM_STEPS)
