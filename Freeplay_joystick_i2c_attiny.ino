@@ -70,7 +70,8 @@ struct i2c_joystick_register_struct
 #define REGISTER_ADC_ON_BITS 0x08
   uint8_t adc_on_bits;     // Reg: 0x08 - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
   uint8_t config0;         // Reg: 0x09 - Configuration port 0
-  uint8_t adc_res;         // Reg: 0x0A - current ADC resolution (maybe settable?)
+  uint8_t config1;         // Reg: 0x0A - Configuration port 1
+  uint8_t adc_res;         // Reg: 0x0B - current ADC resolution (maybe settable?)
 } volatile i2c_joystick_registers;
 
 struct i2c_secondary_address_register_struct 
@@ -586,7 +587,7 @@ void loop()
   {
     adc = analogRead(PIN_PA6);
     i2c_joystick_registers.a2_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_joystick_registers.a2a1_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a2a1_lsb & 0xF0);
+    i2c_joystick_registers.a3a2_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a3a2_lsb & 0xF0);
   }
 #endif
 #ifdef USE_ADC3
@@ -594,7 +595,7 @@ void loop()
   {
     adc = analogRead(PIN_PA7);
     i2c_joystick_registers.a3_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_joystick_registers.a2a1_lsb = (adc << (8 - (ADC_RESOLUTION - 8)) & 0xF0) | (i2c_joystick_registers.a2a1_lsb & 0x0F);
+    i2c_joystick_registers.a3a2_lsb = (adc << (8 - (ADC_RESOLUTION - 8)) & 0xF0) | (i2c_joystick_registers.a3a2_lsb & 0x0F);
   }
 #endif
 
