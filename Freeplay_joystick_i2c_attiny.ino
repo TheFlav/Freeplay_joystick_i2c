@@ -12,9 +12,7 @@
 #include <Wire.h>
 
 #define VERSION_MAJOR   0
-#define VERSION_MINOR   2
-
-#define CONFIG_SPEED_PROFILING
+#define VERSION_MINOR   3
 
 
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
@@ -57,31 +55,28 @@ uint8_t backlight_pwm_steps[NUM_BACKLIGHT_PWM_STEPS] = {0x00, 0x10, 0x20, 0x30, 
 
 
 
-struct i2c_joystick_register_struct {
-  byte input0;          // Reg: 0x00 - INPUT port 0
-  byte input1;          // Reg: 0x01 - INPUT port 1
-  byte a0_msb;          // Reg: 0x02 - ADC0 most significant 8 bits
-  byte a1_msb;          // Reg: 0x03 - ADC1 most significant 8 bits
-  byte a2_msb;          // Reg: 0x04 - ADC2 most significant 8 bits
-  byte a3_msb;          // Reg: 0x05 - ADC3 most significant 8 bits
-  byte a0_lsb;          // Reg: 0x06 - ADC0 least significant 8 bits
-  byte a1_lsb;          // Reg: 0x07 - ADC1 least significant 8 bits
-  byte a2_lsb;          // Reg: 0x08 - ADC2 least significant 8 bits
-  byte a3_lsb;          // Reg: 0x09 - ADC3 least significant 8 bits
-  byte adc_on_bits;     // Reg: 0x0A - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
-  byte config0;         // Reg: 0x0B - Configuration port 0
-  byte adc_res;         // Reg: 0x0D - current ADC resolution (maybe settable?)
-#ifdef CONFIG_SPEED_PROFILING  
-  uint32_t num_loops;
-#endif
+struct i2c_joystick_register_struct 
+{
+  uint8_t input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
+  uint8_t input1;          // Reg: 0x01 - INPUT port 1 (digital buttons/dpad)
+  uint8_t a0_msb;          // Reg: 0x02 - ADC0 most significant 8 bits
+  uint8_t a1_msb;          // Reg: 0x03 - ADC1 most significant 8 bits
+  uint8_t a1a0_lsb;        // Reg: 0x04 - high nibble is a1 least significant 4 bits, low nibble is a0 least significant 4 bits
+  uint8_t a2_msb;          // Reg: 0x05 - ADC2 most significant 8 bits
+  uint8_t a3_msb;          // Reg: 0x06 - ADC2 most significant 8 bits
+  uint8_t a3a2_lsb;        // Reg: 0x07 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
+  uint8_t adc_on_bits;     // Reg: 0x08 - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
+  uint8_t config0;         // Reg: 0x09 - Configuration port 0
+  uint8_t adc_res;         // Reg: 0x0A - current ADC resolution (maybe settable?)
 } volatile i2c_joystick_registers;
 
-struct i2c_secondary_address_register_struct {
-  byte magic;  //set to some magic value (0xED), so we know this is the right chip we're talking to
-  byte ver_major;
-  byte ver_minor;
-  byte config_backlight;  // Reg: 0x03
-  byte poweroff_control;  // Reg: 0x04  - write some magic number here to turn off the system
+struct i2c_secondary_address_register_struct 
+{
+  uint8_t magic;             //set to some magic value (0xED), so we know this is the right chip we're talking to
+  uint8_t ver_major;
+  uint8_t ver_minor;
+  uint8_t config_backlight;  // Reg: 0x03
+  uint8_t poweroff_control;  // Reg: 0x04  - write some magic number here to turn off the system
 } i2c_secondary_registers;
 
 volatile byte g_last_sent_input0 = 0xFF;
@@ -528,16 +523,11 @@ void setup()
   i2c_secondary_registers.config_backlight = CONFIG_BACKLIGHT_STEP_DEFAULT;
   g_pwm_step = ~i2c_secondary_registers.config_backlight; //unset it
   i2c_secondary_registers.poweroff_control = 0;
-
-  i2c_joystick_registers.num_loops=0;
 }
 
 
 void loop() 
 {
-  #ifdef CONFIG_SPEED_PROFILING
-    i2c_joystick_registers.num_loops++;
-  #endif
   
 #ifdef USE_ADC
   word adc;
@@ -576,7 +566,7 @@ void loop()
   {
     adc = analogRead(PIN_PA4);
     i2c_joystick_registers.a0_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_joystick_registers.a0_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+    i2c_joystick_registers.a1a0_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a1a0_lsb & 0xF0);
   }
 #endif
 #ifdef USE_ADC1
@@ -584,7 +574,7 @@ void loop()
   {
     adc = analogRead(PIN_PA5);
     i2c_joystick_registers.a1_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_joystick_registers.a1_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+    i2c_joystick_registers.a1a0_lsb = (adc << (8 - (ADC_RESOLUTION - 8)) & 0xF0) | (i2c_joystick_registers.a1a0_lsb & 0x0F);
   }
 #endif
 #ifdef USE_ADC2
@@ -592,7 +582,7 @@ void loop()
   {
     adc = analogRead(PIN_PA6);
     i2c_joystick_registers.a2_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_joystick_registers.a2_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+    i2c_joystick_registers.a2a1_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a2a1_lsb & 0xF0);
   }
 #endif
 #ifdef USE_ADC3
@@ -600,7 +590,7 @@ void loop()
   {
     adc = analogRead(PIN_PA7);
     i2c_joystick_registers.a3_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_joystick_registers.a3_lsb = adc << (8 - (ADC_RESOLUTION - 8)) & 0xFF;
+    i2c_joystick_registers.a2a1_lsb = (adc << (8 - (ADC_RESOLUTION - 8)) & 0xF0) | (i2c_joystick_registers.a2a1_lsb & 0x0F);
   }
 #endif
 
