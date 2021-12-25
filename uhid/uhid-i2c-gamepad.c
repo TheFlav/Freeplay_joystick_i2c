@@ -139,8 +139,7 @@ const char js0_enable_desc[] = "Enable joystick 0 (ADC0-1), please check the doc
 const char js1_enable_desc[] = "Enable joystick 1 (ADC2-3), please check the documentation, does require specific ATTINY configuration.";
 
 struct gamepad_report_t {
-    int8_t hat_x;
-    int8_t hat_y;
+    int8_t hat0;
     uint8_t buttons7to0;
     uint8_t buttons12to8;
     uint16_t left_x;
@@ -443,39 +442,53 @@ static double get_time_double(void){ //get time in double (seconds)
 static int uhid_create(int fd) { //create uhid device
 	struct uhid_event ev;
 
-	unsigned char rdesc[] = { //TODO: dynamic build
-	0x05, 0x01, //; USAGE_PAGE (Generic Desktop)
-	0x09, 0x05, //; USAGE (Gamepad)
-	0xA1, 0x01, //; COLLECTION (Application)
-		0x05, 0x09, //; USAGE_PAGE (Button)
-		0x19, 0x01, //; USAGE_MINIMUM (Button 1)
-		0x29, 0x0C, //; USAGE_MAXIMUM (Button 12)
-		0x15, 0x00, //; LOGICAL_MINIMUM (0)
-		0x25, 0x01, //; LOGICAL_MAXIMUM (1)
-		0x75, 0x01, //; REPORT_SIZE (1)
-		0x95, 0x10, //; REPORT_COUNT (16)
-		0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-
-		0x05, 0x01, // Usage Page (Generic Desktop)
-		0x15, 0xFF, // Logical Minimum (-1)
-		0x25, 0x01, // LOGICAL_MAXIMUM (1)
-		0x09, 0x34, // Usage (RY)
-		0x09, 0x35, // Usage (RZ)
-		0x75, 0x08, // Report Size (8)
-		0x95, 0x02, // Report Count (2)
-		0x81, 0x02, // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-
-		0x05, 0x01, // Usage Page (Generic Desktop)
+	unsigned char rdesc[] = { //partially based on https://github.com/NicoHood/HID/blob/master/src/MultiReport/Gamepad.cpp
+	0x05, 0x01, // USAGE_PAGE (Generic Desktop)
+	0x09, 0x05, // USAGE (Gamepad)
+	0xA1, 0x01, // COLLECTION (Application)
+		//Digital
+		0x05, 0x09, // USAGE_PAGE (Button)
+		0x19, 0x01, // USAGE_MINIMUM (Button 1)
+		0x29, 0x0C, // USAGE_MAXIMUM (Button 12)
 		0x15, 0x00, // LOGICAL_MINIMUM (0)
-		0x26, 0xFF, 0xFF, // LOGICAL_MAXIMUM (0xFFFF)
-		0x09, 0x30, // Usage (X)
-		0x09, 0x31, // Usage (Y)
-		0x09, 0x32, // Usage (Z)
-		0x09, 0x33, // Usage (RX)
-		0x75, 0x10, // Report Size (16)
-		0x95, 0x04, // Report Count (4)
+		0x25, 0x01, // LOGICAL_MAXIMUM (1)
+		0x75, 0x01, // REPORT_SIZE (1)
+		0x95, 0x10, // REPORT_COUNT (16)
 		0x81, 0x02, // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-	0xC0,// ; END_COLLECTION
+
+		//Dpad (Hat0X-Y)
+		/*
+		Important note:
+		Multiple ways can be used to declare a Dpad. but as of 
+		As of 2021-12-25, HID_GD_UP (0x90), HID_GD_DOWN (0x91), HID_GD_RIGHT (0x92), HID_GD_LEFT (0x93) way is broken.
+		For reference: 
+		If HID descriptor has DPAD UP/DOWN/LEFT/RIGHT HID usages and each of usage size is 1 bit,
+		then only the first one will generate input event, the rest ofthe HID usages will be assigned to hat direction only.
+		https://patchwork.kernel.org/project/linux-input/patch/20201101193504.679934-1-lzye@google.com/
+		*/
+		0x05, 0x01, // USAGE_PAGE (Generic Desktop)
+		0x09, 0x39, // USAGE (Hat switch)
+		0x09, 0x39, // USAGE (Hat switch)
+		0x15, 0x01, // LOGICAL_MINIMUM (1)
+		0x25, 0x08, // LOGICAL_MAXIMUM (8)
+		0x75, 0x04, // REPORT_SIZE (4)
+		0x95, 0x02, // REPORT_COUNT (2), needs one, 2 here to avoid padding 4bits
+		0x81, 0x02, // INPUT (Data,Var,Abs)
+
+		//4x 16bits axis
+		0x05, 0x01, // USAGE_PAGE (Generic Desktop)
+		0xa1, 0x00, // COLLECTION (Physical)
+			0x09, 0x30, // USAGE (X)
+			0x09, 0x31, // USAGE (Y)
+			0x09, 0x33, // USAGE (Rx)
+			0x09, 0x34, // USAGE (Ry)
+			0x15, 0x00, // LOGICAL_MINIMUM (0)
+			0x26, 0xFF, 0xFF, // LOGICAL_MAXIMUM (0xFFFF)
+			0x75, 0x10, // REPORT_SIZE (16)
+			0x95, 0x04, // REPORT_COUNT (4)
+			0x81, 0x02, // INPUT (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+		0xc0, // END_COLLECTION
+	0xC0, // END_COLLECTION
 	};
 
 	memset(&ev, 0, sizeof(ev));
@@ -516,39 +529,37 @@ static int uhid_write(int fd, const struct uhid_event *ev){ //write data to uhid
 
 static int uhid_send_event(int fd) { //send event to uhid device
 	struct uhid_event ev;
-
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_INPUT;
-    ev.u.input.size = 12;
-	//if (uhid_js_left_enable) {ev.u.input.size += 4;}
-	//if (uhid_js_right_enable) {ev.u.input.size += 4;}
+    //ev.u.input.size = 12;
 
-	ev.u.input.data[0] = gamepad_report.buttons7to0;
-	ev.u.input.data[1] = gamepad_report.buttons12to8;
+	int index = 0;
+	ev.u.input.data[index++] = gamepad_report.buttons7to0; //digital msb
+	ev.u.input.data[index++] = gamepad_report.buttons12to8; //digital lsb
 
-	ev.u.input.data[2] = (unsigned char) gamepad_report.hat_x;
-	ev.u.input.data[3] = (unsigned char) gamepad_report.hat_y;
+	ev.u.input.data[index++] = (unsigned char) 0b00000000; //dpad
 
-	if (uhid_js_left_enable) {
-		ev.u.input.data[4] = gamepad_report.left_x & 0xFF;
-		ev.u.input.data[5] = gamepad_report.left_x >> 8;
-		ev.u.input.data[6] = gamepad_report.left_y & 0xFF;
-		ev.u.input.data[7] = gamepad_report.left_y >> 8;
-	} else {
-		ev.u.input.data[4] = 0xFF; ev.u.input.data[5] = 0x7F;
-		ev.u.input.data[6] = 0xFF; ev.u.input.data[7] = 0x7F;
+	if (uhid_js_left_enable) { //js0
+		ev.u.input.data[index++] = gamepad_report.left_x & 0xFF;
+		ev.u.input.data[index++] = gamepad_report.left_x >> 8;
+		ev.u.input.data[index++] = gamepad_report.left_y & 0xFF;
+		ev.u.input.data[index++] = gamepad_report.left_y >> 8;
+	} else { //report center
+		ev.u.input.data[index++] = 0xFF; ev.u.input.data[index++] = 0x7F;
+		ev.u.input.data[index++] = 0xFF; ev.u.input.data[index++] = 0x7F;
 	}
 
-	if (uhid_js_right_enable) {
-		ev.u.input.data[8] = gamepad_report.right_x & 0xFF;
-		ev.u.input.data[9] = gamepad_report.right_x >> 8;
-		ev.u.input.data[10] = gamepad_report.right_y & 0xFF;
-		ev.u.input.data[11] = gamepad_report.right_y >> 8;
-	} else {
-		ev.u.input.data[8] = 0xFF; ev.u.input.data[9] = 0x7F;
-		ev.u.input.data[10] = 0xFF; ev.u.input.data[11] = 0x7F;
+	if (uhid_js_right_enable) { //js1
+		ev.u.input.data[index++] = gamepad_report.right_x & 0xFF;
+		ev.u.input.data[index++] = gamepad_report.right_x >> 8;
+		ev.u.input.data[index++] = gamepad_report.right_y & 0xFF;
+		ev.u.input.data[index++] = gamepad_report.right_y >> 8;
+	} else { //report center
+		ev.u.input.data[index++] = 0xFF; ev.u.input.data[index++] = 0x7F;
+		ev.u.input.data[index++] = 0xFF; ev.u.input.data[index++] = 0x7F;
 	}
 
+    ev.u.input.size = index;
 	return uhid_write(fd, &ev);
 }
 
@@ -641,13 +652,23 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 	}
 	
 	//digital
-	int8_t dpad[4];
-	for (int8_t i=0; i<4; i++){dpad[i] = (~i2c_registers.input0 >> i & 0x01);}
-	gamepad_report.hat_y = dpad[0] - dpad[1];
-	gamepad_report.hat_x = dpad[3] - dpad[2];
-
 	gamepad_report.buttons7to0 = ~(i2c_registers.input0 >> 4 | i2c_registers.input1 << 4);
 	gamepad_report.buttons12to8 = ~(i2c_registers.input1 >> 4);
+
+	//dpad
+	bool dpad[4]; //0:up ,1:down ,2:left ,3:right
+	for (int8_t i=0; i<4; i++){dpad[i] = (~i2c_registers.input0 >> i & 0x01);}
+	ret = 0; //default to nothing
+	if (dpad[0]){
+		if (dpad[2]){ret = 8; //up left
+		} else if(dpad[3]){ret = 2; //up right
+		} else {ret = 1;} //up
+	} else if (dpad[1]){
+		if (dpad[2]){ret = 6; //down left
+		} else if(dpad[3]){ret = 4; //down right
+		} else {ret = 5;} //down
+	} else if (dpad[2]){ret = 7; //left
+	} else if (dpad[3]){ret = 3;} //right
 
 	//analog
 	int js_values[4] = {0,0,0,0};
@@ -683,11 +704,12 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 	
 	//report
 	int report_val = 0, report_prev_val = 1; adc_firstrun = false;
+
 	if (!(uhid_js_left_enable + uhid_js_right_enable)) {
-		report_val = gamepad_report.buttons7to0 + gamepad_report.buttons12to8 + gamepad_report.hat_x + gamepad_report.hat_y;
-		report_prev_val = gamepad_report_prev.buttons7to0 + gamepad_report_prev.buttons12to8 + gamepad_report_prev.hat_x + gamepad_report_prev.hat_y;
+		report_val = gamepad_report.buttons7to0 + gamepad_report.buttons12to8 + gamepad_report.hat0;
+		report_prev_val = gamepad_report_prev.buttons7to0 + gamepad_report_prev.buttons12to8 + gamepad_report_prev.hat0;
 	}
-	
+
 	if (report_val != report_prev_val){
 		gamepad_report_prev = gamepad_report;
 		uhid_send_event(uhid_fd);
