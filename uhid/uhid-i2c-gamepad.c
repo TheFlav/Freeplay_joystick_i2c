@@ -537,7 +537,7 @@ static int uhid_send_event(int fd) { //send event to uhid device
 	ev.u.input.data[index++] = gamepad_report.buttons7to0; //digital msb
 	ev.u.input.data[index++] = gamepad_report.buttons12to8; //digital lsb
 
-	ev.u.input.data[index++] = (unsigned char) 0b00000000; //dpad
+	ev.u.input.data[index++] = gamepad_report.hat0; //dpad
 
 	if (uhid_js_left_enable) { //js0
 		ev.u.input.data[index++] = gamepad_report.left_x & 0xFF;
