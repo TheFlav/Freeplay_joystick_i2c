@@ -91,8 +91,8 @@ static void uhid_destroy(int /*fd*/); //close uhid device
 static int uhid_write(int /*fd*/, const struct uhid_event* /*ev*/); //write data to uhid device
 static int uhid_send_event(int /*fd*/); //send event to uhid device
 
-static void i2c_open(void); //open I2C bus
-static void i2c_close(void); //close I2C bus
+static int i2c_open(int /*bus*/, int /*addr*/); //open I2C bus
+static void i2c_close(int /*fd*/, int /*addr*/); //close I2C bus
 static int adc_correct_offset_center(int /*adc_resolution*/, int /*adc_value*/, int /*adc_min*/, int /*adc_max*/, int /*adc_offsets*/, int /*inside_flat*/, int /*outside_flat*/, int /*index*/); //apply offset center, expand adc range, inside/ouside flat
 static void i2c_poll_joystick(void); //poll data from i2c device
 
@@ -112,6 +112,11 @@ bool debug = true; //TODO implement
 bool debug_adv = true; //advanced debug output, benchmark
 bool i2c_poll_rate_disable = true; //allow full throttle update if true
 
+const char debug_desc[] = "Enable debug outputs (0:disable, 1:enable).";
+const char debug_adv_desc[] = "Enable debug outputs (0:disable, 1:enable).";
+const char i2c_poll_rate_disable_desc[] = "Disable pollrate limitation (0:disable, 1:enable).";
+
+
 //tty output functions
 double program_start_time = 0.;
 #define print_stderr(fmt, ...) do {fprintf(stderr, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time /*(double)clock()/CLOCKS_PER_SEC*/, __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
@@ -130,24 +135,35 @@ bool uhid_js_left_enable = false;
 bool uhid_js_right_enable = false;
 bool js_enable[] = {false,false}; //used only to set adc register on device
 
+const char js0_enable_desc[] = "Enable joystick 0 (ADC0-1), please check the documentation, does require specific ATTINY configuration.";
+const char js1_enable_desc[] = "Enable joystick 1 (ADC2-3), please check the documentation, does require specific ATTINY configuration.";
+
 struct gamepad_report_t {
     int8_t hat_x;
     int8_t hat_y;
     uint8_t buttons7to0;
-    uint8_t buttons15to8;
+    uint8_t buttons12to8;
     uint16_t left_x;
     uint16_t left_y;
     uint16_t right_x;
     uint16_t right_y;
 } gamepad_report, gamepad_report_prev;
 
+
 //I2C related vars
 int i2c_bus = 1;
-int i2c_addr = 0x20;
-int i2c_file = -1;
+int i2c_addr = 0x20, i2c_addr_sec = 0x40;
+int i2c_fd = -1, i2c_fd_sec = -1;
 const int i2c_errors_report = 10; //error count before report to tty
 int i2c_errors_count = 0; //errors count that happen in a row
 int i2c_last_error = 0; //last detected error
+const uint8_t i2c_magic_sig = 0xED;
+uint8_t i2c_dev_major=0, i2c_dev_minor=0;
+
+const char i2c_bus_desc[] = "I2C bus to use, default:1.";
+const char i2c_addr_desc[] = "Main I2C address, default:0x20.";
+const char i2c_addr_sec_desc[] = "Secondary I2C address for device identification, default:0x40.";
+const char nINT_GPIO_desc[] = "GPIO pin to use for interrupt, default:40 (-1 to disable)."; //gpio pin used for irq, limited to 31 for pigpio, set to -1 to disable
 
 struct i2c_register_struct {
 	uint8_t input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
@@ -164,6 +180,7 @@ struct i2c_register_struct {
 	uint8_t adc_res;         // Reg: 0x0B - current ADC resolution (maybe settable?)
 } i2c_registers;
 
+
 //ADC related vars
 bool adc_firstrun = true;
 int adc_res = 16; unsigned int adc_res_limit = INT_MIN+INT_MAX; //limit set in main(), set to absolute extrem here to fill with 1
@@ -175,6 +192,14 @@ int adc_values_min[] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF}, adc_values_max[] = {0,0
 int/*int16_t*/ /*adc_fuzz[] = {16,16,16,16}, */adc_flat[] = {10,10,10,10}, adc_flat_outside[] = {10,10,10,10}; //store axis /*fuzz-*/flat values (in percent)
 bool adc_autocenter[] = {false,false,false,false}; //store axis autocenter bools
 
+const char adc_min_desc[] = "Lowest ADC output limit (>= 0).";
+const char adc_max_desc[] = "Highest ADC output limit (<= 65354).";
+const char adc_flat_desc[] = "Center deadzone (in percent).";
+const char adc_flat_outside_desc[] = "Outside deadzone (in percent).";
+const char adc_reversed_desc[] = "Reverse axis output (0:disable, 1:enable).";
+const char adc_autocenter_desc[] = "Autodetect physical center (0:disable, 1:enable). Important: if enable, leave device alone during boot process to avoid messing detection.";
+
+
 //Poll rate vars
 const int i2c_poll_rate = 125; //poll per sec
 const double i2c_poll_rate_time = 1. / i2c_poll_rate; //poll interval in sec
@@ -183,13 +208,17 @@ double i2c_poll_duration = 0.; //poll loop duration
 double poll_clock_start = 0., poll_benchmark_clock_start = -1.;
 long poll_benchmark_loop = 0;
 
+
 //Config related vars
 const char cfg_filename[] = "config.cfg";
 int cfg_version = 0, cfg_version_org = 0;
 
+const char cfg_version_desc[] = "Change value to force resync of configuration file.";
+
+
 //vars names in config file, IMPORTANT: no space
-const char *cfg_vars_name[] = {	"debug","debug_adv","disable_pollrate",
-								"\ni2c_bus", "i2c_address", "i2c_irq",
+const char *cfg_vars_name[] = {	"debug", "debug_adv", "disable_pollrate",
+								"\ni2c_bus", "i2c_address", "i2c_address_sec", "i2c_irq",
 								"\njs0_enable", "js1_enable",
 								"\nadc0_min", "adc0_max", "adc0_flat", "adc0_flat_outside", "adc0_reversed", "adc0_autocenter",
 								"\nadc1_min", "adc1_max", "adc1_flat", "adc1_flat_outside", "adc1_reversed", "adc1_autocenter",
@@ -197,9 +226,18 @@ const char *cfg_vars_name[] = {	"debug","debug_adv","disable_pollrate",
 								"\nadc3_min", "adc3_max", "adc3_flat", "adc3_flat_outside", "adc3_reversed", "adc3_autocenter",
 								"\nconfig_version"};
 
+const char *cfg_vars_desc[] = {	debug_desc, debug_adv_desc, i2c_poll_rate_disable_desc,
+								i2c_bus_desc, i2c_addr_desc, i2c_addr_sec_desc, nINT_GPIO_desc,
+								js0_enable_desc, js1_enable_desc,
+								adc_min_desc, adc_max_desc, adc_flat_desc, adc_flat_outside_desc, adc_reversed_desc, adc_autocenter_desc,
+								adc_min_desc, adc_max_desc, adc_flat_desc, adc_flat_outside_desc, adc_reversed_desc, adc_autocenter_desc,
+								adc_min_desc, adc_max_desc, adc_flat_desc, adc_flat_outside_desc, adc_reversed_desc, adc_autocenter_desc,
+								adc_min_desc, adc_max_desc, adc_flat_desc, adc_flat_outside_desc, adc_reversed_desc, adc_autocenter_desc,
+								cfg_version_desc};
+
 //types : 0:int, 1:uint, 2:float, 3:double, 4:bool, 5:int array (split by comma in cfg file), 6:hex8, 7:hex16, 8:hex32, 9:bin8, 10:bin16, 11:bin32
 const int cfg_vars_type[] = {	4/*debug*/,4/*debug_adv*/,4/*disable_pollrate*/,
-								0/*i2c_bus*/, 6/*i2c_address*/, 0/*i2c_irq*/,
+								0/*i2c_bus*/, 6/*i2c_address*/, 6/*i2c_address_sec*/, 0/*i2c_irq*/,
 								4/*js0_enable*/, 4/*js1_enable*/,
 								0/*adc0_min*/, 0/*adc0_max*/, 0/*adc0_flat*/, 0/*adc0_flat_outside*/, 4/*adc0_reversed*/, 4/*adc0_autocenter*/,
 								0/*adc1_min*/, 0/*adc1_max*/, 0/*adc1_flat*/, 0/*adc1_flat_outside*/, 4/*adc1_reversed*/, 4/*adc1_autocenter*/,
@@ -212,7 +250,7 @@ const int cfg_vars_type[] = {	4/*debug*/,4/*debug_adv*/,4/*disable_pollrate*/,
 * - 8(int array) need to use format : {(int*)&array_prt, (int)&array_size}
 */
 const void *cfg_vars_ptr[] = {	&debug, &debug_adv, &i2c_poll_rate_disable,
-								&i2c_bus, &i2c_addr, &nINT_GPIO,
+								&i2c_bus, &i2c_addr, &i2c_addr_sec, &nINT_GPIO,
 								&js_enable[0], &js_enable[1],
 								&adc_min[0], &adc_max[0], &adc_flat[0], &adc_flat_outside[0], &adc_reversed[0], &adc_autocenter[0],
 								&adc_min[1], &adc_max[1], &adc_flat[1], &adc_flat_outside[1], &adc_reversed[1], &adc_autocenter[1],
@@ -235,40 +273,46 @@ static int cstring_in_cstring_array (char **arr, char *value, unsigned int arrSi
 }
 
 static int confic_sum (void) { //pseudo checksum for config build
-	int ret = 0; for (unsigned int i = 0; i < cfg_vars_arr_size; i++) {ret += (cfg_vars_type[i] + 1)*2 + i*4;}
+	int ret = 0;
+	for (unsigned int i = 0; i < cfg_vars_arr_size; i++){
+		ret += strlen(cfg_vars_name[i]) + (cfg_vars_type[i] + 1)*2 + i*4;
+	}
 	return ret;
 }
 
 static bool config_save (bool reset) { //save config file
-    if (reset) {
-        if(remove(cfg_filename) != 0) {print_stderr("failed to delete '%s'\n", cfg_filename);}
-		cfg_version = confic_sum (); //pseudo checksum for config build
-    }
+	cfg_version = confic_sum (); //pseudo checksum for config build
+
+    if (reset) {if(remove(cfg_filename) != 0) {print_stderr("failed to delete '%s'\n", cfg_filename);}}
 
     FILE *filehandle = fopen(cfg_filename, "wb");
     if (filehandle != NULL) {
         char strBuffer [4096], strBuffer1 [33]; int strBufferSize;
         for (unsigned int i = 0; i < cfg_vars_arr_size; i++) {
             int tmpType = cfg_vars_type[i];
-            if (tmpType == 0) {fprintf (filehandle, "%s=%d;\n", cfg_vars_name[i], *(int*)cfg_vars_ptr[i]); //int
-            } else if (tmpType == 1) {fprintf (filehandle, "%s=%u;\n", cfg_vars_name[i], *(unsigned int*)cfg_vars_ptr[i]); //unsigned int
-            } else if (tmpType == 2) {fprintf (filehandle, "%s=%f;\n", cfg_vars_name[i], *(float*)cfg_vars_ptr[i]); //float
-            } else if (tmpType == 3) {fprintf (filehandle, "%s=%lf;\n", cfg_vars_name[i], *(double*)cfg_vars_ptr[i]); //double
-            } else if (tmpType == 4) {fprintf (filehandle, "%s=%d;\n", cfg_vars_name[i], (*(bool*)cfg_vars_ptr[i])?1:0); //bool
+            if (tmpType == 0) {fprintf (filehandle, "%s=%d;", cfg_vars_name[i], *(int*)cfg_vars_ptr[i]); //int
+            } else if (tmpType == 1) {fprintf (filehandle, "%s=%u;", cfg_vars_name[i], *(unsigned int*)cfg_vars_ptr[i]); //unsigned int
+            } else if (tmpType == 2) {fprintf (filehandle, "%s=%f;", cfg_vars_name[i], *(float*)cfg_vars_ptr[i]); //float
+            } else if (tmpType == 3) {fprintf (filehandle, "%s=%lf;", cfg_vars_name[i], *(double*)cfg_vars_ptr[i]); //double
+            } else if (tmpType == 4) {fprintf (filehandle, "%s=%d;", cfg_vars_name[i], (*(bool*)cfg_vars_ptr[i])?1:0); //bool
             } else if (tmpType == 5) { //int array, output format: var=%d,%d,%d,...;
                 int arrSize = *(int*)((int*)cfg_vars_ptr[i])[1];
                 sprintf (strBuffer, "%s=", cfg_vars_name[i]); int strBufferSize = strlen(strBuffer);
                 for (unsigned int j = 0; j < arrSize; j++) {strBufferSize += sprintf (strBuffer1, "%d,", ((int*)((int*)cfg_vars_ptr[i])[0])[j]); strcat (strBuffer, strBuffer1);} *(strBuffer+strBufferSize-1) = '\0';
-                fprintf (filehandle, "%s;\n", strBuffer);
+                fprintf (filehandle, "%s;", strBuffer);
             } else if (tmpType >= 6 && tmpType < 9) { //hex8-32
                 int ind = 2; for(int j=0; j<tmpType-6; j++){ind*=2;}
-                sprintf (strBuffer, "%%s=0x%%0%dx;\n", ind); //build that way to limit var size
+                sprintf (strBuffer, "%%s=0x%%0%dX;", ind); //build that way to limit var size
                 fprintf (filehandle, strBuffer, cfg_vars_name[i], *(int*)cfg_vars_ptr[i]);
             } else if (tmpType >= 9 && tmpType < 12) { //bin8-32 (itoa bypass)
                 int ind = 8; for(int j=0; j<tmpType-9; j++){ind*=2;}
                 for(int j = 0; j < ind; j++){strBuffer[ind-j-1] = ((*(int*)cfg_vars_ptr[i] >> j) & 0b1) +'0';} strBuffer[ind]='\0';
-                fprintf (filehandle, "%s=%s;\n", cfg_vars_name[i], strBuffer);
+                fprintf (filehandle, "%s=%s;", cfg_vars_name[i], strBuffer);
             }
+
+			if(strlen(cfg_vars_desc[i]) > 0){ //add comments
+				fprintf (filehandle, " //%s\n", cfg_vars_desc[i]);
+			}else{fprintf (filehandle, "\n");}
         }
         fclose(filehandle);
         print_stdout("%s: %s\n", reset ? "config reset successfully" : "config saved successfully", cfg_filename);
@@ -286,13 +330,20 @@ static void config_parse (void) { //parse/create program config file
     FILE *filehandle = fopen(cfg_filename, "r");
     if (filehandle != NULL) {
         char strBuffer [4096], strTmpBuffer [4096]; //string buffer
-        char *tmpPtr, *tmpPtr1; //pointers
+        char *tmpPtr, *tmpPtr1, *pos; //pointers
         int line=0;
         while (fgets (strBuffer, 4095, filehandle) != NULL) { //line loop
             //clean line from utf8 bom and whitespaces
-            tmpPtr = strBuffer; tmpPtr1 = strTmpBuffer; //pointers
+            tmpPtr = strBuffer; tmpPtr1 = strTmpBuffer; pos = tmpPtr; //pointers
             if (strstr (strBuffer,"\xEF\xBB\xBF") != NULL) {tmpPtr += 3;} //remove utf8 bom, overkill security?
-            while (*tmpPtr != '\0') {if(!isspace(*tmpPtr)) {*tmpPtr1++ = *tmpPtr++;}else{tmpPtr++;}} //read all chars, copy if not whitespace
+            while (*tmpPtr != '\0') { //read all chars, copy if not whitespace
+				if (tmpPtr - pos > 0) {if(*tmpPtr=='/' && *(tmpPtr-1)=='/'){tmpPtr1--; break;}} //break if // comment
+				if(!isspace(*tmpPtr)) {
+					*tmpPtr1++ = *tmpPtr++;
+				}else{
+					tmpPtr++;
+				}
+			}
             *tmpPtr1='\0'; strcpy(strBuffer, strTmpBuffer); line++; //copy char array
 
             //parse line
@@ -340,7 +391,7 @@ static void config_parse (void) { //parse/create program config file
                             int ind = 2; for(int j=0; j<tmpType-6; j++){ind*=2;}
                             char *tmpPtr2 = strchr(tmpVal,'x');
                             if(tmpPtr2!=NULL){
-                                sprintf(strTmpBuffer, "0x%%0%dx", ind);
+                                sprintf(strTmpBuffer, "0x%%0%dX", ind);
                                 sscanf(tmpVal, strTmpBuffer, cfg_vars_ptr[tmpIndex]);
                             }else{
                                 if(debug){print_stderr("DEBUG: Warning var '%s' should have a hex value, assumed a int\n", tmpVar);}
@@ -349,7 +400,7 @@ static void config_parse (void) { //parse/create program config file
 
                             if(debug){
                                 //sprintf(strTmpBuffer, "DEBUG: %%s=0x%%0%dx(%%d) (file:%%s)(hex:%%d)\n", ind);
-                                print_stderr("DEBUG: %s=0x%x(%d) (file:%s)(hex:%d)\n"/*strTmpBuffer*/, tmpVar, *(int*)cfg_vars_ptr[tmpIndex], *(int*)cfg_vars_ptr[tmpIndex], tmpVal, tmpType);
+                                print_stderr("DEBUG: %s=0x%X(%d) (file:%s)(hex:%d)\n"/*strTmpBuffer*/, tmpVar, *(int*)cfg_vars_ptr[tmpIndex], *(int*)cfg_vars_ptr[tmpIndex], tmpVal, tmpType);
                             }
                         } else if (tmpType >= 9 && tmpType < 12) { //bin8-32
                             int ind = 8; for(int j=0; j<tmpType-9; j++){ind*=2;}
@@ -370,15 +421,12 @@ static void config_parse (void) { //parse/create program config file
         }
         fclose(filehandle);
 
-		cfg_version_org = confic_sum (); //pseudo checksum for config build
-
+		//pseudo checksum for config build
+		cfg_version_org = confic_sum (); 
 		if(cfg_version != cfg_version_org) {
-			print_stderr("config file version mismatch, forcing save to implement new vars set\n");
+			print_stderr("config file version mismatch (got:%d, should be:%d), forcing save to implement new vars set\n", cfg_version, cfg_version_org);
 			cfg_version = cfg_version_org; config_save (false);
 		}
-
-
-
     } else {config_save (false);}
 }
 
@@ -420,13 +468,13 @@ static int uhid_create(int fd) { //create uhid device
 		0x05, 0x01, // Usage Page (Generic Desktop)
 		0x15, 0x00, // LOGICAL_MINIMUM (0)
 		0x26, 0xFF, 0xFF, // LOGICAL_MAXIMUM (0xFFFF)
-		0x09, 0x30,  // Usage (X)
-		0x09, 0x31,  // Usage (Y)
-		0x09, 0x32,  // Usage (Z)
-		0x09, 0x33,  // Usage (RX)
-		0x75, 0x10,  // Report Size (16)
-		0x95, 0x04,  // Report Count (4)
-		0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+		0x09, 0x30, // Usage (X)
+		0x09, 0x31, // Usage (Y)
+		0x09, 0x32, // Usage (Z)
+		0x09, 0x33, // Usage (RX)
+		0x75, 0x10, // Report Size (16)
+		0x95, 0x04, // Report Count (4)
+		0x81, 0x02, // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
 	0xC0,// ; END_COLLECTION
 	};
 
@@ -449,18 +497,21 @@ static void uhid_destroy(int fd){ //close uhid device
 	if (fd < 0) return; //already failed
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_DESTROY;
-	if(uhid_write(fd, &ev) == 0){print_stdout("uhid device destroyed\n");}
+	int ret = uhid_write(fd, &ev);
+	if(ret < 0){
+		print_stdout("failed to destroy uhid device, errno:%d (%s)\n", -ret, strerror(-ret));
+	} else {print_stdout("uhid device destroyed\n");}
 }
 
 static int uhid_write(int fd, const struct uhid_event *ev){ //write data to uhid device
 	ssize_t ret = write(fd, ev, sizeof(*ev));
 	if (ret < 0) {
 		print_stderr("write to uhid device failed with errno:%d (%m)\n", -ret);
-		return -errno;
+		return ret;//-errno;
 	} else if (ret != sizeof(*ev)) {
 		print_stderr("wrong size wrote to uhid device: %zd != %zu\n", ret, sizeof(ev));
 		return -EFAULT;
-	} else {return 0;}
+	} else {return ret;}
 }
 
 static int uhid_send_event(int fd) { //send event to uhid device
@@ -473,7 +524,7 @@ static int uhid_send_event(int fd) { //send event to uhid device
 	//if (uhid_js_right_enable) {ev.u.input.size += 4;}
 
 	ev.u.input.data[0] = gamepad_report.buttons7to0;
-	ev.u.input.data[1] = gamepad_report.buttons15to8;
+	ev.u.input.data[1] = gamepad_report.buttons12to8;
 
 	ev.u.input.data[2] = (unsigned char) gamepad_report.hat_x;
 	ev.u.input.data[3] = (unsigned char) gamepad_report.hat_y;
@@ -503,36 +554,42 @@ static int uhid_send_event(int fd) { //send event to uhid device
 
 
 //I2C related
-static void i2c_open(void){ //open I2C bus
-	char i2c_path[13]; sprintf(i2c_path, "/dev/i2c-%d", i2c_bus);
+static int i2c_open(int bus, int addr){ //open I2C bus
+	char fd_path[13];
+	if (bus < 0){bus = 0;}
+	if (addr < 0) {print_stderr("FATAL: invalid I2C address:0x%02X (%d)\n", addr, addr); exit(EXIT_FAILURE);}
 
-	i2c_file = open(i2c_path, O_RDWR);
-	if (i2c_file < 0) {
-		print_stderr("FATAL: failed to open '%s' with errno:%d (%m)\n", i2c_path, -i2c_file);
+	sprintf(fd_path, "/dev/i2c-%d", bus);
+	
+	int fd = open(fd_path, O_RDWR);
+	if (fd < 0) {
+		print_stderr("FATAL: failed to open '%s', errno:%d (%m)\n", fd_path, -fd);
 		exit(EXIT_FAILURE);
 	}
 
-	int ret = ioctl(i2c_file, I2C_SLAVE, i2c_addr);
+	int ret = ioctl(fd, I2C_SLAVE, addr);
 	if (ret < 0) {
-		close(i2c_file);
-		print_stderr("FATAL: ioctl failed for I2C adress:0x%02x with errno:%d (%m)\n", i2c_addr, -ret);
+		close(fd);
+		print_stderr("FATAL: ioctl failed for adress 0x%02X, errno:%d (%m)\n", addr, -ret);
 		exit(EXIT_FAILURE);
 	} else {
-		ret = i2c_smbus_read_byte_data(i2c_file, 0);
+		ret = i2c_smbus_read_byte_data(fd, 0);
 		if (ret < 0) {
-			close(i2c_file);
-			print_stderr("FATAL: failed to read from I2C adress:0x%02x with errno:%d (%m)\n", i2c_addr, -ret);
+			close(fd);
+			print_stderr("FATAL: read from adress 0x%02X failed, errno:%d (%m)\n", addr, -ret);
 			exit(EXIT_FAILURE);
 		}
 	}
-	print_stdout("I2C bus '%s', address:0x%02x opened\n", i2c_path, i2c_addr);
+
+	print_stdout("address:0x%02X opened (bus:%s)\n", addr, fd_path);
+	return fd;
 }
 
-static void i2c_close(void){ //close I2C bus
-	if (i2c_file < 0) {print_stdout("nothing to close\n");
+static void i2c_close(int fd, int addr){ //close I2C bus
+	if (fd < 0) {print_stdout("address 0x%02X already closed\n", addr);
 	} else {
-		if (close(i2c_file) < 0){print_stderr("failed to close I2C handle\n");
-		} else {print_stdout("I2C handle succefully closed\n");}
+		int ret = close(fd);
+		if (ret < 0){print_stderr("failed to close I2C handle for address 0x%02X, errno:%d (%m)\n", addr, -ret);} else {print_stdout("I2C handle for address:0x%02X closed\n", addr);}
 	}
 }
 
@@ -569,11 +626,11 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 	int read_limit = 2;
 	if (uhid_js_right_enable){read_limit = 8;} else if (uhid_js_left_enable){read_limit = 5;}
 
-	int ret = i2c_smbus_read_i2c_block_data(i2c_file, 0, read_limit, (uint8_t *)&i2c_registers);
+	int ret = i2c_smbus_read_i2c_block_data(i2c_fd, 0, read_limit, (uint8_t *)&i2c_registers);
 
 	if (ret < 0) {
 		i2c_errors_count++;
-		if (ret == -6) {print_stderr("FATAL: i2c_smbus_read_word_data() failed with errno %d : %m\n", -ret); kill_resquested = true;}
+		if (ret == -6) {print_stderr("FATAL: i2c_smbus_read_word_data() failed, errno %d : %m\n", -ret); kill_resquested = true;}
 		if (i2c_errors_count >= i2c_errors_report) {print_stderr("WARNING: I2C requests failed %d times in a row\n", i2c_errors_count); i2c_errors_count = 0;}
 		i2c_last_error = ret; return;
 	}
@@ -590,7 +647,7 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 	gamepad_report.hat_x = dpad[3] - dpad[2];
 
 	gamepad_report.buttons7to0 = ~(i2c_registers.input0 >> 4 | i2c_registers.input1 << 4);
-	gamepad_report.buttons15to8 = ~(i2c_registers.input1 >> 4);
+	gamepad_report.buttons12to8 = ~(i2c_registers.input1 >> 4);
 
 	//analog
 	int js_values[4] = {0,0,0,0};
@@ -627,8 +684,8 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 	//report
 	int report_val = 0, report_prev_val = 1; adc_firstrun = false;
 	if (!(uhid_js_left_enable + uhid_js_right_enable)) {
-		report_val = gamepad_report.buttons7to0 + gamepad_report.buttons15to8 + gamepad_report.hat_x + gamepad_report.hat_y;
-		report_prev_val = gamepad_report_prev.buttons7to0 + gamepad_report_prev.buttons15to8 + gamepad_report_prev.hat_x + gamepad_report_prev.hat_y;
+		report_val = gamepad_report.buttons7to0 + gamepad_report.buttons12to8 + gamepad_report.hat_x + gamepad_report.hat_y;
+		report_prev_val = gamepad_report_prev.buttons7to0 + gamepad_report_prev.buttons12to8 + gamepad_report_prev.hat_x + gamepad_report_prev.hat_y;
 	}
 	
 	if (report_val != report_prev_val){
@@ -699,20 +756,42 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	i2c_open(); //open I2C bus
+	//process secondary attiny address to check magic bit and version
+	i2c_fd_sec = i2c_open(i2c_bus, i2c_addr_sec);
+	ret = i2c_smbus_read_byte_data(i2c_fd_sec, 0x00); //check signature
+	if (ret != i2c_magic_sig){
+		if (ret < 0){print_stderr("FATAL: reading I2C device signature failed, errno %d (%m)\n", -ret);
+		} else {print_stderr("FATAL: invalid I2C device signature: 0x%02X\n", ret);}
+		i2c_close(i2c_fd_sec, i2c_addr_sec);
+		return EXIT_FAILURE;
+	}
+
+	ret = i2c_smbus_read_word_data(i2c_fd_sec, 0x01); //check version
+	if (ret < 0){
+		print_stderr("FATAL: reading I2C device version failed, errno %d (%m)\n", -ret);
+		i2c_close(i2c_fd_sec, i2c_addr_sec);
+		return EXIT_FAILURE;
+	} else {
+		i2c_dev_major = ret & 0xFF;
+		i2c_dev_minor = (ret >> 8) & 0xFF;
+		print_stdout("I2C device detected, signature:0x%02X, version:%d.%d\n", i2c_magic_sig, i2c_dev_major, i2c_dev_minor);
+	}
+
+	//process primary attiny address
+	i2c_fd = i2c_open(i2c_bus, i2c_addr);
 
 	//set analog config
 	uint8_t analog_reg = 0; if(js_enable[0]){analog_reg|=0x03;} if(js_enable[1]){analog_reg|=0x0C;}
 
-	ret = i2c_smbus_write_byte_data(i2c_file, REGISTER_ADC_ENABLE, analog_reg);
-	if (ret < 0){print_stderr("failed to set ADC configuration, errno %d (%s)\n", -ret, strerror(-ret));
+	ret = i2c_smbus_write_byte_data(i2c_fd, REGISTER_ADC_ENABLE, analog_reg);
+	if (ret < 0){print_stderr("failed to set ADC configuration, errno %d (%m)\n", -ret);
 	} else {print_stdout("ADC configuration set successfully\n");}
 
 	//detect analog config
-	ret = i2c_smbus_read_byte_data(i2c_file, REGISTER_ADC_ENABLE); //check what adc enabled ADC0-3
+	ret = i2c_smbus_read_byte_data(i2c_fd, REGISTER_ADC_ENABLE); //check what adc enabled ADC0-3
 	if (ret < 0){
-		i2c_close();
-		print_stderr("FATAL: reading ADC configuration failed with errno %d (%s)\n", -ret, strerror(-ret));
+		print_stderr("FATAL: reading ADC configuration failed, errno %d (%m)\n", -ret);
+		i2c_close(i2c_fd, i2c_addr);
 		return EXIT_FAILURE;
 	} else {
 		bool tmp_adc[4];
@@ -726,10 +805,10 @@ int main(int argc, char **argv) {
 			print_stdout("IRQ disabled\n");
 			#endif
 			
-			ret = i2c_smbus_read_byte_data(i2c_file, REGISTER_ADC_RES); //current ADC resolution
+			ret = i2c_smbus_read_byte_data(i2c_fd, REGISTER_ADC_RES); //current ADC resolution
 			if (ret < 0){
-				i2c_close();
-				print_stderr("FATAL: reading ADC resolution failed with errno %d (%s)\n", -ret, strerror(-ret));
+				print_stderr("FATAL: reading ADC resolution failed, errno %d (%m)\n", -ret);
+				i2c_close(i2c_fd, i2c_addr);
 				return EXIT_FAILURE;
 			} else {
 				adc_res = ret;
@@ -751,11 +830,12 @@ int main(int argc, char **argv) {
 
 	uhid_fd = open(path, O_RDWR | O_CLOEXEC);
 	if (uhid_fd < 0) {
-		print_stderr("failed to open uhid-cdev %s with errno:%d (%m)\n", path, -uhid_fd); return EXIT_FAILURE;
+		print_stderr("failed to open uhid-cdev %s, errno:%d (%m)\n", path, -uhid_fd);
+		return EXIT_FAILURE;
 	} else {print_stdout("uhid-cdev %s opened\n", path);}
 
 	ret = uhid_create(uhid_fd);
-	if (ret) {close(uhid_fd); return EXIT_FAILURE;
+	if (ret < 0) {close(uhid_fd); return EXIT_FAILURE;
 	} else {print_stdout("uhid device created\n");}
 
 	i2c_poll_joystick(); //initial poll
@@ -765,7 +845,7 @@ int main(int argc, char **argv) {
 		#define WIRINGPI_CODES 1 //allow error code return
 		int err;
 		if ((err = wiringPiSetupGpio()) < 0){ //use BCM numbering
-			print_stderr("failed to initialize wiringPi (errno:%d)\n", -err);
+			print_stderr("failed to initialize wiringPi, errno:%d\n", -err);
 		} else {
 			if ((err = wiringPiISR(nINT_GPIO, INT_EDGE_FALLING, &attiny_irq_handler)) < 0){
 				print_stderr("wiringPi failed to set callback for GPIO%d\n", nINT_GPIO);
@@ -848,7 +928,8 @@ int main(int argc, char **argv) {
 
 	if (i2c_last_error != 0) {print_stderr("last detected I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));}
 
-	i2c_close();
+	i2c_close(i2c_fd, i2c_addr);
+	i2c_close(i2c_fd_sec, i2c_addr_sec);
 	uhid_destroy(uhid_fd);
 
 	if(uhid_js_left_enable + uhid_js_right_enable){
