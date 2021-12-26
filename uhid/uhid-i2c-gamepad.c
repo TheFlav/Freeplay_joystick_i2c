@@ -9,36 +9,7 @@
  Notes:
  	    On the Pi Zero 2 W, I had to use "git clone https://github.com/PinkFreud/WiringPi.git" to get a WiringPi that knew about the Pi02
  
- */
-
-
-/*  From the attiny code
- 
- * PA1 = IO0_0 = UP
- * PA2 = IO0_1 = DOWN
- * PB4 = IO0_2 = LEFT
- * PB5 = IO0_3 = RIGHT
- * PB6 = IO0_4 = BTN_A
- * PB7 = IO0_5 = BTN_B
- * PA6 = IO0_6 = BTN_L2  ifndef USE_ADC2
- * PA7 = IO0_7 = BTN_R2  ifndef USE_ADC3
- *
- * PC0 = IO1_0 = BTN_X
- * PC1 = IO1_1 = BTN_Y
- * PC2 = IO1_2 = BTN_START
- * PC3 = IO1_3 = BTN_SELECT
- * PC4 = IO1_4 = BTN_L
- * PC5 = IO1_5 = BTN_R
- * PB2 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)   ifndef CONFIG_SERIAL_DEBUG (or can be used for UART TXD0 for debugging)
- * PA5 = IO1_7 = BTN_C ifndef USE_ADC1
- *
- * PB3 =         POWEROFF_OUT
- * PA3 =         PWM Backlight OUT
- *
- */
-
-
-
+*/
 
 #include <errno.h>
 #include <fcntl.h>
@@ -134,6 +105,11 @@ int uhid_fd;
 bool uhid_js_left_enable = false;
 bool uhid_js_right_enable = false;
 bool js_enable[] = {false,false}; //used only to set adc register on device
+
+const int16_t attiny_input_map[16] = { //used to remap attiny output to ev order
+	-127, -127, -127, -127, BTN_A, BTN_B, BTN_TL2, BTN_TR2, //l2,r2 shared with adc2-3
+	BTN_X, BTN_Y, BTN_START, BTN_SELECT, BTN_TL, BTN_TR, BTN_MODE, BTN_C //mode,c shared with tx,adc1
+};
 
 const char js0_enable_desc[] = "Enable joystick 0 (ADC0-1), please check the documentation, does require specific ATTINY configuration.";
 const char js1_enable_desc[] = "Enable joystick 1 (ADC2-3), please check the documentation, does require specific ATTINY configuration.";
@@ -449,7 +425,7 @@ static int uhid_create(int fd) { //create uhid device
 		//Digital
 		0x05, 0x09, // USAGE_PAGE (Button)
 		0x19, 0x01, // USAGE_MINIMUM (Button 1)
-		0x29, 0x0C, // USAGE_MAXIMUM (Button 12)
+		0x29, 0x0D, // USAGE_MAXIMUM (Button 13)
 		0x15, 0x00, // LOGICAL_MINIMUM (0)
 		0x25, 0x01, // LOGICAL_MAXIMUM (1)
 		0x75, 0x01, // REPORT_SIZE (1)
@@ -651,13 +627,9 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 		i2c_last_error = i2c_errors_count = 0; //reset error count
 	}
 	
-	//digital
-	gamepad_report.buttons7to0 = ~(i2c_registers.input0 >> 4 | i2c_registers.input1 << 4);
-	gamepad_report.buttons12to8 = ~(i2c_registers.input1 >> 4);
-
 	//dpad
 	bool dpad[4]; //0:up ,1:down ,2:left ,3:right
-	for (int8_t i=0; i<4; i++){dpad[i] = (~i2c_registers.input0 >> i & 0x01);}
+	for (int8_t i=0; i<4; i++){dpad[i] = ~(i2c_registers.input0 >> i) & 0b1;}
 	ret = 0; //default to nothing
 	if (dpad[0]){
 		if (dpad[2]){ret = 8; //up left
@@ -669,6 +641,19 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 		} else {ret = 5;} //down
 	} else if (dpad[2]){ret = 7; //left
 	} else if (dpad[3]){ret = 3;} //right
+	gamepad_report.hat0 = ret;
+
+	//digital
+	//current attiny output:
+	//	IO0: UP, DOWN, LEFT, RIGHT, BTN_A, BTN_B, BTN_L2(ADC2), BTN_R2(ADC3)
+	//	IO1: BTN_X, BTN_Y, BTN_START, BTN_SELECT, BTN_L, BTN_R, POWER_BUTTON (CONFIG_SERIAL_DEBUG), BTN_C(ADC1)
+	//EV order : BTN_A, BTN_B, BTN_C, BTN_X, BTN_Y, BTN_Z, BTN_TL, BTN_TR, BTN_TL2, BTN_TR2, BTN_SELECT, BTN_START, BTN_MODE
+	uint16_t inputs = ((i2c_registers.input1 << 8) + i2c_registers.input0); //merge to word to ease work
+	uint16_t input_report_u16 = 0xFFFF;
+	for (int8_t mask_shift=0; mask_shift<16; mask_shift++){ //remap
+		if (attiny_input_map[mask_shift] != -127 && ~(inputs >> mask_shift) & 0b1) {input_report_u16 &= ~(1U << (abs(attiny_input_map[mask_shift] - BTN_A)));}
+	}
+	gamepad_report.buttons7to0 = ~(input_report_u16 & 0xFF); gamepad_report.buttons12to8 = ~(input_report_u16 >> 8);
 
 	//analog
 	int js_values[4] = {0,0,0,0};
