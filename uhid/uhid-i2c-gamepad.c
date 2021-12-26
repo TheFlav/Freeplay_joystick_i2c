@@ -62,8 +62,8 @@ static void uhid_destroy(int /*fd*/); //close uhid device
 static int uhid_write(int /*fd*/, const struct uhid_event* /*ev*/); //write data to uhid device
 static int uhid_send_event(int /*fd*/); //send event to uhid device
 
-static int i2c_open(int /*bus*/, int /*addr*/); //open I2C bus
-static void i2c_close(int /*fd*/, int /*addr*/); //close I2C bus
+static int i2c_open(int /*bus*/, int /*addr*/); //open I2C file
+static void i2c_close(void); //close all I2C file
 static int adc_correct_offset_center(int /*adc_resolution*/, int /*adc_value*/, int /*adc_min*/, int /*adc_max*/, int /*adc_offsets*/, int /*inside_flat*/, int /*outside_flat*/, int /*index*/); //apply offset center, expand adc range, inside/ouside flat
 static void i2c_poll_joystick(void); //poll data from i2c device
 
@@ -79,7 +79,7 @@ static void debug_print_binary_int (int /*val*/, int /*bits*/, char* /*var*/); /
 
 
 //debug
-bool debug = true; //TODO implement
+bool debug = true;
 bool debug_adv = true; //advanced debug output, benchmark
 bool i2c_poll_rate_disable = true; //allow full throttle update if true
 
@@ -102,8 +102,8 @@ bool kill_resquested = false; //allow clean close
 //UHID related vars
 const char* uhid_device_name = "Freeplay Gamepad";
 int uhid_fd;
-bool uhid_js_left_enable = false;
-bool uhid_js_right_enable = false;
+bool uhid_js_left_enable = false, uhid_js_right_enable = false;
+bool uhid_js_left_external_enable = false, uhid_js_right_external_enable = false; //triggered if using external adcs
 bool js_enable[] = {false,false}; //used only to set adc register on device
 
 const int16_t attiny_input_map[16] = { //used to remap attiny output to ev order
@@ -111,8 +111,8 @@ const int16_t attiny_input_map[16] = { //used to remap attiny output to ev order
 	BTN_X, BTN_Y, BTN_START, BTN_SELECT, BTN_TL, BTN_TR, BTN_MODE, BTN_C //mode,c shared with tx,adc1
 };
 
-const char js0_enable_desc[] = "Enable joystick 0 (ADC0-1), please check the documentation, does require specific ATTINY configuration.";
-const char js1_enable_desc[] = "Enable joystick 1 (ADC2-3), please check the documentation, does require specific ATTINY configuration.";
+const char js0_enable_desc[] = "Enable ATTINY joystick 0 ADC0-1 (i2c_address_adc0-1 will be ignored), please check the documentation, does require specific ATTINY configuration.";
+const char js1_enable_desc[] = "Enable ATTINY joystick 1 ADC2-3 (i2c_address_adc2-3 will be ignored), please check the documentation, does require specific ATTINY configuration.";
 
 struct gamepad_report_t {
     int8_t hat0;
@@ -128,7 +128,9 @@ struct gamepad_report_t {
 //I2C related vars
 int i2c_bus = 1;
 int i2c_addr = 0x20, i2c_addr_sec = 0x40;
+int i2c_addr_adc[] = {0xFF, 0xFF, 0xFF, 0xFF};
 int i2c_fd = -1, i2c_fd_sec = -1;
+int i2c_adc_fd[] = {-1, -1, -1,- 1};
 const int i2c_errors_report = 10; //error count before report to tty
 int i2c_errors_count = 0; //errors count that happen in a row
 int i2c_last_error = 0; //last detected error
@@ -138,6 +140,10 @@ uint8_t i2c_dev_major=0, i2c_dev_minor=0;
 const char i2c_bus_desc[] = "I2C bus to use, default:1.";
 const char i2c_addr_desc[] = "Main I2C address, default:0x20.";
 const char i2c_addr_sec_desc[] = "Secondary I2C address for device identification, default:0x40.";
+const char i2c_addr_adc0_desc[] = "I2C address of ADC0 (0xFF to disable).";
+const char i2c_addr_adc1_desc[] = "I2C address of ADC1 (0xFF to disable), needs to be set along i2c_address_adc0.";
+const char i2c_addr_adc2_desc[] = "I2C address of ADC2 (0xFF to disable).";
+const char i2c_addr_adc3_desc[] = "I2C address of ADC3 (0xFF to disable), needs to be set along i2c_address_adc2.";
 const char nINT_GPIO_desc[] = "GPIO pin to use for interrupt, default:40 (-1 to disable)."; //gpio pin used for irq, limited to 31 for pigpio, set to -1 to disable
 
 struct i2c_register_struct {
@@ -158,7 +164,7 @@ struct i2c_register_struct {
 
 //ADC related vars
 bool adc_firstrun = true;
-int adc_res = 16; unsigned int adc_res_limit = INT_MIN+INT_MAX; //limit set in main(), set to absolute extrem here to fill with 1
+int adc_res[] = {10,10,10,10}; unsigned int adc_res_limit[] = {INT_MIN+INT_MAX, INT_MIN+INT_MAX, INT_MIN+INT_MAX, INT_MIN+INT_MAX}; //limit set in main(), set to absolute extrem here to fill with 1
 int adc_min[] = {0,0,0,0}, adc_max[] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF}; //store axis min-max values
 int adc_offsets[] = {0xFFFF/2, 0xFFFF/2, 0xFFFF/2, 0xFFFF/2}; //store axis offset values
 bool adc_reversed[] = {false,false,false,false}; //store axis reversed bools
@@ -167,6 +173,7 @@ int adc_values_min[] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF}, adc_values_max[] = {0,0
 int/*int16_t*/ /*adc_fuzz[] = {16,16,16,16}, */adc_flat[] = {10,10,10,10}, adc_flat_outside[] = {10,10,10,10}; //store axis /*fuzz-*/flat values (in percent)
 bool adc_autocenter[] = {false,false,false,false}; //store axis autocenter bools
 
+const char adc_res_desc[] = "External ADC resolution in bits, ignored if using ATTINY ADC.";
 const char adc_min_desc[] = "Lowest ADC output limit (>= 0).";
 const char adc_max_desc[] = "Highest ADC output limit (<= 65354).";
 const char adc_flat_desc[] = "Center deadzone (in percent).";
@@ -193,31 +200,31 @@ const char cfg_version_desc[] = "Change value to force resync of configuration f
 
 //vars names in config file, IMPORTANT: no space
 const char *cfg_vars_name[] = {	"debug", "debug_adv", "disable_pollrate",
-								"\ni2c_bus", "i2c_address", "i2c_address_sec", "i2c_irq",
+								"\ni2c_bus", "i2c_address", "i2c_address_sec", "i2c_address_adc0", "i2c_address_adc1", "i2c_address_adc2", "i2c_address_adc3", "i2c_irq",
 								"\njs0_enable", "js1_enable",
-								"\nadc0_min", "adc0_max", "adc0_flat", "adc0_flat_outside", "adc0_reversed", "adc0_autocenter",
-								"\nadc1_min", "adc1_max", "adc1_flat", "adc1_flat_outside", "adc1_reversed", "adc1_autocenter",
-								"\nadc2_min", "adc2_max", "adc2_flat", "adc2_flat_outside", "adc2_reversed", "adc2_autocenter",
-								"\nadc3_min", "adc3_max", "adc3_flat", "adc3_flat_outside", "adc3_reversed", "adc3_autocenter",
+								"\nadc0_res", "adc0_min", "adc0_max", "adc0_flat", "adc0_flat_outside", "adc0_reversed", "adc0_autocenter",
+								"\nadc1_res", "adc1_min", "adc1_max", "adc1_flat", "adc1_flat_outside", "adc1_reversed", "adc1_autocenter",
+								"\nadc2_res", "adc2_min", "adc2_max", "adc2_flat", "adc2_flat_outside", "adc2_reversed", "adc2_autocenter",
+								"\nadc3_res", "adc3_min", "adc3_max", "adc3_flat", "adc3_flat_outside", "adc3_reversed", "adc3_autocenter",
 								"\nconfig_version"};
 
 const char *cfg_vars_desc[] = {	debug_desc, debug_adv_desc, i2c_poll_rate_disable_desc,
-								i2c_bus_desc, i2c_addr_desc, i2c_addr_sec_desc, nINT_GPIO_desc,
+								i2c_bus_desc, i2c_addr_desc, i2c_addr_sec_desc, i2c_addr_adc0_desc, i2c_addr_adc1_desc, i2c_addr_adc2_desc, i2c_addr_adc3_desc, nINT_GPIO_desc,
 								js0_enable_desc, js1_enable_desc,
-								adc_min_desc, adc_max_desc, adc_flat_desc, adc_flat_outside_desc, adc_reversed_desc, adc_autocenter_desc,
-								adc_min_desc, adc_max_desc, adc_flat_desc, adc_flat_outside_desc, adc_reversed_desc, adc_autocenter_desc,
-								adc_min_desc, adc_max_desc, adc_flat_desc, adc_flat_outside_desc, adc_reversed_desc, adc_autocenter_desc,
-								adc_min_desc, adc_max_desc, adc_flat_desc, adc_flat_outside_desc, adc_reversed_desc, adc_autocenter_desc,
+								adc_res_desc, adc_min_desc, adc_max_desc, adc_flat_desc, adc_flat_outside_desc, adc_reversed_desc, adc_autocenter_desc,
+								adc_res_desc, adc_min_desc, adc_max_desc, adc_flat_desc, adc_flat_outside_desc, adc_reversed_desc, adc_autocenter_desc,
+								adc_res_desc, adc_min_desc, adc_max_desc, adc_flat_desc, adc_flat_outside_desc, adc_reversed_desc, adc_autocenter_desc,
+								adc_res_desc, adc_min_desc, adc_max_desc, adc_flat_desc, adc_flat_outside_desc, adc_reversed_desc, adc_autocenter_desc,
 								cfg_version_desc};
 
 //types : 0:int, 1:uint, 2:float, 3:double, 4:bool, 5:int array (split by comma in cfg file), 6:hex8, 7:hex16, 8:hex32, 9:bin8, 10:bin16, 11:bin32
 const int cfg_vars_type[] = {	4/*debug*/,4/*debug_adv*/,4/*disable_pollrate*/,
-								0/*i2c_bus*/, 6/*i2c_address*/, 6/*i2c_address_sec*/, 0/*i2c_irq*/,
+								0/*i2c_bus*/, 6/*i2c_address*/, 6/*i2c_address_sec*/, 6/*i2c_address_adc0*/, 6/*i2c_address_adc1*/, 6/*i2c_address_adc2*/, 6/*i2c_address_adc3*/, 0/*i2c_irq*/,
 								4/*js0_enable*/, 4/*js1_enable*/,
-								0/*adc0_min*/, 0/*adc0_max*/, 0/*adc0_flat*/, 0/*adc0_flat_outside*/, 4/*adc0_reversed*/, 4/*adc0_autocenter*/,
-								0/*adc1_min*/, 0/*adc1_max*/, 0/*adc1_flat*/, 0/*adc1_flat_outside*/, 4/*adc1_reversed*/, 4/*adc1_autocenter*/,
-								0/*adc2_min*/, 0/*adc2_max*/, 0/*adc2_flat*/, 0/*adc2_flat_outside*/, 4/*adc2_reversed*/, 4/*adc2_autocenter*/,
-								0/*adc3_min*/, 0/*adc3_max*/, 0/*adc3_flat*/, 0/*adc3_flat_outside*/, 4/*adc3_reversed*/, 4/*adc3_autocenter*/,
+								0/*adc0_res*/, 0/*adc0_min*/, 0/*adc0_max*/, 0/*adc0_flat*/, 0/*adc0_flat_outside*/, 4/*adc0_reversed*/, 4/*adc0_autocenter*/,
+								0/*adc0_res*/, 0/*adc1_min*/, 0/*adc1_max*/, 0/*adc1_flat*/, 0/*adc1_flat_outside*/, 4/*adc1_reversed*/, 4/*adc1_autocenter*/,
+								0/*adc0_res*/, 0/*adc2_min*/, 0/*adc2_max*/, 0/*adc2_flat*/, 0/*adc2_flat_outside*/, 4/*adc2_reversed*/, 4/*adc2_autocenter*/,
+								0/*adc0_res*/, 0/*adc3_min*/, 0/*adc3_max*/, 0/*adc3_flat*/, 0/*adc3_flat_outside*/, 4/*adc3_reversed*/, 4/*adc3_autocenter*/,
 								8/*config_version*/};
 
 /*pointers to real vars
@@ -225,12 +232,12 @@ const int cfg_vars_type[] = {	4/*debug*/,4/*debug_adv*/,4/*disable_pollrate*/,
 * - 8(int array) need to use format : {(int*)&array_prt, (int)&array_size}
 */
 const void *cfg_vars_ptr[] = {	&debug, &debug_adv, &i2c_poll_rate_disable,
-								&i2c_bus, &i2c_addr, &i2c_addr_sec, &nINT_GPIO,
+								&i2c_bus, &i2c_addr, &i2c_addr_sec, &i2c_addr_adc[0], &i2c_addr_adc[1], &i2c_addr_adc[2], &i2c_addr_adc[3], &nINT_GPIO,
 								&js_enable[0], &js_enable[1],
-								&adc_min[0], &adc_max[0], &adc_flat[0], &adc_flat_outside[0], &adc_reversed[0], &adc_autocenter[0],
-								&adc_min[1], &adc_max[1], &adc_flat[1], &adc_flat_outside[1], &adc_reversed[1], &adc_autocenter[1],
-								&adc_min[2], &adc_max[2], &adc_flat[2], &adc_flat_outside[2], &adc_reversed[2], &adc_autocenter[2],
-								&adc_min[3], &adc_max[3], &adc_flat[3], &adc_flat_outside[3], &adc_reversed[3], &adc_autocenter[3],
+								&adc_res[0], &adc_min[0], &adc_max[0], &adc_flat[0], &adc_flat_outside[0], &adc_reversed[0], &adc_autocenter[0],
+								&adc_res[1], &adc_min[1], &adc_max[1], &adc_flat[1], &adc_flat_outside[1], &adc_reversed[1], &adc_autocenter[1],
+								&adc_res[2], &adc_min[2], &adc_max[2], &adc_flat[2], &adc_flat_outside[2], &adc_reversed[2], &adc_autocenter[2],
+								&adc_res[3], &adc_min[3], &adc_max[3], &adc_flat[3], &adc_flat_outside[3], &adc_reversed[3], &adc_autocenter[3],
 								&cfg_version};
 
 const unsigned int cfg_vars_arr_size = sizeof(cfg_vars_type) / sizeof(*cfg_vars_type); //config pointers array size
@@ -515,7 +522,7 @@ static int uhid_send_event(int fd) { //send event to uhid device
 
 	ev.u.input.data[index++] = gamepad_report.hat0; //dpad
 
-	if (uhid_js_left_enable) { //js0
+	if (uhid_js_left_enable + uhid_js_left_external_enable) { //js0
 		ev.u.input.data[index++] = gamepad_report.left_x & 0xFF;
 		ev.u.input.data[index++] = gamepad_report.left_x >> 8;
 		ev.u.input.data[index++] = gamepad_report.left_y & 0xFF;
@@ -525,7 +532,7 @@ static int uhid_send_event(int fd) { //send event to uhid device
 		ev.u.input.data[index++] = 0xFF; ev.u.input.data[index++] = 0x7F;
 	}
 
-	if (uhid_js_right_enable) { //js1
+	if (uhid_js_right_enable + uhid_js_right_external_enable) { //js1
 		ev.u.input.data[index++] = gamepad_report.right_x & 0xFF;
 		ev.u.input.data[index++] = gamepad_report.right_x >> 8;
 		ev.u.input.data[index++] = gamepad_report.right_y & 0xFF;
@@ -541,10 +548,10 @@ static int uhid_send_event(int fd) { //send event to uhid device
 
 
 //I2C related
-static int i2c_open(int bus, int addr){ //open I2C bus
+static int i2c_open(int bus, int addr){ //open I2C file
 	char fd_path[13];
 	if (bus < 0){bus = 0;}
-	if (addr < 0) {print_stderr("FATAL: invalid I2C address:0x%02X (%d)\n", addr, addr); exit(EXIT_FAILURE);}
+	if (addr < 0 || addr > 127) {print_stderr("FATAL: invalid I2C address:0x%02X (%d)\n", addr, addr); exit(EXIT_FAILURE);}
 
 	sprintf(fd_path, "/dev/i2c-%d", bus);
 	
@@ -572,11 +579,16 @@ static int i2c_open(int bus, int addr){ //open I2C bus
 	return fd;
 }
 
-static void i2c_close(int fd, int addr){ //close I2C bus
-	if (fd < 0) {print_stdout("address 0x%02X already closed\n", addr);
-	} else {
-		int ret = close(fd);
-		if (ret < 0){print_stderr("failed to close I2C handle for address 0x%02X, errno:%d (%m)\n", addr, -ret);} else {print_stdout("I2C handle for address:0x%02X closed\n", addr);}
+static void i2c_close(void){ //close all I2C files
+	int fd_array [] = {i2c_fd, i2c_fd_sec, i2c_adc_fd[0], i2c_adc_fd[1], i2c_adc_fd[2], i2c_adc_fd[3]};
+	int addr_array [] = {i2c_addr, i2c_addr_sec, i2c_addr_adc[0], i2c_addr_adc[1], i2c_addr_adc[2], i2c_addr_adc[3]};
+
+	for (int8_t i=0; i<(sizeof(fd_array)/sizeof(fd_array[0])); i++){
+		if(fd_array[i] >= 0){ //"valid" fd
+			int ret = close(fd_array[i]);
+			if (ret < 0){print_stderr("failed to close I2C handle for address 0x%02X, errno:%d (%m)\n", addr_array[i], -ret);
+			} else {print_stdout("I2C handle for address:0x%02X closed\n", addr_array[i]); fd_array[i] = -1;}
+		}
 	}
 }
 
@@ -601,6 +613,17 @@ static int adc_correct_offset_center(int adc_resolution, int adc_value, int adc_
 	return corrected_value;
 }
 
+//TODO: TMP implement of external adc: MCP3021
+static int MCP3021_read (int fd){
+	int ret = i2c_smbus_read_word_data(fd, 0);
+	if (ret < 0){
+		print_stderr("read failed, errno:%d (%m)\n", -ret);
+		return 0;
+	}
+	return (((uint16_t)(ret) & (uint16_t)0x00ffU) << 8) | (((uint16_t)(ret) & (uint16_t)0xff00U) >> 8); //return swapped, uapi/linux/swab.h
+}
+
+
 static void i2c_poll_joystick(void){ //poll data from i2c device
 	/*
 	* Benchmark (post regs update):
@@ -617,7 +640,7 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 
 	if (ret < 0) {
 		i2c_errors_count++;
-		if (ret == -6) {print_stderr("FATAL: i2c_smbus_read_word_data() failed, errno %d : %m\n", -ret); kill_resquested = true;}
+		if (ret == -6) {print_stderr("FATAL: i2c_smbus_read_i2c_block_data() failed, errno %d : %m\n", -ret); kill_resquested = true;}
 		if (i2c_errors_count >= i2c_errors_report) {print_stderr("WARNING: I2C requests failed %d times in a row\n", i2c_errors_count); i2c_errors_count = 0;}
 		i2c_last_error = ret; return;
 	}
@@ -658,39 +681,45 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 	//analog
 	int js_values[4] = {0,0,0,0};
 	if (uhid_js_left_enable) {
-		js_values[0] = (i2c_registers.a0_msb << 8 | i2c_registers.a1a0_lsb << 4) >> (16 - adc_res);
-		js_values[1] = (i2c_registers.a1_msb << 8 | ((i2c_registers.a1a0_lsb >> 4) << 4)) >> (16 - adc_res);
+		js_values[0] = (i2c_registers.a0_msb << 8 | i2c_registers.a1a0_lsb << 4) >> (16 - adc_res[0]);
+		js_values[1] = (i2c_registers.a1_msb << 8 | ((i2c_registers.a1a0_lsb >> 4) << 4)) >> (16 - adc_res[1]);
+	} else if (uhid_js_left_external_enable) {
+		js_values[0] = MCP3021_read (i2c_adc_fd[0]); //TODO read external adcs
+		js_values[1] = MCP3021_read (i2c_adc_fd[1]); //TODO read external adcs
 	}
 
 	if (uhid_js_right_enable) {
-		js_values[2] = (i2c_registers.a2_msb << 8 | i2c_registers.a3a2_lsb << 4) >> (16 - adc_res);
-		js_values[3] = (i2c_registers.a3_msb << 8 | ((i2c_registers.a3a2_lsb >> 4) << 4)) >> (16 - adc_res);
+		js_values[2] = (i2c_registers.a2_msb << 8 | i2c_registers.a3a2_lsb << 4) >> (16 - adc_res[2]);
+		js_values[3] = (i2c_registers.a3_msb << 8 | ((i2c_registers.a3a2_lsb >> 4) << 4)) >> (16 - adc_res[3]);
+	} else if (uhid_js_right_external_enable) {
+		js_values[2] = MCP3021_read (i2c_adc_fd[2]); //TODO read external adcs
+		js_values[3] = MCP3021_read (i2c_adc_fd[3]); //TODO read external adcs
 	}
 
 	for (uint8_t i=0; i<4; i++) {
-		if (uhid_js_left_enable && i < 2 || uhid_js_right_enable && i > 1){
+		if (((uhid_js_left_enable + uhid_js_left_external_enable) && i < 2) || ((uhid_js_right_enable + uhid_js_right_external_enable) && i > 1)){
 			if (adc_firstrun) {
-				if(adc_autocenter[i]){adc_offsets[i] = js_values[i] - (adc_res_limit / 2); //auto center enable
-				} else {adc_offsets[i] = (((adc_max[i] - adc_min[i]) / 2) + adc_min[i]) - (adc_res_limit / 2);}
+				if(adc_autocenter[i]){adc_offsets[i] = js_values[i] - (adc_res_limit[i] / 2); //auto center enable
+				} else {adc_offsets[i] = (((adc_max[i] - adc_min[i]) / 2) + adc_min[i]) - (adc_res_limit[i] / 2);}
 			}
 			
 			if(js_values[i] < adc_values_min[i]){adc_values_min[i] = js_values[i];} //update min value
 			if(js_values[i] > adc_values_max[i]){adc_values_max[i] = js_values[i];} //update max value
 
-			js_values[i] = adc_correct_offset_center(adc_res_limit, js_values[i], adc_min[i], adc_max[i], adc_offsets[i], adc_flat[i], adc_flat_outside[i], i); //re-center adc value, apply flats and extend to adc range
-			if(adc_reversed[i]){js_values[i] = abs(adc_res_limit - js_values[i]);} //reverse value
+			js_values[i] = adc_correct_offset_center(adc_res_limit[i], js_values[i], adc_min[i], adc_max[i], adc_offsets[i], adc_flat[i], adc_flat_outside[i], i); //re-center adc value, apply flats and extend to adc range
+			if(adc_reversed[i]){js_values[i] = abs(adc_res_limit[i] - js_values[i]);} //reverse value
 
-			js_values[i] <<= 16 - adc_res; //convert to 16bits for report
+			js_values[i] <<= 16 - adc_res[i]; //convert to 16bits for report
 		}
 	}
 
-	if (uhid_js_left_enable) {gamepad_report.left_x = js_values[0]; gamepad_report.left_y = js_values[1];}
-	if (uhid_js_right_enable) {gamepad_report.right_x = js_values[2]; gamepad_report.right_y = js_values[3];}
+	if (uhid_js_left_enable + uhid_js_left_external_enable) {gamepad_report.left_x = js_values[0]; gamepad_report.left_y = js_values[1];}
+	if (uhid_js_right_enable + uhid_js_right_external_enable) {gamepad_report.right_x = js_values[2]; gamepad_report.right_y = js_values[3];}
 	
 	//report
 	int report_val = 0, report_prev_val = 1; adc_firstrun = false;
 
-	if (!(uhid_js_left_enable + uhid_js_right_enable)) {
+	if (!(uhid_js_left_enable + uhid_js_right_enable + uhid_js_left_external_enable + uhid_js_right_external_enable)) {
 		report_val = gamepad_report.buttons7to0 + gamepad_report.buttons12to8 + gamepad_report.hat0;
 		report_prev_val = gamepad_report_prev.buttons7to0 + gamepad_report_prev.buttons12to8 + gamepad_report_prev.hat0;
 	}
@@ -769,70 +798,102 @@ int main(int argc, char **argv) {
 	if (ret != i2c_magic_sig){
 		if (ret < 0){print_stderr("FATAL: reading I2C device signature failed, errno %d (%m)\n", -ret);
 		} else {print_stderr("FATAL: invalid I2C device signature: 0x%02X\n", ret);}
-		i2c_close(i2c_fd_sec, i2c_addr_sec);
+		i2c_close();
 		return EXIT_FAILURE;
 	}
 
 	ret = i2c_smbus_read_word_data(i2c_fd_sec, 0x01); //check version
 	if (ret < 0){
 		print_stderr("FATAL: reading I2C device version failed, errno %d (%m)\n", -ret);
-		i2c_close(i2c_fd_sec, i2c_addr_sec);
+		i2c_close();
 		return EXIT_FAILURE;
 	} else {
 		i2c_dev_major = ret & 0xFF;
 		i2c_dev_minor = (ret >> 8) & 0xFF;
 		print_stdout("I2C device detected, signature:0x%02X, version:%d.%d\n", i2c_magic_sig, i2c_dev_major, i2c_dev_minor);
 	}
+	close(i2c_fd_sec); i2c_fd_sec = -1;
 
-	//process primary attiny address
+	//external adc
+	if (js_enable[0]){i2c_addr_adc[0] = 0xFF; i2c_addr_adc[1] = 0xFF;} //disable external adc0-1 if attiny js0 explicitly enabled
+	if (js_enable[1]){i2c_addr_adc[2] = 0xFF; i2c_addr_adc[3] = 0xFF;} //disable external adc2-3 if attiny js1 explicitly enabled
+
+	if (i2c_addr_adc[0] != 0xFF && i2c_addr_adc[1] != 0xFF){ //external js0
+		i2c_adc_fd[0] = i2c_open(i2c_bus, i2c_addr_adc[0]);
+		i2c_adc_fd[1] = i2c_open(i2c_bus, i2c_addr_adc[1]);
+		uhid_js_left_external_enable = true;
+	}
+
+	if (i2c_addr_adc[2] != 0xFF && i2c_addr_adc[3] != 0xFF){ //external js1
+		i2c_adc_fd[2] = i2c_open(i2c_bus, i2c_addr_adc[2]);
+		i2c_adc_fd[3] = i2c_open(i2c_bus, i2c_addr_adc[3]);
+		uhid_js_right_external_enable = true;
+	}
+
+	if (uhid_js_left_external_enable + uhid_js_right_external_enable){
+		print_stdout("detected external ADC configuration: %s %s\n", uhid_js_left_external_enable ? "JS0:left" : "", uhid_js_right_external_enable ? "JS1:right" : "");
+	}
+
+	//attiny
 	i2c_fd = i2c_open(i2c_bus, i2c_addr);
 
 	//set analog config
 	uint8_t analog_reg = 0; if(js_enable[0]){analog_reg|=0x03;} if(js_enable[1]){analog_reg|=0x0C;}
-
 	ret = i2c_smbus_write_byte_data(i2c_fd, REGISTER_ADC_ENABLE, analog_reg);
-	if (ret < 0){print_stderr("failed to set ADC configuration, errno %d (%m)\n", -ret);
-	} else {print_stdout("ADC configuration set successfully\n");}
+	if (ret < 0){print_stderr("failed to set ATTINY ADC configuration, errno %d (%m)\n", -ret);
+	} else {print_stdout("ATTINY ADC configuration set successfully\n");}
 
-	//detect analog config
-	ret = i2c_smbus_read_byte_data(i2c_fd, REGISTER_ADC_ENABLE); //check what adc enabled ADC0-3
-	if (ret < 0){
-		print_stderr("FATAL: reading ADC configuration failed, errno %d (%m)\n", -ret);
-		i2c_close(i2c_fd, i2c_addr);
-		return EXIT_FAILURE;
-	} else {
-		bool tmp_adc[4];
-		for (uint8_t i=0; i<4; i++){tmp_adc[i] = (ret >> i) & 0b1;}
-		uhid_js_left_enable = tmp_adc[0] && tmp_adc[1];
-		uhid_js_right_enable = tmp_adc[2] && tmp_adc[3];
+	if(!(uhid_js_left_external_enable && uhid_js_right_external_enable)){ //no external adc, fallback to attiny
+		//detect analog config
+		ret = i2c_smbus_read_byte_data(i2c_fd, REGISTER_ADC_ENABLE); //check what adc enabled ADC0-3
+		if (ret < 0){
+			print_stderr("FATAL: reading ATTINY ADC configuration failed, errno %d (%m)\n", -ret);
+			i2c_close();
+			return EXIT_FAILURE;
+		} else {
+			bool tmp_adc[4];
+			for (uint8_t i=0; i<4; i++){tmp_adc[i] = (ret >> i) & 0b1;}
+			uhid_js_left_enable = !uhid_js_left_external_enable && (tmp_adc[0] && tmp_adc[1]);
+			uhid_js_right_enable = !uhid_js_right_external_enable && (tmp_adc[2] && tmp_adc[3]);
 
-		if (uhid_js_left_enable + uhid_js_right_enable) {
-			print_stdout("detected ADC configuration: %s %s\n", uhid_js_left_enable ? "left" : "", uhid_js_right_enable ? "right" : "");
-			#if defined(USE_WIRINGPI_IRQ) || defined(USE_PIGPIO_IRQ)
-			print_stdout("IRQ disabled\n");
-			#endif
-			
-			ret = i2c_smbus_read_byte_data(i2c_fd, REGISTER_ADC_RES); //current ADC resolution
-			if (ret < 0){
-				print_stderr("FATAL: reading ADC resolution failed, errno %d (%m)\n", -ret);
-				i2c_close(i2c_fd, i2c_addr);
-				return EXIT_FAILURE;
-			} else {
-				adc_res = ret;
-				adc_res_limit = adc_res_limit >> (sizeof(adc_res_limit)*8 - adc_res);
-				print_stdout("detected ADC resolution: %dbits (%d)\n", adc_res, adc_res_limit);
+			if (uhid_js_left_enable + uhid_js_right_enable) {
+				print_stdout("detected ATTINY ADC configuration: %s %s\n", uhid_js_left_enable ? "JS0:left" : "", uhid_js_right_enable ? "JS1:right" : "");
 
-				//bulletproofing driver against user settings
-				for (uint8_t i=0; i<4; i++){
-					if (uhid_js_left_enable && i < 2 || uhid_js_right_enable && i > 1){
-						if(adc_max[i] > adc_res_limit) {
-							print_stdout("WARN: adc%d_max (%d) over ADC resolution (%d), limited said resolution\n", i, adc_max[i], adc_res_limit);
-							adc_max[i] = adc_res_limit;
-						}
-					}
+				ret = i2c_smbus_read_byte_data(i2c_fd, REGISTER_ADC_RES); //current ADC resolution
+				if (ret < 0){
+					print_stderr("FATAL: reading ATTINY ADC resolution failed, errno %d (%m)\n", -ret);
+					i2c_close();
+					return EXIT_FAILURE;
+				} else {
+					if (uhid_js_left_enable){adc_res[0] = ret;  adc_res[1] = ret;}
+					if (uhid_js_right_enable){adc_res[2] = ret; adc_res[3] = ret;}
 				}
 			}
 		}
+	}
+
+	//check adc configuration
+	for (uint8_t i=0; i<4; i++){
+		if ((uhid_js_left_enable + uhid_js_left_external_enable) && i < 2 || (uhid_js_right_enable + uhid_js_right_external_enable) && i > 1){
+			adc_res_limit[i] = adc_res_limit[i] >> (sizeof(adc_res_limit[i])*8 - adc_res[i]); //compute adc limit
+
+			if (adc_flat[i] < 0){adc_flat[i] = 0;}
+			if (adc_flat[i] > 35){adc_flat[i] = 35;}
+			if (adc_flat_outside[i] < 0){adc_flat_outside[i] = 0;}
+			if (adc_flat_outside[i] > 35){adc_flat_outside[i] = 35;}
+
+			if(adc_max[i] > adc_res_limit[i]) {
+				print_stdout("WARNING: adc%d_max (%d) over ADC resolution (%u), limited said resolution\n", i, adc_max[i], adc_res_limit[i]);
+				adc_max[i] = adc_res_limit[i];
+			} else {
+				print_stdout("detected ADC%d resolution: %dbits (%u)\n", i, adc_res[i], adc_res_limit[i]);
+			}
+		}
+	}
+
+	if ((uhid_js_left_enable + uhid_js_left_external_enable + uhid_js_right_enable + uhid_js_right_external_enable) && nINT_GPIO >= 0){
+		print_stdout("IRQ disabled\n");
+		nINT_GPIO = -1;
 	}
 
 	uhid_fd = open(path, O_RDWR | O_CLOEXEC);
@@ -847,7 +908,7 @@ int main(int argc, char **argv) {
 
 	i2c_poll_joystick(); //initial poll
 
-	if (!(uhid_js_left_enable + uhid_js_right_enable) && nINT_GPIO >= 0) {
+	if (nINT_GPIO >= 0) {
 	#ifdef USE_WIRINGPI_IRQ
 		#define WIRINGPI_CODES 1 //allow error code return
 		int err;
@@ -935,13 +996,14 @@ int main(int argc, char **argv) {
 
 	if (i2c_last_error != 0) {print_stderr("last detected I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));}
 
-	i2c_close(i2c_fd, i2c_addr);
-	i2c_close(i2c_fd_sec, i2c_addr_sec);
+	i2c_close();
 	uhid_destroy(uhid_fd);
 
-	if(uhid_js_left_enable + uhid_js_right_enable){
+	if(uhid_js_left_enable + uhid_js_right_enable + uhid_js_left_external_enable + uhid_js_right_external_enable){
 		print_stdout("detected adc limits:\n");
-		for (uint8_t i=0; i<4; i++) {print_stdout("adc%d: min:%d max:%d\n", i, adc_values_min[i], adc_values_max[i]);}
+		for (uint8_t i=0; i<4; i++){
+			if (adc_values_min[i]!=0xFFFF){print_stdout("adc%d: min:%d max:%d\n", i, adc_values_min[i], adc_values_max[i]);}
+		}
 	}
 
 	return main_return;
