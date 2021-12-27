@@ -9,12 +9,12 @@
  */
 
 
-//TODO:  save backlight value to eeprom
 
 #include <Wire.h>
+#include <EEPROM.h>
 
 #define VERSION_MAJOR   0
-#define VERSION_MINOR   4
+#define VERSION_MINOR   5
 
 
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
@@ -550,11 +550,23 @@ void setup()
   i2c_joystick_registers.a3_msb = 0x7F;
   i2c_joystick_registers.a3a2_lsb = 0xFF;
 
-
   i2c_secondary_registers.magic = 0xED;
   i2c_secondary_registers.ver_major = VERSION_MAJOR;
   i2c_secondary_registers.ver_minor = VERSION_MINOR;
-  i2c_secondary_registers.config_backlight = CONFIG_BACKLIGHT_STEP_DEFAULT;
+
+  if(EEPROM[0] == 0xED && EEPROM[1] == VERSION_MAJOR && EEPROM[2] == VERSION_MINOR)
+  {
+    i2c_secondary_registers.config_backlight = EEPROM[3];
+  }
+  else
+  {
+    EEPROM[0] = 0xED;
+    EEPROM[1] = VERSION_MAJOR;
+    EEPROM[2] = VERSION_MINOR;
+    i2c_secondary_registers.config_backlight = CONFIG_BACKLIGHT_STEP_DEFAULT;
+    EEPROM[3] = i2c_secondary_registers.config_backlight;
+  }
+  
   g_pwm_step = ~i2c_secondary_registers.config_backlight; //unset it
   i2c_secondary_registers.poweroff_control = 0;
 
@@ -611,6 +623,8 @@ void loop()
     
     analogWrite(PIN_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
     g_pwm_step = i2c_secondary_registers.config_backlight;
+
+    EEPROM[3] = i2c_secondary_registers.config_backlight;
   }
 #endif
   
