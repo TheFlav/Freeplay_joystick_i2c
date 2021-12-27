@@ -14,14 +14,12 @@
 #include <Wire.h>
 
 #define VERSION_MAJOR   0
-#define VERSION_MINOR   3
+#define VERSION_MINOR   4
 
 
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
 //currently testing on Adafruit 817
 
-#define ADC_RESOLUTION 10
-//#define ADC_RESOLUTION 12  //can do analogReadResolution(12) on 2-series 427/827 chips
 
 #define CONFIG_I2C_ADDR     0x20
 #define CONFIG_I2C_2NDADDR  0x40  //0x30 wouldn't work
@@ -39,6 +37,13 @@
  #define USE_ADC3
 #endif
 
+//#define ADC_RESOLUTION 0     //if we're build to do NO ADC, then SHOULD we set resolution to 0?  (using features_available below, for now)
+#define ADC_RESOLUTION 10
+//#define ADC_RESOLUTION 12  //can do analogReadResolution(12) on 2-series 427/827 chips
+
+
+
+
 #if defined(USE_ADC0) && defined(USE_INTERRUPTS)
  #error ADC0 and nINT_PIN share the same pin
 #endif
@@ -49,7 +54,10 @@
  bool g_nINT_state = false;
 #endif
 
-#define CONFIG_INVERT_POWER_BUTTON
+
+#define POWEROFF_OUT_PIN PIN_PB3  //pin num 8
+
+#define CONFIG_INVERT_POWER_BUTTON      //power button is on PIN_PB3
 
 #define NUM_BACKLIGHT_PWM_STEPS 11
 uint8_t backlight_pwm_steps[NUM_BACKLIGHT_PWM_STEPS] = {0x00, 0x10, 0x20, 0x30, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xD0, 0xFF};
@@ -80,7 +88,9 @@ struct i2c_secondary_address_register_struct
   uint8_t ver_minor;
 #define REGISTER_CONFIG_BACKLIGHT 0x03
   uint8_t config_backlight;  // Reg: 0x03
-  uint8_t poweroff_control;  // Reg: 0x04  - write some magic number here to turn off the system
+  uint8_t backlight_max;     // Reg: 0x04 
+  uint8_t poweroff_control;  // Reg: 0x05  - write some magic number here to turn off the system
+  uint8_t features_available;// Reg: 0x06  - bit define if ADCs are available or interrups are in use, etc. 
 } i2c_secondary_registers;
 
 volatile byte g_last_sent_input0 = 0xFF;
@@ -190,7 +200,7 @@ byte g_pwm_step = 0x00;  //100% on
  #define PINB_UART_MASK     (0b00000000)
 #endif
 
-#define PINA_IN0_MASK      (0b00000110)   //the pins from PINA that are used in IN0
+#define PINA_IN0_MASK      (0b00000110)   //the pins from PINA that are used in IN0     (not counting ADC pins)
 #define PINB_IN0_MASK      (0b11110000)   //the pins from PINB that are used in IN0
 
 #ifdef USE_ADC1
@@ -523,10 +533,23 @@ void setup()
 #endif
 
   pinMode(PIN_PWM, OUTPUT);  // sets the pin as output
+  
+  pinMode(POWEROFF_OUT_PIN, OUTPUT);
+  digitalWrite(POWEROFF_OUT_PIN, HIGH);
 
 
   i2c_joystick_registers.adc_res = ADC_RESOLUTION;
   i2c_joystick_registers.adc_on_bits = 0x00;
+
+  //default to middle
+  i2c_joystick_registers.a0_msb = 0x7F;
+  i2c_joystick_registers.a1_msb = 0x7F;
+  i2c_joystick_registers.a1a0_lsb = 0xFF;
+
+  i2c_joystick_registers.a2_msb = 0x7F;
+  i2c_joystick_registers.a3_msb = 0x7F;
+  i2c_joystick_registers.a3a2_lsb = 0xFF;
+
 
   i2c_secondary_registers.magic = 0xED;
   i2c_secondary_registers.ver_major = VERSION_MAJOR;
@@ -534,6 +557,26 @@ void setup()
   i2c_secondary_registers.config_backlight = CONFIG_BACKLIGHT_STEP_DEFAULT;
   g_pwm_step = ~i2c_secondary_registers.config_backlight; //unset it
   i2c_secondary_registers.poweroff_control = 0;
+
+  i2c_secondary_registers.features_available = 0;
+
+#ifdef USE_ADC0
+  i2c_secondary_registers.features_available |= 1 << 0;
+#endif
+#ifdef USE_ADC1
+  i2c_secondary_registers.features_available |= 1 << 1;
+#endif
+#ifdef USE_ADC2
+  i2c_secondary_registers.features_available |= 1 << 2;
+#endif
+#ifdef USE_ADC3
+  i2c_secondary_registers.features_available |= 1 << 3;
+#endif
+#ifdef USE_INTERRUPTS
+  i2c_secondary_registers.features_available |= 1 << 4;
+#endif
+
+  i2c_secondary_registers.backlight_max = NUM_BACKLIGHT_PWM_STEPS-1;
 }
 
 
