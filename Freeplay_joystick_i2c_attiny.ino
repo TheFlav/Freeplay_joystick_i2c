@@ -28,8 +28,8 @@
 
 //#define CONFIG_SERIAL_DEBUG  //shares pins with L2/R2 IO1_6/IO1_7
 
-#define USE_INTERRUPTS
-//#define USE_ADC
+//#define USE_INTERRUPTS
+#define USE_ADC
 
 // How many ADC's do you want?
 #ifdef USE_ADC
@@ -70,8 +70,7 @@ struct i2c_joystick_register_struct
 #define REGISTER_ADC_ON_BITS 0x08
   uint8_t adc_on_bits;     // Reg: 0x08 - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
   uint8_t config0;         // Reg: 0x09 - Configuration port 0
-  uint8_t config1;         // Reg: 0x0A - Configuration port 1
-  uint8_t adc_res;         // Reg: 0x0B - current ADC resolution (maybe settable?)
+  uint8_t adc_res;         // Reg: 0x0A - current ADC resolution (maybe settable?)
 } volatile i2c_joystick_registers;
 
 struct i2c_secondary_address_register_struct 
@@ -180,7 +179,7 @@ byte g_pwm_step = 0x00;  //100% on
 
 
 //if you change any of these, then you need to change the pullups in setup()
-#define PINA_ADC0_MASK      (0b00010000)
+//#define PINA_ADC0_MASK      (0b00010000)    //don't need this, because PA4 is never a digital BTN input (only nINT or ADC0)
 #define PINA_ADC1_MASK      (0b00100000)
 #define PINA_ADC2_MASK      (0b01000000)
 #define PINA_ADC3_MASK      (0b10000000)
@@ -194,7 +193,11 @@ byte g_pwm_step = 0x00;  //100% on
 #define PINA_IN0_MASK      (0b00000110)   //the pins from PINA that are used in IN0
 #define PINB_IN0_MASK      (0b11110000)   //the pins from PINB that are used in IN0
 
+#ifdef USE_ADC1
+#define PINA_IN1_MASK      (0b00000000)   //the pins from PINA that are used in IN1
+#else
 #define PINA_IN1_MASK      (0b00100000)   //the pins from PINA that are used in IN1
+#endif
 #define PINB_IN1_MASK      (0b00000100)   //the pins from PINB that are used in IN1
 #define PINC_IN1_MASK      (0b00111111)   //the pins from PINC that are used in IN1
 
@@ -291,6 +294,9 @@ void read_all_gpio(void)
 
 #ifndef CONFIG_SERIAL_DEBUG
   input1 = ((pb_in & PINB_IN1_MASK) << PINB_IN1_SHL) |  (pc_in & PINC_IN1_MASK) | ((pa_in & PINA_IN1_MASK) << PINA_IN1_SHL);
+ #ifdef USE_ADC1
+  input1 |= (PINA_ADC1_MASK << PINA_IN1_SHL);
+ #endif  
 #else
   input1 = ((pb_in & (PINB_IN1_MASK | PINB_UART_MASK)) << PINB_IN1_SHL) |  (pc_in & PINC_IN1_MASK) | ((pa_in & PINA_IN1_MASK) << PINA_IN1_SHL);   //act like the PINB_UART_MASK pins are never pressed
 #endif

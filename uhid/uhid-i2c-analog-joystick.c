@@ -317,7 +317,8 @@ void i2c_poll_joystick()
 
 
 
-
+	ret = i2c_registers.input1 << 8 | i2c_registers.input0;
+	
     ret = ~ret;         //invert all bits 1=pressed 0=unpressed
 
     dpad_bits = ret & 0x000F;
@@ -358,7 +359,13 @@ void i2c_poll_joystick()
 
     gamepad_report.hat_x = dpad_r - dpad_l;
     gamepad_report.hat_y = dpad_u - dpad_d;
+	
+	
+	gamepad_report.left_x = i2c_registers.a0_msb << 8 | ((i2c_registers.a1a0_lsb & 0x0F) << 4);
+	gamepad_report.left_y = i2c_registers.a1_msb << 8 | (i2c_registers.a1a0_lsb & 0xF0);
 
+	gamepad_report.right_x = i2c_registers.a2_msb << 8 | ((i2c_registers.a3a2_lsb & 0x0F) << 4);
+	gamepad_report.right_y = i2c_registers.a3_msb << 8 | (i2c_registers.a3a2_lsb & 0xF0);
 }
 
 
@@ -413,7 +420,7 @@ int main(int argc, char **argv)
 
 	i2c_open();
     
-    i2c_smbus_write_byte_data(i2c_file, 0x0A, 0x0F);        //turn on ADC3,2,1,0 in adc_on_bits
+    i2c_smbus_write_byte_data(i2c_file, 0x08, 0x0F);        //turn on ADC3,2,1,0 in adc_on_bits
 
     
     fprintf(stderr, "Press '^C' to quit...\n");
