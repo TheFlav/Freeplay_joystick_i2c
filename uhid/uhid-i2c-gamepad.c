@@ -31,7 +31,7 @@
 
 
 #define REGISTER_ADC_ENABLE	0x08 //turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
-#define REGISTER_ADC_RES	0x0B //current ADC resolution
+#define REGISTER_ADC_RES	0x0A //current ADC resolution
 
 //IRQ specific
 int nINT_GPIO = 40; //gpio pin used for irq, limited to 31 for pigpio, set to -1 to disable
@@ -520,7 +520,7 @@ static int uhid_send_event(int fd) { //send event to uhid device
 
 	ev.u.input.data[index++] = gamepad_report.hat0; //dpad
 
-	if (uhid_js_left_enable + uhid_js_left_external_enable) { //js0
+	if (uhid_js_left_enable || uhid_js_left_external_enable) { //js0
 		ev.u.input.data[index++] = gamepad_report.left_x & 0xFF;
 		ev.u.input.data[index++] = gamepad_report.left_x >> 8;
 		ev.u.input.data[index++] = gamepad_report.left_y & 0xFF;
@@ -530,7 +530,7 @@ static int uhid_send_event(int fd) { //send event to uhid device
 		ev.u.input.data[index++] = 0xFF; ev.u.input.data[index++] = 0x7F;
 	}
 
-	if (uhid_js_right_enable + uhid_js_right_external_enable) { //js1
+	if (uhid_js_right_enable || uhid_js_right_external_enable) { //js1
 		ev.u.input.data[index++] = gamepad_report.right_x & 0xFF;
 		ev.u.input.data[index++] = gamepad_report.right_x >> 8;
 		ev.u.input.data[index++] = gamepad_report.right_y & 0xFF;
@@ -633,7 +633,7 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 	*/
 	int read_limit = 2;
 	if (uhid_js_right_enable){read_limit = 8;} else if (uhid_js_left_enable){read_limit = 5;}
-
+	
 	int ret = i2c_smbus_read_i2c_block_data(i2c_fd, 0, read_limit, (uint8_t *)&i2c_registers);
 
 	if (ret < 0) {
@@ -679,8 +679,8 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 	//analog
 	int js_values[4] = {0,0,0,0};
 	if (uhid_js_left_enable) {
-		js_values[0] = (i2c_registers.a0_msb << 8 | i2c_registers.a1a0_lsb << 4) >> (16 - adc_res[0]);
-		js_values[1] = (i2c_registers.a1_msb << 8 | ((i2c_registers.a1a0_lsb >> 4) << 4)) >> (16 - adc_res[1]);
+		js_values[0] = ((i2c_registers.a0_msb << 8) | (i2c_registers.a1a0_lsb & 0x0F) << 4) >> (16 - adc_res[0]);
+		js_values[1] = ((i2c_registers.a1_msb << 8) | (i2c_registers.a1a0_lsb & 0xF0)) >> (16 - adc_res[1]);
 	} else if (uhid_js_left_external_enable) {
 		js_values[0] = MCP3021_read (i2c_adc_fd[0]); //TODO read external adcs
 		js_values[1] = MCP3021_read (i2c_adc_fd[1]); //TODO read external adcs
@@ -863,8 +863,16 @@ int main(int argc, char **argv) {
 					i2c_close();
 					return EXIT_FAILURE;
 				} else {
-					if (uhid_js_left_enable){adc_res[0] = ret;  adc_res[1] = ret;}
-					if (uhid_js_right_enable){adc_res[2] = ret; adc_res[3] = ret;}
+					if (uhid_js_left_enable)
+					{
+						adc_res[0] = ret;  
+						adc_res[1] = ret;
+					}
+					if (uhid_js_right_enable)
+					{
+						adc_res[2] = ret; 
+						adc_res[3] = ret;
+					}
 				}
 			}
 		}
