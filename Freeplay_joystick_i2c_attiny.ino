@@ -2,10 +2,9 @@
 
 /*
  * 
- * TODO:  Add poweroff_in, poweroff_out functionality
- *        Add poweroff control via SECONDARY i2c address
- * 
+ * TODO:  Maybe Add poweroff control via SECONDARY i2c address
  * MAYBE: Add watchdog shutdown if no "petting" after so long
+ * 
  */
 
 
@@ -53,7 +52,7 @@
 #endif
 
 
-#define POWEROFF_OUT_PIN PIN_PB3  //pin num 8
+#define POWEROFF_OUT_PIN 8 //PIN_PB3  //pin num 8
 
 #define CONFIG_INVERT_POWER_BUTTON      //power button is on PIN_PB3
 
@@ -134,6 +133,7 @@ byte g_pwm_step = 0x00;  //100% on
 #define INPUT0_BTN_B      (1 << 5)      //IO0_5
 #define INPUT1_BTN_L      (1 << 4)      //IO1_4
 #define INPUT1_BTN_R      (1 << 5)      //IO1_5
+#define INPUT1_BTN_POWER  (1 << 6)      //IO1_6
 
 
 
@@ -177,6 +177,8 @@ byte g_pwm_step = 0x00;  //100% on
 #define IS_PRESSED_BTN_L() ((i2c_joystick_registers.input1 & INPUT1_BTN_L) != INPUT1_BTN_L)
 #define IS_PRESSED_BTN_R() ((i2c_joystick_registers.input1 & INPUT1_BTN_R) != INPUT1_BTN_R)
 
+#define IS_PRESSED_BTN_POWER() ((i2c_joystick_registers.input1 & INPUT1_BTN_POWER) != INPUT1_BTN_POWER)
+
 #define IS_SPECIAL_INPUT_MODE() (IS_PRESSED_BTN_A() && IS_PRESSED_BTN_B() && IS_PRESSED_BTN_L() && IS_PRESSED_BTN_R())
 
 
@@ -215,9 +217,7 @@ byte g_pwm_step = 0x00;  //100% on
 #define PINB_GPIO_MASK     ((PINB_IN0_MASK | PINB_IN1_MASK) & ~PINB_UART_MASK)
 #define PINC_GPIO_MASK     (PINC_IN1_MASK)
 
-#ifdef CONFIG_INVERT_POWER_BUTTON
- #define PINB_INVERT_MASK (1 << 2)    //PB2 is the power button, but it needs to be inverted (high when pressed)
-#endif
+#define PINB_POWER_BUTTON (1 << 2)    //PB2 is the power button, but it needs to be inverted (high when pressed)
 
 #define PINA_IN0_SHR       1
 #define PINB_IN0_SHR       2
@@ -297,7 +297,7 @@ void read_all_gpio(void)
   byte pc_in = PORTC_IN;
 
 #ifdef CONFIG_INVERT_POWER_BUTTON
- pb_in ^= PINB_INVERT_MASK;
+ pb_in ^= PINB_POWER_BUTTON;
 #endif
 
   input0 = ((pa_in & PINA_IN0_MASK) >> PINA_IN0_SHR) | ((pb_in & PINB_IN0_MASK) >> PINB_IN0_SHR);
@@ -328,12 +328,13 @@ void read_all_gpio(void)
   i2c_joystick_registers.input1 = input1;
 }
 
-#define LOOP_DELAY 0x3FFF
+#define SPECIAL_LOOP_DELAY 0x3FFF
+#define POWER_LOOP_DELAY 0x7FFFF  //0xFFFFF = 14seconds-ish
 
 void process_special_inputs()
 {  
   static uint16_t special_inputs_loop_counter = 0;
-  static bool was_pressed_last_time = false;
+  static uint32_t power_button_loop_counter = POWER_LOOP_DELAY;
 
   if(IS_SPECIAL_INPUT_MODE() && (IS_PRESSED_DPAD_UP() || IS_PRESSED_DPAD_DOWN()))
   {
@@ -344,7 +345,7 @@ void process_special_inputs()
     }
     else
     {
-      special_inputs_loop_counter = LOOP_DELAY;
+      special_inputs_loop_counter = SPECIAL_LOOP_DELAY;
 
       if(IS_PRESSED_DPAD_UP())
       {
@@ -357,15 +358,25 @@ void process_special_inputs()
           i2c_secondary_registers.config_backlight--;
       }
     } 
-
-    was_pressed_last_time = true;
   }
   else
   {
-    if(was_pressed_last_time)
-      special_inputs_loop_counter = 0x10;  //tiny delay just for debounce
-    else if(special_inputs_loop_counter)
-      special_inputs_loop_counter--;
+    special_inputs_loop_counter = 0x10;  //tiny delay just for debounce
+  }
+
+  if(power_button_loop_counter == 0)
+  {
+      power_button_loop_counter = POWER_LOOP_DELAY;
+      digitalWrite(POWEROFF_OUT_PIN,LOW);
+  }
+  else if(IS_PRESSED_BTN_POWER())    //BTN_POWER seems unreliable (other buttons worked)
+  {
+    //we're delay looping
+    power_button_loop_counter--;
+  }
+  else
+  {
+    power_button_loop_counter = POWER_LOOP_DELAY;
   }
 }
 
