@@ -26,22 +26,20 @@
 
 //#define CONFIG_SERIAL_DEBUG  //shares pins with L2/R2 IO1_6/IO1_7
 
-#define USE_INTERRUPTS
-//#define USE_ADC
+//#define USE_INTERRUPTS
+#define USE_ADC
 
-// How many ADC's do you want?
 #ifdef USE_ADC
+ //#define ADC_RESOLUTION 10
+ //#define ADC_RESOLUTION 12  //can do analogReadResolution(12) on 2-series 427/827 chips
+ #define ADC_RESOLUTION ADC_NATIVE_RESOLUTION
  #define USE_ADC0
  #define USE_ADC1
  #define USE_ADC2
  #define USE_ADC3
+#else
+ #define ADC_RESOLUTION 0
 #endif
-
-//#define ADC_RESOLUTION 0     //if we're build to do NO ADC, then SHOULD we set resolution to 0?  (using features_available below, for now)
-#define ADC_RESOLUTION 10
-//#define ADC_RESOLUTION 12  //can do analogReadResolution(12) on 2-series 427/827 chips
-
-
 
 
 #if defined(USE_ADC0) && defined(USE_INTERRUPTS)
@@ -75,8 +73,10 @@ struct i2c_joystick_register_struct
   uint8_t a2_msb;          // Reg: 0x05 - ADC2 most significant 8 bits
   uint8_t a3_msb;          // Reg: 0x06 - ADC2 most significant 8 bits
   uint8_t a3a2_lsb;        // Reg: 0x07 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
-#define REGISTER_ADC_ON_BITS 0x08
-  uint8_t adc_on_bits;     // Reg: 0x08 - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
+#define REGISTER_ADC_CONF_BITS 0x08
+  uint8_t adc_conf_bits;   // Reg: 0x08 - High Nibble is read-only.  ADC PRESENT = It tells which ADCs are available.
+                           //             Low Nibble is read/write.  ADC ON/OFF = The system can read/write what ADCs are sampled and used for a#_msb and lsb above
+                           //             (but can only turn ON ADCs that are turned on in the high nibble.)
   uint8_t config0;         // Reg: 0x09 - Configuration port 0
   uint8_t adc_res;         // Reg: 0x0A - current ADC resolution (maybe settable?)
 } volatile i2c_joystick_registers;
@@ -380,9 +380,12 @@ inline void receive_i2c_callback_main_address(int i2c_bytes_received)
   {
     byte temp = Wire.read(); //We might record it, we might throw it away
 
-    if(x == REGISTER_ADC_ON_BITS)   //this is a writeable register
+    if(x == REGISTER_ADC_CONF_BITS)   //this is a writeable register
     {
-      i2c_joystick_registers.adc_on_bits = temp;
+      uint8_t mask;
+      temp &= 0x0F;   //the top nibble is not writeable
+      mask = (i2c_joystick_registers.adc_conf_bits >> 4);   //the high nibble defines what ADCs are available
+      i2c_joystick_registers.adc_conf_bits = i2c_joystick_registers.adc_conf_bits | (temp & mask);     //turn on any bits that are available and requested
     }
   }
 }
@@ -537,9 +540,7 @@ void setup()
   pinMode(POWEROFF_OUT_PIN, OUTPUT);
   digitalWrite(POWEROFF_OUT_PIN, HIGH);
 
-
   i2c_joystick_registers.adc_res = ADC_RESOLUTION;
-  i2c_joystick_registers.adc_on_bits = 0x00;
 
   //default to middle
   i2c_joystick_registers.a0_msb = 0x7F;
@@ -571,18 +572,23 @@ void setup()
   i2c_secondary_registers.poweroff_control = 0;
 
   i2c_secondary_registers.features_available = 0;
+  i2c_joystick_registers.adc_conf_bits = 0;
 
 #ifdef USE_ADC0
   i2c_secondary_registers.features_available |= 1 << 0;
+  i2c_joystick_registers.adc_conf_bits |= 1 << 4;   //lowest bit of the high nibble
 #endif
 #ifdef USE_ADC1
   i2c_secondary_registers.features_available |= 1 << 1;
+  i2c_joystick_registers.adc_conf_bits |= 1 << 5;   //second bit of the high nibble
 #endif
 #ifdef USE_ADC2
   i2c_secondary_registers.features_available |= 1 << 2;
+  i2c_joystick_registers.adc_conf_bits |= 1 << 6;   //third bit of the high nibble
 #endif
 #ifdef USE_ADC3
   i2c_secondary_registers.features_available |= 1 << 3;
+  i2c_joystick_registers.adc_conf_bits |= 1 << 7;   //top bit of the high nibble
 #endif
 #ifdef USE_INTERRUPTS
   i2c_secondary_registers.features_available |= 1 << 4;
@@ -630,7 +636,7 @@ void loop()
   
 
 #ifdef USE_ADC0
-  if(i2c_joystick_registers.adc_on_bits & (1 << 0))
+  if(i2c_joystick_registers.adc_conf_bits & (1 << 0))
   {
     adc = analogRead(PIN_PA4);
     i2c_joystick_registers.a0_msb = adc >> (ADC_RESOLUTION - 8);
@@ -638,7 +644,7 @@ void loop()
   }
 #endif
 #ifdef USE_ADC1
-  if(i2c_joystick_registers.adc_on_bits & (1 << 1))
+  if(i2c_joystick_registers.adc_conf_bits & (1 << 1))
   {
     adc = analogRead(PIN_PA5);
     i2c_joystick_registers.a1_msb = adc >> (ADC_RESOLUTION - 8);
@@ -646,7 +652,7 @@ void loop()
   }
 #endif
 #ifdef USE_ADC2
-  if(i2c_joystick_registers.adc_on_bits & (1 << 2))
+  if(i2c_joystick_registers.adc_conf_bits & (1 << 2))
   {
     adc = analogRead(PIN_PA6);
     i2c_joystick_registers.a2_msb = adc >> (ADC_RESOLUTION - 8);
@@ -654,7 +660,7 @@ void loop()
   }
 #endif
 #ifdef USE_ADC3
-  if(i2c_joystick_registers.adc_on_bits & (1 << 3))
+  if(i2c_joystick_registers.adc_conf_bits & (1 << 3))
   {
     adc = analogRead(PIN_PA7);
     i2c_joystick_registers.a3_msb = adc >> (ADC_RESOLUTION - 8);
