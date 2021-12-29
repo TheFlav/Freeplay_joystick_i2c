@@ -36,6 +36,8 @@
  #define USE_ADC1
  #define USE_ADC2
  #define USE_ADC3
+ #define USE_ADC18
+ #define USE_ADC19
 #else
  #define ADC_RESOLUTION 0
 #endif
@@ -237,8 +239,12 @@ void setup_gpio(void)
 
 //#define PINA_MASK (0b00001110) for ADC
   //PORTA_PIN0CTRL = PORT_PULLUPEN_bm;
+#ifndef USE_ADC18
   PORTA_PIN1CTRL = PORT_PULLUPEN_bm;
+#endif
+#ifndef USE_ADC19
   PORTA_PIN2CTRL = PORT_PULLUPEN_bm;
+#endif
   PORTA_PIN3CTRL = PORT_PULLUPEN_bm;
 #ifndef USE_ADC0
   PORTA_PIN4CTRL = PORT_PULLUPEN_bm; //ADC0
@@ -321,6 +327,47 @@ void read_all_gpio(void)
   input0 |= (pa_in & PINA_ADC3_MASK) | PINA_ADC2_MASK;
 #else
  #error How can this be?
+#endif
+
+
+#if defined(USE_ADC18) && defined(USE_ADC19)
+#warning TESTING USE_ADC18/19
+
+  uint16_t adc18 = analogRead(18);
+  
+  uint8_t rl = 0;
+  uint8_t du = 0;
+
+  if(adc18 > 682)
+  {
+    rl = 0b1000;
+  }
+  else if(adc18 > 341)
+  {
+    rl = 0b1100;
+  }
+  else
+  {
+    rl = 0b0100;
+  }
+
+  uint16_t adc19 = analogRead(19);
+  if(adc19 > 682)
+  {
+    du = 0b0001;
+  }
+  else if(adc19 > 341)
+  {
+    du = 0b0011;
+  }
+  else
+  {
+    du = 0b0010;
+  }  
+
+  input0 &= 0b11110000;
+  input0 |= rl | du;
+
 #endif
 
 
