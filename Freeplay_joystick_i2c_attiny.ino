@@ -329,12 +329,15 @@ void read_all_gpio(void)
 }
 
 #define SPECIAL_LOOP_DELAY 0x3FFF
-#define POWER_LOOP_DELAY 0x7FFFF  //0xFFFFF = 14seconds-ish
+#define POWEROFF_HOLD_SECONDS 20
 
 void process_special_inputs()
 {  
   static uint16_t special_inputs_loop_counter = 0;
-  static uint32_t power_button_loop_counter = POWER_LOOP_DELAY;
+  //static uint32_t power_button_loop_counter = POWER_LOOP_DELAY;
+  //static bool power_btn_prev_state = false;
+  static unsigned long power_btn_start_millis = 0;
+  
 
   if(IS_SPECIAL_INPUT_MODE() && (IS_PRESSED_DPAD_UP() || IS_PRESSED_DPAD_DOWN()))
   {
@@ -364,19 +367,17 @@ void process_special_inputs()
     special_inputs_loop_counter = 0x10;  //tiny delay just for debounce
   }
 
-  if(power_button_loop_counter == 0)
+  if(IS_PRESSED_BTN_POWER())
   {
-      power_button_loop_counter = POWER_LOOP_DELAY;
+    unsigned long current_millis = millis();
+    if((current_millis - power_btn_start_millis) >= (POWEROFF_HOLD_SECONDS * 1000))
+    {
       digitalWrite(POWEROFF_OUT_PIN,LOW);
-  }
-  else if(IS_PRESSED_BTN_POWER())    //BTN_POWER seems unreliable (other buttons worked)
-  {
-    //we're delay looping
-    power_button_loop_counter--;
+    }
   }
   else
   {
-    power_button_loop_counter = POWER_LOOP_DELAY;
+    power_btn_start_millis = millis();
   }
 }
 
