@@ -116,7 +116,7 @@ byte g_pwm_step = 0x00;  //100% on
  * PB2 = IO1_4 = BTN_L2 (in debug mode, can be used for serial TXD)
  * PB3 = IO1_5 = BTN_R2 (in debug mode, can be used for serial RXD)
  * PB4 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)
- * ___ = IO1_7 = HIGH (logic 1)
+ * ___ = IO1_7 = HIGH (logic 1)           We can switch this to being BTN_Z on PA2, if someone wants one more button, instead of nINT
  * 
  * 
  * PB3 =         POWEROFF_OUT
@@ -142,7 +142,7 @@ byte g_pwm_step = 0x00;  //100% on
 #define INPUT1_BTN_L2     (1 << 4)      //IO1_4
 #define INPUT1_BTN_R2     (1 << 5)      //IO1_5
 #define INPUT1_BTN_POWER  (1 << 6)      //IO1_6
-                                        //IO1_7
+                                        //IO1_7     
 
 #define PINB_POWER_BUTTON (1 << 4)    //PB4 is the power button, but it needs to be inverted (high when pressed)
                                         
