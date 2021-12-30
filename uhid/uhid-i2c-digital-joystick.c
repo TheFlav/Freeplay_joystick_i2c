@@ -24,7 +24,7 @@
 #include <linux/i2c-dev.h>
 #include <i2c/smbus.h>
 
-#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
+//#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
 //#define USE_PIGPIO_IRQ //or USE_PIGPIO
 //or comment out both of the above to poll
 
@@ -51,7 +51,7 @@ static unsigned char rdesc[] = {
     0xA1, 0x01, //; COLLECTION (Application)
     0x05, 0x09,// ; USAGE_PAGE (Button)
     0x19, 0x01, //; USAGE_MINIMUM (Button 1)
-    0x29, 0x0C, //; USAGE_MAXIMUM (Button 12)
+    0x29, 0x0B, //; USAGE_MAXIMUM (Button 11)
     0x15, 0x00, //; LOGICAL_MINIMUM (0)
     0x25, 0x01, //; LOGICAL_MAXIMUM (1)
     0x75, 0x01, //; REPORT_SIZE (1)
@@ -61,8 +61,8 @@ static unsigned char rdesc[] = {
         0x05, 0x01,  // Usage Page (Generic Desktop Ctrls)
         0x15, 0xFF,  // Logical Minimum (-1)
         0x25, 0x01,              //     LOGICAL_MAXIMUM (1)
-        0x09, 0x34,  // Usage (X)
-        0x09, 0x35,  // Usage (Y)
+        0x09, 0x30,  // Usage (X)
+        0x09, 0x31,  // Usage (Y)
         0x75, 0x08,  // Report Size (8)
         0x95, 0x02,  // Report Count (2)
         0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
@@ -191,7 +191,7 @@ static signed char wheel;
 struct gamepad_report_t
 {
     unsigned char buttons7to0;
-    unsigned char buttons12to8;
+    unsigned char buttons11to8;
     int8_t hat_x;
     int8_t hat_y;
 } gamepad_report, gamepad_report_prev;
@@ -207,7 +207,7 @@ static int send_event(int fd)
     ev.u.input.size = 4;
     
 	ev.u.input.data[0] = gamepad_report.buttons7to0;
-	ev.u.input.data[1] = gamepad_report.buttons12to8;
+	ev.u.input.data[1] = gamepad_report.buttons11to8;
     
     ev.u.input.data[2] = (unsigned char) gamepad_report.hat_x;
     ev.u.input.data[3] = (unsigned char) gamepad_report.hat_y;
@@ -231,35 +231,39 @@ void i2c_open()
 }
 
 
-/*  From the attiny code
- 
- * PA1 = IO0_0 = UP
- * PA2 = IO0_1 = DOWN
- * PB4 = IO0_2 = LEFT
- * PB5 = IO0_3 = RIGHT
- * PB6 = IO0_4 = BTN_A
- * PB7 = IO0_5 = BTN_B
- * PA6 = IO0_6 = BTN_L2  ifndef USE_ADC2
- * PA7 = IO0_7 = BTN_R2  ifndef USE_ADC3
- *
- * PC0 = IO1_0 = BTN_X
- * PC1 = IO1_1 = BTN_Y
- * PC2 = IO1_2 = BTN_START
- * PC3 = IO1_3 = BTN_SELECT
- * PC4 = IO1_4 = BTN_L
- * PC5 = IO1_5 = BTN_R
- * PB2 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)   ifndef CONFIG_SERIAL_DEBUG (or can be used for UART TXD0 for debugging)
- * PA5 = IO1_7 = BTN_C ifndef USE_ADC1
- *
+/*  From the attiny code     Dec 30, 2021
+ * 
+ * PC0 = IO0_0 = BTN_X
+ * PC1 = IO0_1 = BTN_Y
+ * PC2 = IO0_2 = BTN_START
+ * PC3 = IO0_3 = BTN_SELECT
+ * PC4 = IO0_4 = BTN_L
+ * PC5 = IO0_5 = BTN_R
+ * PB6 = IO0_6 = BTN_A
+ * PB7 = IO0_7 = BTN_B
+ * 
+ * A18 means analog pin 18
+ * 
+ * A18 = IO1_0 = UP
+ * A18 = IO1_1 = DOWN
+ * A18 = IO1_2 = LEFT
+ * A18 = IO1_3 = RIGHT
+ * PB2 = IO1_4 = BTN_L2 (in debug mode, can be used for serial TXD)
+ * PB3 = IO1_5 = BTN_R2 (in debug mode, can be used for serial RXD)
+ * PB4 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)
+ * ___ = IO1_7 = HIGH (logic 1)
+ * 
+ * 
  * PB3 =         POWEROFF_OUT
  * PA3 =         PWM Backlight OUT
- *
+ * PA2 =         nINT OUT
+ * 
  */
 void i2c_poll_joystick()
 {
     int8_t dpad_u, dpad_d, dpad_l, dpad_r;
     
-    bool btn_a, btn_b, btn_c, btn_x, btn_y, btn_z, btn_l, btn_r, btn_start, btn_select, btn_l2, btn_r2;
+    bool btn_a, btn_b, btn_power, btn_x, btn_y, btn_l, btn_r, btn_start, btn_select, btn_l2, btn_r2;
     
     uint8_t dpad_bits;
 
@@ -271,17 +275,6 @@ void i2c_poll_joystick()
 
     ret = ~ret;         //invert all bits 1=pressed 0=unpressed
 
-    dpad_bits = ret & 0x000F;
-        
-    ret >>= 4;
-    btn_a = ret & 0b1;
-    ret >>= 1;
-    btn_b = ret & 0b1;
-    ret >>= 1;
-    btn_l2 = ret & 0b1;
-    ret >>= 1;
-    btn_r2 = ret & 0b1;
-    ret >>= 1;
     btn_x = ret & 0b1;
     ret >>= 1;
     btn_y = ret & 0b1;
@@ -294,18 +287,27 @@ void i2c_poll_joystick()
     ret >>= 1;
     btn_r = ret & 0b1;
     ret >>= 1;
-    btn_z = ret & 0b1;
+    btn_a = ret & 0b1;
     ret >>= 1;
-    btn_c = ret & 0b1;
-    
-    gamepad_report.buttons7to0 = (btn_r << 7) | (btn_l << 6) | (btn_z << 5) | (btn_y << 4) | (btn_x << 3) | (btn_c << 2) | (btn_b << 1) | btn_a;
-    gamepad_report.buttons12to8 = (btn_select << 3) | (btn_start << 2) | (btn_r2 << 1) | btn_l2;
+    btn_b = ret & 0b1;
+    ret >>= 1;
+    dpad_u = ret & 0b1;
+    ret >>= 1;
+    dpad_d = ret & 0b1;
+    ret >>= 1;
+    dpad_l = ret & 0b1;
+    ret >>= 1;
+    dpad_r = ret & 0b1;
+    ret >>= 1;
+    btn_l2 = ret & 0b1;
+    ret >>= 1;
+    btn_r2 = ret & 0b1; 
+    ret >>= 1;
+    btn_power = ret & 0b1; 
+		   
+    gamepad_report.buttons7to0 = (btn_r << 7) | (btn_l << 6) | (btn_select << 5) | (btn_y << 4) | (btn_x << 3) | (btn_power << 2) | (btn_b << 1) | btn_a;
+    gamepad_report.buttons11to8 = (btn_start << 2) | (btn_r2 << 1) | btn_l2;
 
-    dpad_u = (dpad_bits >> 0 & 0x01);
-    dpad_d = (dpad_bits >> 1 & 0x01);
-    
-    dpad_l = (dpad_bits >> 2 & 0x01);
-    dpad_r = (dpad_bits >> 3 & 0x01);
 
     gamepad_report.hat_x = dpad_r - dpad_l;
     gamepad_report.hat_y = dpad_u - dpad_d;
@@ -438,7 +440,7 @@ int main(int argc, char **argv)
 	while (1) {
 		i2c_poll_joystick();
 
-		if(gamepad_report.buttons7to0 != gamepad_report_prev.buttons7to0 || gamepad_report.buttons12to8 != gamepad_report_prev.buttons12to8)
+		if(memcmp(&gamepad_report, &gamepad_report_prev, sizeof(gamepad_report)) != 0)
 		{
 			gamepad_report_prev = gamepad_report;
 			send_event(fd);

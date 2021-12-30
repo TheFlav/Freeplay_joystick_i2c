@@ -42,7 +42,7 @@ static unsigned char rdesc[] =
     0xA1, 0x01, //; COLLECTION (Application)
     0x05, 0x09,// ; USAGE_PAGE (Button)
     0x19, 0x01, //; USAGE_MINIMUM (Button 1)
-    0x29, 0x0C, //; USAGE_MAXIMUM (Button 12)
+    0x29, 0x0B, //; USAGE_MAXIMUM (Button 11)
     0x15, 0x00, //; LOGICAL_MINIMUM (0)
     0x25, 0x01, //; LOGICAL_MAXIMUM (1)
     0x75, 0x01, //; REPORT_SIZE (1)
@@ -189,26 +189,33 @@ static int event(int fd)
 }
 
 
-/*
- * input0
- * PA1 = IO0_0 = UP
- * PA2 = IO0_1 = DOWN
- * PB4 = IO0_2 = LEFT
- * PB5 = IO0_3 = RIGHT
- * PB6 = IO0_4 = BTN_A
- * PB7 = IO0_5 = BTN_B
- * PA6 = IO0_6 = BTN_C ifndef USE_ADC2
- * PA7 = IO0_7 = BTN_Z ifndef USE_ADC3
- *
- * input1
- * PC0 = IO1_0 = BTN_X
- * PC1 = IO1_1 = BTN_Y
- * PC2 = IO1_2 = BTN_START
- * PC3 = IO1_3 = BTN_SELECT
- * PC4 = IO1_4 = BTN_L
- * PC5 = IO1_5 = BTN_R
- * PB2 = IO1_6 = BTN_L2 ifndef CONFIG_SERIAL_DEBUG (or can be used for UART TXD0 for debugging)  [MAY NEED TO BE PWM output!!!!]
- * PB3 = IO1_7 = BTN_R2 ifndef CONFIG_SERIAL_DEBUG (or can be used for UART RXD0 for debugging)
+/*  From the attiny code     Dec 30, 2021
+ * 
+ * PC0 = IO0_0 = BTN_X
+ * PC1 = IO0_1 = BTN_Y
+ * PC2 = IO0_2 = BTN_START
+ * PC3 = IO0_3 = BTN_SELECT
+ * PC4 = IO0_4 = BTN_L
+ * PC5 = IO0_5 = BTN_R
+ * PB6 = IO0_6 = BTN_A
+ * PB7 = IO0_7 = BTN_B
+ * 
+ * A18 means analog pin 18
+ * 
+ * A18 = IO1_0 = UP
+ * A18 = IO1_1 = DOWN
+ * A18 = IO1_2 = LEFT
+ * A18 = IO1_3 = RIGHT
+ * PB2 = IO1_4 = BTN_L2 (in debug mode, can be used for serial TXD)
+ * PB3 = IO1_5 = BTN_R2 (in debug mode, can be used for serial RXD)
+ * PB4 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)
+ * ___ = IO1_7 = HIGH (logic 1)
+ * 
+ * 
+ * PB3 =         POWEROFF_OUT
+ * PA3 =         PWM Backlight OUT
+ * PA2 =         nINT OUT
+ * 
  */
 
 struct i2c_register_struct {
@@ -230,7 +237,7 @@ struct gamepad_report_t
     int8_t hat_x;
     int8_t hat_y;
     uint8_t buttons7to0;
-    uint8_t buttons12to8;
+    uint8_t buttons11to8;
     uint16_t left_x;
     uint16_t left_y;
     uint16_t right_x;
@@ -249,7 +256,7 @@ static int send_event(int fd)
 	ev.u.input.size = 12;
     
 	ev.u.input.data[0] = gamepad_report.buttons7to0;
-	ev.u.input.data[1] = gamepad_report.buttons12to8;
+	ev.u.input.data[1] = gamepad_report.buttons11to8;
 
     ev.u.input.data[2] = (unsigned char) gamepad_report.hat_x;
 	ev.u.input.data[3] = (unsigned char) gamepad_report.hat_y;
@@ -288,10 +295,8 @@ void i2c_open()
 void i2c_poll_joystick()
 {
     
-    bool btn_a, btn_b, btn_c, btn_x, btn_y, btn_z, btn_l, btn_r, btn_start, btn_select, btn_l2, btn_r2;
-    
-    uint8_t dpad_bits;
-	
+    bool btn_a, btn_b, btn_power, btn_x, btn_y, btn_l, btn_r, btn_start, btn_select, btn_l2, btn_r2;
+    	
 	
     int8_t dpad_u, dpad_d, dpad_l, dpad_r;
 	unsigned char buf[32];
@@ -321,17 +326,7 @@ void i2c_poll_joystick()
 	
     ret = ~ret;         //invert all bits 1=pressed 0=unpressed
 
-    dpad_bits = ret & 0x000F;
-    
-    ret >>= 4;
-    btn_a = ret & 0b1;
-    ret >>= 1;
-    btn_b = ret & 0b1;
-    ret >>= 1;
-    btn_l2 = ret & 0b1;
-    ret >>= 1;
-    btn_r2 = ret & 0b1;
-    ret >>= 1;
+
     btn_x = ret & 0b1;
     ret >>= 1;
     btn_y = ret & 0b1;
@@ -344,24 +339,33 @@ void i2c_poll_joystick()
     ret >>= 1;
     btn_r = ret & 0b1;
     ret >>= 1;
-    btn_z = ret & 0b1;
+    btn_a = ret & 0b1;
     ret >>= 1;
-    btn_c = ret & 0b1;
-    
-    gamepad_report.buttons7to0 = (btn_r << 7) | (btn_l << 6) | (btn_z << 5) | (btn_y << 4) | (btn_x << 3) | (btn_c << 2) | (btn_b << 1) | btn_a;
-    gamepad_report.buttons12to8 = (btn_select << 3) | (btn_start << 2) | (btn_r2 << 1) | btn_l2;
-
-    dpad_u = (dpad_bits >> 0 & 0x01);
-    dpad_d = (dpad_bits >> 1 & 0x01);
-    
-    dpad_l = (dpad_bits >> 2 & 0x01);
-    dpad_r = (dpad_bits >> 3 & 0x01);
+    btn_b = ret & 0b1;
+    ret >>= 1;
+    dpad_u = ret & 0b1;
+    ret >>= 1;
+    dpad_d = ret & 0b1;
+    ret >>= 1;
+    dpad_l = ret & 0b1;
+    ret >>= 1;
+    dpad_r = ret & 0b1;
+    ret >>= 1;
+    btn_l2 = ret & 0b1;
+    ret >>= 1;
+    btn_r2 = ret & 0b1; 
+    ret >>= 1;
+    btn_power = ret & 0b1; 
+		   
+    gamepad_report.buttons7to0 = (btn_r << 7) | (btn_l << 6) | (btn_select << 5) | (btn_y << 4) | (btn_x << 3) | (btn_power << 2) | (btn_b << 1) | btn_a;
+    gamepad_report.buttons11to8 = (btn_start << 2) | (btn_r2 << 1) | btn_l2;
 
     gamepad_report.hat_x = dpad_r - dpad_l;
     gamepad_report.hat_y = dpad_u - dpad_d;
 	
 	
 	gamepad_report.left_x = i2c_registers.a0_msb << 8 | ((i2c_registers.a1a0_lsb & 0x0F) << 4);
+
 	gamepad_report.left_y = i2c_registers.a1_msb << 8 | (i2c_registers.a1a0_lsb & 0xF0);
 
 	gamepad_report.right_x = i2c_registers.a2_msb << 8 | ((i2c_registers.a3a2_lsb & 0x0F) << 4);
