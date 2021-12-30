@@ -13,7 +13,7 @@
 #include <EEPROM.h>
 
 #define VERSION_MAJOR   0
-#define VERSION_MINOR   5
+#define VERSION_MINOR   6
 
 
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
@@ -335,12 +335,14 @@ void read_all_gpio(void)
   uint8_t ulrd = 0;
   uint8_t rldu = 0;
 
+  //NOTE:  This code will not let you press Up&Down or Left&Right at the same time
+
   if(adc18 < 65)
   {
     ulrd = 0b1111;
     rldu = 0b1111;
   }
-  else if(adc18 < 131)    //measured 93 at 10-bit ADC
+  else if(adc18 < 131)
   {
     ulrd = 0b1110;
     rldu = 0b1101;
@@ -360,60 +362,26 @@ void read_all_gpio(void)
     ulrd = 0b1011;
     rldu = 0b1011;
   }  
-  else if(adc18 < 359)
+  else if(adc18 < 398)
   {
     ulrd = 0b1010;
     rldu = 0b1001;
   }  
-/*  else if(adc18 < 398)
-  {
-    ulrd = 0b1001;
-    rldu = 0b0011;
-  }  
-  else if(adc18 < 463)
-  {
-    ulrd = 0b1000;
-    rldu = 0b0001;
-  }  */
-  else if(adc18 < 523)
+  else if(adc18 < 536)
   {
     ulrd = 0b0111;
     rldu = 0b1110;
-  }  
-/*  else if(adc18 < 547)
-  {
-    ulrd = 0b0110;
-    rldu = 0b1100;
-  }  */
-  else if(adc18 < 568)
+  }    
+  else if(adc18 < 578)
   {
     ulrd = 0b0101;
     rldu = 0b0110;
-  }  
-/*  else if(adc18 < 586)
-  {
-    ulrd = 0b0100;
-    rldu = 0b0100;
-  }  */
-  else if(adc18 < 603)
-  {
-    ulrd = 0b0011;
-    rldu = 0b1010;
-  }  
-  else if(adc18 < 619)
-  {
-    ulrd = 0b0010;
-    rldu = 0b1000;
-  }  
-  else if(adc18 < 634)
-  {
-    ulrd = 0b0001;
-    rldu = 0b0010;
   }
   else
   {
-    ulrd = 0b0000;
-    rldu = 0b0000;   
+    //up and to the left
+    ulrd = 0b0011;
+    rldu = 0b1010;
   }
 
 
