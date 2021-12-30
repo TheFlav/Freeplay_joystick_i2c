@@ -37,7 +37,6 @@
  #define USE_ADC2
  #define USE_ADC3
  #define USE_ADC18
- #define USE_ADC19
 #else
  #define ADC_RESOLUTION 0
 #endif
@@ -242,9 +241,7 @@ void setup_gpio(void)
 #ifndef USE_ADC18
   PORTA_PIN1CTRL = PORT_PULLUPEN_bm;
 #endif
-#ifndef USE_ADC19
   PORTA_PIN2CTRL = PORT_PULLUPEN_bm;
-#endif
   PORTA_PIN3CTRL = PORT_PULLUPEN_bm;
 #ifndef USE_ADC0
   PORTA_PIN4CTRL = PORT_PULLUPEN_bm; //ADC0
@@ -330,43 +327,99 @@ void read_all_gpio(void)
 #endif
 
 
-#if defined(USE_ADC18) && defined(USE_ADC19)
+#if defined(USE_ADC18)
 #warning TESTING USE_ADC18/19
 
   uint16_t adc18 = analogRead(18);
   
-  uint8_t rl = 0;
-  uint8_t du = 0;
+  uint8_t ulrd = 0;
+  uint8_t rldu = 0;
 
-  if(adc18 > 682)
+  if(adc18 < 65)
   {
-    rl = 0b1000;
+    ulrd = 0b1111;
+    rldu = 0b1111;
   }
-  else if(adc18 > 341)
+  else if(adc18 < 131)    //measured 93 at 10-bit ADC
   {
-    rl = 0b1100;
+    ulrd = 0b1110;
+    rldu = 0b1101;
   }
-  else
+  else if(adc18 < 201)
   {
-    rl = 0b0100;
+    ulrd = 0b1101;
+    rldu = 0b0111;
   }
-
-  uint16_t adc19 = analogRead(19);
-  if(adc19 > 682)
+  else if(adc18 < 260)
   {
-    du = 0b0001;
-  }
-  else if(adc19 > 341)
-  {
-    du = 0b0011;
-  }
-  else
-  {
-    du = 0b0010;
+    ulrd = 0b1100;
+    rldu = 0b0101;
   }  
+  else if(adc18 < 313)
+  {
+    ulrd = 0b1011;
+    rldu = 0b1011;
+  }  
+  else if(adc18 < 359)
+  {
+    ulrd = 0b1010;
+    rldu = 0b1001;
+  }  
+/*  else if(adc18 < 398)
+  {
+    ulrd = 0b1001;
+    rldu = 0b0011;
+  }  
+  else if(adc18 < 463)
+  {
+    ulrd = 0b1000;
+    rldu = 0b0001;
+  }  */
+  else if(adc18 < 523)
+  {
+    ulrd = 0b0111;
+    rldu = 0b1110;
+  }  
+/*  else if(adc18 < 547)
+  {
+    ulrd = 0b0110;
+    rldu = 0b1100;
+  }  */
+  else if(adc18 < 568)
+  {
+    ulrd = 0b0101;
+    rldu = 0b0110;
+  }  
+/*  else if(adc18 < 586)
+  {
+    ulrd = 0b0100;
+    rldu = 0b0100;
+  }  */
+  else if(adc18 < 603)
+  {
+    ulrd = 0b0011;
+    rldu = 0b1010;
+  }  
+  else if(adc18 < 619)
+  {
+    ulrd = 0b0010;
+    rldu = 0b1000;
+  }  
+  else if(adc18 < 634)
+  {
+    ulrd = 0b0001;
+    rldu = 0b0010;
+  }
+  else
+  {
+    ulrd = 0b0000;
+    rldu = 0b0000;   
+  }
+
+
 
   input0 &= 0b11110000;
-  input0 |= rl | du;
+  input0 |= rldu;
 
 #endif
 
@@ -698,6 +751,10 @@ void loop()
   if(i2c_joystick_registers.adc_conf_bits & (1 << 0))
   {
     adc = analogRead(PIN_PA4);
+    #ifdef USE_ADC18
+    #warning DONT REALLY DO THIS
+    adc = analogRead(18);
+    #endif
     i2c_joystick_registers.a0_msb = adc >> (ADC_RESOLUTION - 8);
     i2c_joystick_registers.a1a0_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a1a0_lsb & 0xF0);
   }
