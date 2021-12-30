@@ -24,7 +24,7 @@
 #include <linux/i2c-dev.h>
 #include <i2c/smbus.h>
 
-//#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
+#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
 //#define USE_PIGPIO_IRQ //or USE_PIGPIO
 //or comment out both of the above to poll
 
@@ -393,6 +393,7 @@ int main(int argc, char **argv)
 
    
 #ifdef USE_WIRINGPI_IRQ
+	printf("Using WiringPi interrupts on GPIO %d\n", nINT_GPIO);
     wiringPiSetupGpio();        //use BCM numbering
     wiringPiISR(nINT_GPIO, INT_EDGE_FALLING, &attiny_irq_handler);
     i2c_poll_joystick();//make sure it's cleared out
