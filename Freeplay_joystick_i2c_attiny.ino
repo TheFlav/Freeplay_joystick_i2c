@@ -318,10 +318,16 @@ void read_all_gpio(void)
   input0 = (pc_in & PINC_IN0_MASK) | (pb_in & PINB_IN0_MASK);
 
 #ifndef CONFIG_SERIAL_DEBUG
-  input1 = ((pb_in & PINB_IN1_MASK) << PINB_IN1_SHL) | rldu | (1<<7);
+  input1 = ((pb_in & PINB_IN1_MASK) << PINB_IN1_SHL) | rldu;
 #else
-  input1 = ((pb_in & (PINB_IN1_MASK | PINB_UART_MASK)) << PINB_IN1_SHL) | rldu | (1<<7));   //act like the PINB_UART_MASK pins are never pressed
+  input1 = ((pb_in & (PINB_IN1_MASK | PINB_UART_MASK)) << PINB_IN1_SHL) | rldu);   //act like the PINB_UART_MASK pins are never pressed
 #endif
+
+#ifdef USE_INTERRUPTS
+  input1 |=  (1<<7);
+#endif
+  
+
 
 
 
