@@ -41,7 +41,7 @@
 #define USE_INTERRUPTS
 
 #ifdef USE_INTERRUPTS
- #define nINT_PIN 19 //also PIN_PA4
+ #define nINT_PIN 6 //PB5, also BTN_Z
  bool g_nINT_state = false;
 #endif
 
