@@ -38,9 +38,12 @@
 
 
 //Interrupts are only really useful for digital inputs, so the nINT_PIN will go low only for input0 and input1 changes
-#define nINT_PIN 19 //also PIN_PA4
-bool g_nINT_state = false;
+#define USE_INTERRUPTS
 
+#ifdef USE_INTERRUPTS
+ #define nINT_PIN 19 //also PIN_PA4
+ bool g_nINT_state = false;
+#endif
 
 #define POWEROFF_OUT_PIN 8 //PIN_PB3  //pin num 8
 #define PIN_PWM             20
@@ -116,7 +119,7 @@ byte g_pwm_step = 0x00;  //100% on
  * PB2 = IO1_4 = BTN_L2 (in debug mode, can be used for serial TXD)
  * PB3 = IO1_5 = BTN_R2 (in debug mode, can be used for serial RXD)
  * PB4 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)
- * ___ = IO1_7 = HIGH (logic 1)           We can switch this to being BTN_Z on PA2, if someone wants one more button, instead of nINT
+ * PB5 = IO1_7 = BTN_Z or HIGH (logic 1) if using nINT          We can switch this to being BTN_Z on PA2, if someone wants one more button, instead of nINT
  * 
  * 
  * PB3 =         POWEROFF_OUT
@@ -172,7 +175,11 @@ byte g_pwm_step = 0x00;  //100% on
 #define PINB_IN0_MASK      (0b11000000)   //the pins from PINB that are used in IN0
 #define PINC_IN0_MASK      (0b00111111)   //the pins from PINC that are used in IN0
 
-#define PINB_IN1_MASK      (0b00011100)   //the pins from PINB that are used in IN1
+#ifdef USE_INTERRUPTS
+ #define PINB_IN1_MASK      (0b00011100)   //the pins from PINB that are used in IN1
+#else
+ #define PINB_IN1_MASK      (0b00111100)   //the pins from PINB that are used in IN1
+#endif
 
 #define PINB_GPIO_MASK     ((PINB_IN0_MASK | PINB_IN1_MASK) & ~PINB_UART_MASK)
 #define PINC_GPIO_MASK     (PINC_IN0_MASK)
@@ -197,16 +204,16 @@ void setup_gpio(void)
   //PORTA_PIN2CTRL = PORT_PULLUPEN_bm;    //PA2 = nINT output
   //PORTA_PIN3CTRL = PORT_PULLUPEN_bm;    //PA3 = PWM output
 #ifndef USE_ADC0
-  PORTA_PIN4CTRL = PORT_PULLUPEN_bm; //ADC0
+  //PORTA_PIN4CTRL = PORT_PULLUPEN_bm; //ADC0
 #endif
 #ifndef USE_ADC1
-  PORTA_PIN5CTRL = PORT_PULLUPEN_bm; //ADC1
+  //PORTA_PIN5CTRL = PORT_PULLUPEN_bm; //ADC1
 #endif
 #ifndef USE_ADC2
-  PORTA_PIN6CTRL = PORT_PULLUPEN_bm; //ADC2
+  //PORTA_PIN6CTRL = PORT_PULLUPEN_bm; //ADC2
 #endif
 #ifndef USE_ADC3
-  PORTA_PIN7CTRL = PORT_PULLUPEN_bm; //ADC3
+  //PORTA_PIN7CTRL = PORT_PULLUPEN_bm; //ADC3
 #endif
   
   //PORTB_PIN0CTRL = PORT_PULLUPEN_bm;    //i2c
@@ -218,7 +225,9 @@ void setup_gpio(void)
 #if !defined(CONFIG_INVERT_POWER_BUTTON)    //don't use a pullup on the power button
   PORTB_PIN4CTRL = PORT_PULLUPEN_bm;
 #endif
-  //PORTB_PIN5CTRL = PORT_PULLUPEN_bm;    //PB5 = PowerOff_OUT_attiny
+#ifndef USE_INTERRUPTS
+  PORTB_PIN5CTRL = PORT_PULLUPEN_bm;    //PB5 = BTN_Z or nINT
+#endif
   PORTB_PIN6CTRL = PORT_PULLUPEN_bm;
   PORTB_PIN7CTRL = PORT_PULLUPEN_bm;
 
