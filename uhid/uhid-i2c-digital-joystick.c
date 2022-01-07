@@ -24,7 +24,7 @@
 #include <linux/i2c-dev.h>
 #include <i2c/smbus.h>
 
-#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
+//#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
 //#define USE_PIGPIO_IRQ //or USE_PIGPIO
 //or comment out both of the above to poll
 
@@ -200,17 +200,15 @@ struct gamepad_report_t
 static int send_event(int fd)
 {
 	struct uhid_event ev;
-
+//printf("In send_event\n");
 
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_INPUT;
-    ev.u.input.size = 4;
-    
+	ev.u.input.size = 4;
 	ev.u.input.data[0] = gamepad_report.buttons7to0;
 	ev.u.input.data[1] = gamepad_report.buttons11to8;
-    
-    ev.u.input.data[2] = (unsigned char) gamepad_report.hat_x;
-    ev.u.input.data[3] = (unsigned char) gamepad_report.hat_y;
+	ev.u.input.data[2] = (unsigned char) gamepad_report.hat_x;
+	ev.u.input.data[3] = (unsigned char) gamepad_report.hat_y;
 
 	return uhid_write(fd, &ev);
 }
@@ -251,13 +249,9 @@ void i2c_open()
  * PB2 = IO1_4 = BTN_L2 (in debug mode, can be used for serial TXD)
  * PB3 = IO1_5 = BTN_R2 (in debug mode, can be used for serial RXD)
  * PB4 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)
- * ___ = IO1_7 = HIGH (logic 1)
- * 
- * 
- * PB3 =         POWEROFF_OUT
- * PA3 =         PWM Backlight OUT
- * PA2 =         nINT OUT
- * 
+ * ___ = IO1_7 = HIGH (logic 1) or BTN_Z
+ *
+ *
  */
 void i2c_poll_joystick()
 {
@@ -269,10 +263,15 @@ void i2c_poll_joystick()
 
 	int ret;
 
+//printf("i2c_poll_joystick: reading i2c\n");
 	ret = i2c_smbus_read_word_data(i2c_file, 0);
 	if(ret < 0)
+	{
+		printf("i2c_poll_joystick: exiting (ret=%d)\n", ret);
 		exit(1);
+	}
 
+//printf("i2c_poll_joystick: parsing digital\n");
     ret = ~ret;         //invert all bits 1=pressed 0=unpressed
 
     btn_x = ret & 0b1;
@@ -304,13 +303,15 @@ void i2c_poll_joystick()
     btn_r2 = ret & 0b1; 
     ret >>= 1;
     btn_power = ret & 0b1; 
-		   
+
     gamepad_report.buttons7to0 = (btn_r << 7) | (btn_l << 6) | (btn_select << 5) | (btn_y << 4) | (btn_x << 3) | (btn_power << 2) | (btn_b << 1) | btn_a;
     gamepad_report.buttons11to8 = (btn_start << 2) | (btn_r2 << 1) | btn_l2;
 
 
     gamepad_report.hat_x = dpad_r - dpad_l;
     gamepad_report.hat_y = dpad_u - dpad_d;
+
+//printf("i2c_poll_joystick: returning");
 }
 
 
