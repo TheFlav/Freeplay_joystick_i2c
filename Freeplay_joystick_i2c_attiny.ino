@@ -20,7 +20,7 @@
 //currently testing on Adafruit 817
 
 
-#define CONFIG_I2C_ADDR     0x20
+#define CONFIG_I2C_ADDR     0x30
 #define CONFIG_I2C_2NDADDR  0x40  //0x30 wouldn't work
 
 //#define CONFIG_SERIAL_DEBUG  //shares pins with L2/R2 IO1_4/IO1_5
@@ -45,7 +45,7 @@
  bool g_nINT_state = false;
 #endif
 
-#define POWEROFF_OUT_PIN 8 //PIN_PB3  //pin num 8
+#define POWEROFF_OUT_PIN 19
 #define PIN_PWM             20
 
 
@@ -68,7 +68,7 @@ struct i2c_joystick_register_struct
   uint8_t a2_msb;          // Reg: 0x05 - ADC2 most significant 8 bits
   uint8_t a3_msb;          // Reg: 0x06 - ADC2 most significant 8 bits
   uint8_t a3a2_lsb;        // Reg: 0x07 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
-#define REGISTER_ADC_CONF_BITS 0x08
+#define REGISTER_ADC_CONF_BITS 0x08   //this one is writeable
   uint8_t adc_conf_bits;   // Reg: 0x08 - High Nibble is read-only.  ADC PRESENT = It tells which ADCs are available.
                            //             Low Nibble is read/write.  ADC ON/OFF = The system can read/write what ADCs are sampled and used for a#_msb and lsb above
                            //             (but can only turn ON ADCs that are turned on in the high nibble.)
@@ -264,6 +264,7 @@ void read_all_gpio(void)
   pb_in ^= PINB_POWER_BUTTON;
 #endif
 
+
   uint16_t adc18 = analogRead(18);
 
   //NOTE:  This code will not let you press Up&Down or Left&Right at the same time
@@ -313,7 +314,6 @@ void read_all_gpio(void)
     //up and to the left
     rldu = 0b1010;
   }
-
 
   input0 = (pc_in & PINC_IN0_MASK) | (pb_in & PINB_IN0_MASK);
 
@@ -375,6 +375,7 @@ void process_special_inputs()
     special_inputs_loop_counter = 0x10;  //tiny delay just for debounce
   }
 
+#ifdef POWEROFF_OUT_PIN
   if(IS_PRESSED_BTN_POWER())
   {
     unsigned long current_millis = millis();
@@ -387,6 +388,7 @@ void process_special_inputs()
   {
     power_btn_start_millis = millis();
   }
+#endif  
 }
 
 
@@ -555,10 +557,14 @@ void setup()
   analogReadResolution(ADC_RESOLUTION);
 #endif
 
+#ifdef PIN_PWM
   pinMode(PIN_PWM, OUTPUT);  // sets the pin as output
-  
+#endif
+
+#ifdef POWEROFF_OUT_PIN
   pinMode(POWEROFF_OUT_PIN, OUTPUT);
   digitalWrite(POWEROFF_OUT_PIN, HIGH);
+#endif
 
   i2c_joystick_registers.adc_res = ADC_RESOLUTION;
 
