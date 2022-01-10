@@ -209,12 +209,9 @@ static int event(int fd)
  * PB2 = IO1_4 = BTN_L2 (in debug mode, can be used for serial TXD)
  * PB3 = IO1_5 = BTN_R2 (in debug mode, can be used for serial RXD)
  * PB4 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)
- * ___ = IO1_7 = HIGH (logic 1)
+ * ___ = IO1_7 = HIGH (logic 1)  maybe BTN_Z
  * 
  * 
- * PB3 =         POWEROFF_OUT
- * PA3 =         PWM Backlight OUT
- * PA2 =         nINT OUT
  * 
  */
 
@@ -227,7 +224,7 @@ struct i2c_register_struct {
   uint8_t a2_msb;          // Reg: 0x05 - ADC2 most significant 8 bits
   uint8_t a3_msb;          // Reg: 0x06 - ADC2 most significant 8 bits
   uint8_t a3a2_lsb;        // Reg: 0x07 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
-  uint8_t adc_on_bits;     // Reg: 0x08 - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
+  uint8_t adc_conf_bits;   // Reg: 0x08 - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
   uint8_t config0;         // Reg: 0x09 - Configuration port 0
   uint8_t adc_res;         // Reg: 0x0A - current ADC resolution (maybe settable?)
 } i2c_registers;
@@ -316,7 +313,7 @@ void i2c_poll_joystick()
 
 //	ret = i2c_smbus_read_block_data(i2c_file, 0, buf);
 
-	ret = i2c_smbus_read_i2c_block_data(i2c_file, 0, 10 /*sizeof(i2c_registers)*/, (uint8_t *)&i2c_registers);
+	ret = i2c_smbus_read_i2c_block_data(i2c_file, 0, sizeof(i2c_registers), (uint8_t *)&i2c_registers);
 	if(ret < 0)
 		exit(1);
 
