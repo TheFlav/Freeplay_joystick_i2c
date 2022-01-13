@@ -21,20 +21,21 @@
 //currently testing on Adafruit 817
 
 
-#define CONFIG_I2C_ADDR     0x30
-#define CONFIG_I2C_2NDADDR  0x40  //0x30 wouldn't work
+#define CONFIG_I2C_DEFAULT_ADDR     0x30
+#define CONFIG_I2C_2NDADDR          0x40  //0x30 wouldn't work
 
 //#define CONFIG_SERIAL_DEBUG  //shares pins with L2/R2 IO1_4/IO1_5
 
 #define USE_INTERRUPTS
+//#define USE_PB4_RESISTOR_LADDER
 
 //#define ADC_RESOLUTION 10
 //#define ADC_RESOLUTION 12  //can do analogReadResolution(12) on 2-series 427/827 chips
 #define ADC_RESOLUTION ADC_NATIVE_RESOLUTION
-#define USE_ADC0
-#define USE_ADC1
-#define USE_ADC2
-#define USE_ADC3
+#define USE_ADC0     //or can be used as digital input on input2 if desired
+#define USE_ADC1     //or can be used as digital input on input2 if desired
+#define USE_ADC2     //or can be used as digital input on input2 if desired
+#define USE_ADC3     //or can be used as digital input on input2 if desired
 
 
 
@@ -58,6 +59,49 @@ uint8_t backlight_pwm_steps[NUM_BACKLIGHT_PWM_STEPS] = {0x00, 0x10, 0x20, 0x30, 
 #define CONFIG_BACKLIGHT_STEP_DEFAULT  4
 
 
+#ifdef USE_ADC0
+  #define FEATURES_ADC0         (1 << 0)
+#else
+  #define FEATURES_ADC0         (0 << 0)
+#endif
+
+#ifdef USE_ADC1
+  #define FEATURES_ADC1         (1 << 1)
+#else
+  #define FEATURES_ADC1         (0 << 1)
+#endif
+
+#ifdef USE_ADC2
+  #define FEATURES_ADC2         (1 << 2)
+#else
+  #define FEATURES_ADC2         (0 << 2)
+#endif
+
+#ifdef USE_ADC3
+  #define FEATURES_ADC3         (1 << 3)
+#else
+  #define FEATURES_ADC3         (0 << 3)
+#endif
+
+#ifdef USE_INTERRUPTS
+  #define FEATURES_IRQ         (1 << 4)
+#else
+  #define FEATURES_IRQ         (0 << 4)
+#endif
+
+#define FEATURES_AVAILABLE (FEATURES_ADC0 | FEATURES_ADC1 | FEATURES_ADC2 | FEATURES_ADC3 | FEATURES_IRQ)
+#define ADCS_AVAILABLE ((FEATURES_ADC0 | FEATURES_ADC1 | FEATURES_ADC2 | FEATURES_ADC3) << 4)
+
+
+#ifdef USE_PB4_RESISTOR_LADDER
+ #define CONFIG0_USE_EXTENDED_INPUTS          (1<<7)
+ #define CONFIG0_USE_PB4_RESISTOR_LADDER      (1<<6)
+#else
+ #define CONFIG0_USE_EXTENDED_INPUTS          (0<<7)
+ #define CONFIG0_USE_PB4_RESISTOR_LADDER      (0<<6)
+#endif
+
+#define DEFAULT_CONFIG0     (CONFIG0_USE_EXTENDED_INPUTS | CONFIG0_USE_PB4_RESISTOR_LADDER)
 
 struct i2c_joystick_register_struct 
 {
@@ -86,25 +130,38 @@ struct i2c_joystick_register_struct
 
 struct i2c_secondary_address_register_struct 
 {
-#define REGISTER_CONFIG_BACKLIGHT 0x03
+#define REGISTER_SEC_CONFIG_BACKLIGHT   0x00    //this one is writeable
   uint8_t config_backlight;  // Reg: 0x00
   uint8_t backlight_max;     // Reg: 0x01 
+#define REGISTER_SEC_POWEROFF_CTRL      0x02    //this one is writeable
   uint8_t poweroff_control;  // Reg: 0x02 - write a magic number here to turn off the system
-  uint8_t rfu0;              // Reg: 0x03 - reserved for future use (or device-specific use)
-  uint8_t rfu1;              // Reg: 0x04 - reserved for future use (or device-specific use)
-  uint8_t rfu2;              // Reg: 0x05 - reserved for future use (or device-specific use)
-  uint8_t rfu3;              // Reg: 0x06 - reserved for future use (or device-specific use)
-  uint8_t rfu4;              // Reg: 0x07 - reserved for future use (or device-specific use)
-  uint8_t rfu5;              // Reg: 0x08 - reserved for future use (or device-specific use)
-  uint8_t rfu6;              // Reg: 0x09 - reserved for future use (or device-specific use)
-  uint8_t rfu7;              // Reg: 0x0A - reserved for future use (or device-specific use)
-  uint8_t rfu8;              // Reg: 0x0B - reserved for future use (or device-specific use)
-  uint8_t rfu9;              // Reg: 0x0C - reserved for future use (or device-specific use)
+  uint8_t features_available;// Reg: 0x03 - bit define if ADCs are available or interrups are in use, etc.
+  uint8_t rfu0;              // Reg: 0x04 - reserved for future use (or device-specific use)
+  uint8_t rfu1;              // Reg: 0x05 - reserved for future use (or device-specific use)
+  uint8_t rfu2;              // Reg: 0x06 - reserved for future use (or device-specific use)
+  uint8_t rfu3;              // Reg: 0x07 - reserved for future use (or device-specific use)
+  uint8_t rfu4;              // Reg: 0x08 - reserved for future use (or device-specific use)
+  uint8_t rfu5;              // Reg: 0x09 - reserved for future use (or device-specific use)
+  uint8_t rfu6;              // Reg: 0x0A - reserved for future use (or device-specific use)
+  uint8_t rfu7;              // Reg: 0x0B - reserved for future use (or device-specific use)
+#define REGISTER_SEC_JOY_I2C_ADDR       0x0C   //this one is writeable
+  uint8_t joystick_i2c_addr; // Reg: 0x0C - this holds the primary (joystick's) i2c address
   uint8_t manuf_ID;          // Reg: 0x0D - manuf_ID:device_ID:version_ID needs to be a unique ID that defines a specific device and how it will use above registers
   uint8_t device_ID;         // Reg: 0x0E -
   uint8_t version_ID;        // Reg: 0x0F - 
 
 } i2c_secondary_registers;
+
+struct eeprom_data_struct
+{
+  uint8_t manuf_ID;               // EEPROM[0]
+  uint8_t device_ID;              // EEPROM[1]
+  uint8_t version_ID;             // EEPROM[2]
+  uint8_t sec_config_backlight;   // EEPROM[3]
+  uint8_t sec_joystick_i2c_addr;  // EEPROM[4]
+  uint8_t joy_adc_conf_bits;      // EEPROM[5]
+  uint8_t joy_config0;            // EEPROM[6]  
+} eeprom_data;
 
 volatile byte g_last_sent_input0 = 0xFF;
 volatile byte g_last_sent_input1 = 0xFF;
@@ -227,6 +284,70 @@ byte g_pwm_step = 0x00;  //100% on
 
 #define PINA_ADC_MASK      (0b11110010)   //the pins in port A used for ADC
 
+void resetViaSWR() {
+  _PROTECTED_WRITE(RSTCTRL.SWRR,1);
+}
+
+void eeprom_save()
+{
+  uint8_t *eeprom_data_ptr = (uint8_t *) &eeprom_data;
+  uint8_t i;
+
+  for(i=0;i<sizeof(eeprom_data);i++)
+  {
+    EEPROM.update(i, *eeprom_data_ptr++);
+  }
+}
+
+
+void eeprom_restore_data()
+{
+  uint8_t *eeprom_data_ptr = (uint8_t *)&eeprom_data;
+  uint8_t i;
+
+  for(i=0;i<sizeof(eeprom_data);i++)
+  {
+    *eeprom_data_ptr = EEPROM.read(i);
+    eeprom_data_ptr++;
+  }
+
+  
+  if(!(eeprom_data.manuf_ID == MANUF_ID && eeprom_data.device_ID == DEVICE_ID && eeprom_data.version_ID == VERSION_NUMBER))
+  {
+    //load defaults
+    eeprom_data.manuf_ID = MANUF_ID;
+    eeprom_data.device_ID = DEVICE_ID;
+    eeprom_data.version_ID = VERSION_NUMBER;
+
+    eeprom_data.sec_config_backlight = CONFIG_BACKLIGHT_STEP_DEFAULT;
+    eeprom_data.sec_joystick_i2c_addr = CONFIG_I2C_DEFAULT_ADDR;
+
+    eeprom_data.joy_adc_conf_bits = ADCS_AVAILABLE;
+    eeprom_data.joy_config0 = DEFAULT_CONFIG0;
+  }
+
+
+#ifndef CONFIG_I2C_2NDADDR  
+  eeprom_data.sec_joystick_i2c_addr = CONFIG_I2C_DEFAULT_ADDR;
+#endif
+
+
+
+  i2c_secondary_registers.config_backlight = eeprom_data.sec_config_backlight;
+  i2c_secondary_registers.joystick_i2c_addr = eeprom_data.sec_joystick_i2c_addr;
+
+
+  if((eeprom_data.joy_adc_conf_bits & 0xF0) != ADCS_AVAILABLE)
+  {
+    eeprom_data.joy_adc_conf_bits = ADCS_AVAILABLE;    //keep the ADCs turned off in this odd case that shouldn't really happen (except maybe during testing)
+  }
+  i2c_joystick_registers.adc_conf_bits = eeprom_data.joy_adc_conf_bits;
+
+
+    
+  i2c_joystick_registers.config0 = eeprom_data.joy_config0;    
+}
+
 void setup_gpio(void)
 {
   //set as inputs
@@ -243,16 +364,16 @@ void setup_gpio(void)
   //PORTA_PIN2CTRL = PORT_PULLUPEN_bm;    //PA2 = nINT output
   //PORTA_PIN3CTRL = PORT_PULLUPEN_bm;    //PA3 = PWM output
 #ifndef USE_ADC0
-  PORTA_PIN4CTRL = PORT_PULLUPEN_bm; //ADC0
+  PORTA_PIN4CTRL = PORT_PULLUPEN_bm; //ADC0   (can be used as digital input on input2 if desired)
 #endif
 #ifndef USE_ADC1
-  PORTA_PIN5CTRL = PORT_PULLUPEN_bm; //ADC1
+  PORTA_PIN5CTRL = PORT_PULLUPEN_bm; //ADC1   (can be used as digital input on input2 if desired)
 #endif
 #ifndef USE_ADC2
-  PORTA_PIN6CTRL = PORT_PULLUPEN_bm; //ADC2
+  PORTA_PIN6CTRL = PORT_PULLUPEN_bm; //ADC2   (can be used as digital input on input2 if desired)
 #endif
 #ifndef USE_ADC3
-  PORTA_PIN7CTRL = PORT_PULLUPEN_bm; //ADC3
+  PORTA_PIN7CTRL = PORT_PULLUPEN_bm; //ADC3   (can be used as digital input on input2 if desired)
 #endif
   
   //PORTB_PIN0CTRL = PORT_PULLUPEN_bm;    //i2c
@@ -378,12 +499,28 @@ void read_all_gpio(void)
 
   if(i2c_joystick_registers.config0 & CONFIG0_USE_EXTENDED_INPUTS)
   {
-    uint8_t input1;
+    uint8_t zc = 0b11;
+    uint8_t input2;
     uint8_t pa_in = PORTA_IN;
 
-    input1 = (pa_in & PINA_IN2_MASK) | l_BTN_Z;
+/*
+ * A7  = IO2_0 = BTN_C aka LeftCenterPress
+ * A7  = IO2_1 = BTN_Z aka RightCenterPress
+ * --- = IO2_2 = 
+ * --- = IO2_3 = 
+ * PA4 = IO2_4 = BTN_??
+ * PA5 = IO2_5 = BTN_??
+ * PA6 = IO2_6 = BTN_??
+ * PA7 = IO2_7 = BTN_??
+ */
 
-    i2c_joystick_registers.input1 = input1;
+#ifdef USE_PB4_RESISTOR_LADDER
+    #error PB4 resistor ladder not configured
+#endif
+ 
+    input2 = (pa_in & PINA_IN2_MASK) | zc;
+
+    i2c_joystick_registers.input2 = input2;
   }
 }
 
@@ -475,11 +612,16 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
   {
     byte temp = Wire.read(); //We might record it, we might throw it away
 
-    if(x == REGISTER_CONFIG_BACKLIGHT)   //this is a writeable register
+    if(x == REGISTER_SEC_CONFIG_BACKLIGHT)   //this is a writeable register
     {
       //set backlight value
       if(temp >= 0 && temp < NUM_BACKLIGHT_PWM_STEPS)
         i2c_secondary_registers.config_backlight = temp;      
+    }
+
+    if(x == REGISTER_SEC_JOY_I2C_ADDR)
+    {
+      i2c_secondary_registers.joystick_i2c_addr = temp;      
     }
   }
 }
@@ -569,9 +711,9 @@ void startI2C()
   Wire.end(); //Before we can change addresses we need to stop
 
 #ifdef CONFIG_I2C_2NDADDR
-  Wire.begin(CONFIG_I2C_ADDR, 0, (CONFIG_I2C_2NDADDR << 1) | 0x01);
+  Wire.begin(i2c_secondary_registers.joystick_i2c_addr, 0, (CONFIG_I2C_2NDADDR << 1) | 0x01);
 #else
-  Wire.begin(CONFIG_I2C_ADDR); //Start I2C and answer calls using address from EEPROM
+  Wire.begin(i2c_secondary_registers.joystick_i2c_addr); //Start I2C and answer calls using address from EEPROM
 #endif
 
   //The connections to the interrupts are severed when a Wire.begin occurs. So re-declare them.
@@ -587,8 +729,36 @@ void setup()
 {
   //memset(&i2c_joystick_registers, 0, sizeof(i2c_joystick_registers));
   
-  startI2C(); //Determine the I2C address we should be using and begin listening on I2C bus
-  setup_gpio();
+  i2c_joystick_registers.adc_res = ADC_RESOLUTION;
+
+  //default to middle
+  i2c_joystick_registers.a0_msb = 0x7F;
+  i2c_joystick_registers.a1_msb = 0x7F;
+  i2c_joystick_registers.a1a0_lsb = 0xFF;
+
+  i2c_joystick_registers.a2_msb = 0x7F;
+  i2c_joystick_registers.a3_msb = 0x7F;
+  i2c_joystick_registers.a3a2_lsb = 0xFF;
+
+  i2c_joystick_registers.manuf_ID = MANUF_ID;
+  i2c_joystick_registers.device_ID = DEVICE_ID;
+  i2c_joystick_registers.manuf_ID = VERSION_NUMBER;
+
+  i2c_secondary_registers.manuf_ID = MANUF_ID;
+  i2c_secondary_registers.device_ID = DEVICE_ID;
+  i2c_secondary_registers.manuf_ID = VERSION_NUMBER;
+
+  i2c_secondary_registers.poweroff_control = 0;
+
+  i2c_secondary_registers.features_available = FEATURES_AVAILABLE;
+  
+  i2c_joystick_registers.adc_conf_bits = ADCS_AVAILABLE;
+
+
+  i2c_secondary_registers.backlight_max = NUM_BACKLIGHT_PWM_STEPS-1;
+
+  eeprom_restore_data();      //should be done beore startI2C()
+  
   
   
 #ifdef nINT_PIN
@@ -617,61 +787,14 @@ void setup()
   digitalWrite(PIN_POWEROFF_OUT, HIGH);
 #endif
 
-  i2c_joystick_registers.adc_res = ADC_RESOLUTION;
 
-  //default to middle
-  i2c_joystick_registers.a0_msb = 0x7F;
-  i2c_joystick_registers.a1_msb = 0x7F;
-  i2c_joystick_registers.a1a0_lsb = 0xFF;
-
-  i2c_joystick_registers.a2_msb = 0x7F;
-  i2c_joystick_registers.a3_msb = 0x7F;
-  i2c_joystick_registers.a3a2_lsb = 0xFF;
-
-  i2c_secondary_registers.magic = 0xED;
-  i2c_secondary_registers.ver_major = VERSION_MAJOR;
-  i2c_secondary_registers.ver_minor = VERSION_MINOR;
-
-  if(EEPROM[0] == 0xED && EEPROM[1] == VERSION_MAJOR && EEPROM[2] == VERSION_MINOR)
-  {
-    i2c_secondary_registers.config_backlight = EEPROM[3];
-  }
-  else
-  {
-    EEPROM[0] = 0xED;
-    EEPROM[1] = VERSION_MAJOR;
-    EEPROM[2] = VERSION_MINOR;
-    i2c_secondary_registers.config_backlight = CONFIG_BACKLIGHT_STEP_DEFAULT;
-    EEPROM[3] = i2c_secondary_registers.config_backlight;
-  }
+  
   
   g_pwm_step = ~i2c_secondary_registers.config_backlight; //unset it
-  i2c_secondary_registers.poweroff_control = 0;
 
-  i2c_secondary_registers.features_available = 0;
-  i2c_joystick_registers.adc_conf_bits = 0;
+  setup_gpio();
 
-#ifdef USE_ADC0
-  i2c_secondary_registers.features_available |= 1 << 0;
-  i2c_joystick_registers.adc_conf_bits |= 1 << 4;   //lowest bit of the high nibble
-#endif
-#ifdef USE_ADC1
-  i2c_secondary_registers.features_available |= 1 << 1;
-  i2c_joystick_registers.adc_conf_bits |= 1 << 5;   //second bit of the high nibble
-#endif
-#ifdef USE_ADC2
-  i2c_secondary_registers.features_available |= 1 << 2;
-  i2c_joystick_registers.adc_conf_bits |= 1 << 6;   //third bit of the high nibble
-#endif
-#ifdef USE_ADC3
-  i2c_secondary_registers.features_available |= 1 << 3;
-  i2c_joystick_registers.adc_conf_bits |= 1 << 7;   //top bit of the high nibble
-#endif
-#ifdef USE_INTERRUPTS
-  i2c_secondary_registers.features_available |= 1 << 4;
-#endif
-
-  i2c_secondary_registers.backlight_max = NUM_BACKLIGHT_PWM_STEPS-1;
+  startI2C(); //Determine the I2C address we should be using and begin listening on I2C bus
 }
 
 
@@ -705,9 +828,21 @@ void loop()
     analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
     g_pwm_step = i2c_secondary_registers.config_backlight;
 
-    EEPROM[3] = i2c_secondary_registers.config_backlight;
+    eeprom_data.sec_config_backlight = i2c_secondary_registers.config_backlight;
+    eeprom_save();
   }
 #endif
+
+  if(eeprom_data.sec_joystick_i2c_addr != i2c_secondary_registers.joystick_i2c_addr)
+  {
+    if(i2c_secondary_registers.joystick_i2c_addr >= 0x10 && i2c_secondary_registers.joystick_i2c_addr < 0x70)
+    {
+      eeprom_data.sec_joystick_i2c_addr = i2c_secondary_registers.joystick_i2c_addr;
+      eeprom_save();    //save to EEPROM
+      
+      resetViaSWR();    //reboot the chip to use new address
+    }
+  }
   
 
 #ifdef USE_ADC0
