@@ -356,10 +356,10 @@ void setup_gpio(void)
   //set pullups
 
 //#define PINA_MASK (0b00001110) for ADC
-  //PORTA_PIN0CTRL = PORT_PULLUPEN_bm;
-  //PORTA_PIN1CTRL = PORT_PULLUPEN_bm;    //PA1 is used for analog
-  //PORTA_PIN2CTRL = PORT_PULLUPEN_bm;    //PA2 = nINT output
-  //PORTA_PIN3CTRL = PORT_PULLUPEN_bm;    //PA3 = PWM output
+  //PORTA_PIN0CTRL = PORT_PULLUPEN_bm;    //PA0 is UPDI
+  //PORTA_PIN1CTRL = PORT_PULLUPEN_bm;    //PA1 is used for analog input (DPAD)
+  //PORTA_PIN2CTRL = PORT_PULLUPEN_bm;    //PA2 = Poweroff Out _OUTPUT_
+  //PORTA_PIN3CTRL = PORT_PULLUPEN_bm;    //PA3 = nINT _OUTPUT_
 #ifndef USE_ADC0
   PORTA_PIN4CTRL = PORT_PULLUPEN_bm; //ADC0   (can be used as digital input on input2 if desired)
 #endif
@@ -376,7 +376,7 @@ void setup_gpio(void)
   //PORTB_PIN0CTRL = PORT_PULLUPEN_bm;    //i2c
   //PORTB_PIN1CTRL = PORT_PULLUPEN_bm;    //i2c
 #ifndef CONFIG_SERIAL_DEBUG
-  //PORTB_PIN2CTRL = PORT_PULLUPEN_bm;    //PB2 is PWM backlight output
+  //PORTB_PIN2CTRL = PORT_PULLUPEN_bm;    //PB2 is PWM backlight _OUTPUT_
   PORTB_PIN3CTRL = PORT_PULLUPEN_bm;
 #endif
   //PORTB_PIN4CTRL = PORT_PULLUPEN_bm;      //PB4 will have its own 200k external pull-up 
@@ -393,8 +393,8 @@ void setup_gpio(void)
   PORTC_PIN3CTRL = PORT_PULLUPEN_bm;
   PORTC_PIN4CTRL = PORT_PULLUPEN_bm;
   PORTC_PIN5CTRL = PORT_PULLUPEN_bm;
-  //PORTC_PIN6CTRL = PORT_PULLUPEN_bm;
-  //PORTC_PIN7CTRL = PORT_PULLUPEN_bm;
+  //PORTC_PIN6CTRL = PORT_PULLUPEN_bm;    //there is no PC6
+  //PORTC_PIN7CTRL = PORT_PULLUPEN_bm;    //there is no PC7
 }
 
 
@@ -779,7 +779,7 @@ void setup()
 
 #ifdef PIN_POWEROFF_OUT
   pinMode(PIN_POWEROFF_OUT, OUTPUT);
-  digitalWrite(PIN_POWEROFF_OUT, HIGH);
+  digitalWrite(PIN_POWEROFF_OUT, LOW);
 #endif
 
 
