@@ -93,15 +93,10 @@ uint8_t backlight_pwm_steps[NUM_BACKLIGHT_PWM_STEPS] = {0x00, 0x10, 0x20, 0x30, 
 #define ADCS_AVAILABLE ((FEATURES_ADC0 | FEATURES_ADC1 | FEATURES_ADC2 | FEATURES_ADC3) << 4)
 
 
-#ifdef USE_PB4_RESISTOR_LADDER
- #define CONFIG0_USE_EXTENDED_INPUTS          (1<<7)
- #define CONFIG0_USE_PB4_RESISTOR_LADDER      (1<<6)
-#else
- #define CONFIG0_USE_EXTENDED_INPUTS          (0<<7)
- #define CONFIG0_USE_PB4_RESISTOR_LADDER      (0<<6)
-#endif
+#define CONFIG0_USE_EXTENDED_INPUTS          (1<<7)
+#define CONFIG0_USE_PB4_RESISTOR_LADDER      (1<<6)
 
-#define DEFAULT_CONFIG0     (CONFIG0_USE_EXTENDED_INPUTS | CONFIG0_USE_PB4_RESISTOR_LADDER)
+#define DEFAULT_CONFIG0     (0 /* | CONFIG0_USE_EXTENDED_INPUTS*/ /* | CONFIG0_USE_PB4_RESISTOR_LADDER*/)
 
 struct i2c_joystick_register_struct 
 {
@@ -342,7 +337,33 @@ void eeprom_restore_data()
 
 
     
-  i2c_joystick_registers.config0 = eeprom_data.joy_config0;    
+  i2c_joystick_registers.config0 = eeprom_data.joy_config0; 
+
+  eeprom_save();
+}
+
+void setup_adc0_to_adc3()
+{
+  if(i2c_joystick_registers.adc_conf_bits & (1 << 0))
+    PORTA_PIN4CTRL &= ~PORT_PULLUPEN_bm;  //clear pullup when using ADC0
+  else
+    PORTA_PIN4CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC0
+    
+  if(i2c_joystick_registers.adc_conf_bits & (1 << 1))
+    PORTA_PIN5CTRL &= ~PORT_PULLUPEN_bm;  //clear pullup when using ADC1
+  else
+    PORTA_PIN5CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC1
+
+    
+  if(i2c_joystick_registers.adc_conf_bits & (1 << 2))
+    PORTA_PIN6CTRL &= ~PORT_PULLUPEN_bm;  //clear pullup when using ADC2
+  else
+    PORTA_PIN6CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC2
+  
+  if(i2c_joystick_registers.adc_conf_bits & (1 << 3))
+    PORTA_PIN7CTRL &= ~PORT_PULLUPEN_bm;  //clear pullup when using ADC3
+  else
+    PORTA_PIN7CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC3
 }
 
 void setup_gpio(void)
@@ -360,18 +381,11 @@ void setup_gpio(void)
   //PORTA_PIN1CTRL = PORT_PULLUPEN_bm;    //PA1 is used for analog input (DPAD)
   //PORTA_PIN2CTRL = PORT_PULLUPEN_bm;    //PA2 = Poweroff Out _OUTPUT_
   //PORTA_PIN3CTRL = PORT_PULLUPEN_bm;    //PA3 = nINT _OUTPUT_
-#ifndef USE_ADC0
-  PORTA_PIN4CTRL = PORT_PULLUPEN_bm; //ADC0   (can be used as digital input on input2 if desired)
-#endif
-#ifndef USE_ADC1
-  PORTA_PIN5CTRL = PORT_PULLUPEN_bm; //ADC1   (can be used as digital input on input2 if desired)
-#endif
-#ifndef USE_ADC2
-  PORTA_PIN6CTRL = PORT_PULLUPEN_bm; //ADC2   (can be used as digital input on input2 if desired)
-#endif
-#ifndef USE_ADC3
-  PORTA_PIN7CTRL = PORT_PULLUPEN_bm; //ADC3   (can be used as digital input on input2 if desired)
-#endif
+
+
+  setup_adc0_to_adc3();
+  
+
   
   //PORTB_PIN0CTRL = PORT_PULLUPEN_bm;    //i2c
   //PORTB_PIN1CTRL = PORT_PULLUPEN_bm;    //i2c
@@ -494,7 +508,7 @@ void read_all_gpio(void)
 
   if(i2c_joystick_registers.config0 & CONFIG0_USE_EXTENDED_INPUTS)
   {
-    uint8_t zc = 0b11;
+    uint8_t hhzc = 0b1111;    //high, high, z, c
     uint8_t input2;
     uint8_t pa_in = PORTA_IN;
 
@@ -513,7 +527,7 @@ void read_all_gpio(void)
     #error PB4 resistor ladder not configured
 #endif
  
-    input2 = (pa_in & PINA_IN2_MASK) | zc;
+    input2 = (pa_in & PINA_IN2_MASK) | hhzc;
 
     i2c_joystick_registers.input2 = input2;
   }
@@ -591,6 +605,16 @@ inline void receive_i2c_callback_main_address(int i2c_bytes_received)
       temp &= 0x0F;   //the top nibble is not writeable
       mask = (i2c_joystick_registers.adc_conf_bits >> 4);   //the high nibble defines what ADCs are available
       i2c_joystick_registers.adc_conf_bits = i2c_joystick_registers.adc_conf_bits | (temp & mask);     //turn on any bits that are available and requested
+      eeprom_data.joy_adc_conf_bits = i2c_joystick_registers.adc_conf_bits;
+      setup_adc0_to_adc3();   //turn on/off ADC pullups
+      eeprom_save();
+    }
+
+    if(x == REGISTER_CONFIG_BITS)   //this is a writeable register
+    {
+      i2c_joystick_registers.config0 = temp;
+      eeprom_data.joy_config0 = i2c_joystick_registers.config0;
+      eeprom_save();
     }
   }
 }
@@ -737,11 +761,11 @@ void setup()
 
   i2c_joystick_registers.manuf_ID = MANUF_ID;
   i2c_joystick_registers.device_ID = DEVICE_ID;
-  i2c_joystick_registers.manuf_ID = VERSION_NUMBER;
+  i2c_joystick_registers.version_ID = VERSION_NUMBER;
 
   i2c_secondary_registers.manuf_ID = MANUF_ID;
   i2c_secondary_registers.device_ID = DEVICE_ID;
-  i2c_secondary_registers.manuf_ID = VERSION_NUMBER;
+  i2c_secondary_registers.version_ID = VERSION_NUMBER;
 
   i2c_secondary_registers.poweroff_control = 0;
 
@@ -787,7 +811,7 @@ void setup()
   
   g_pwm_step = ~i2c_secondary_registers.config_backlight; //unset it
 
-  setup_gpio();
+  setup_gpio(); //make sure we call this AFTER we set restore eeprom data
 
   startI2C(); //Determine the I2C address we should be using and begin listening on I2C bus
 }
