@@ -242,8 +242,6 @@ byte g_pwm_step = 0x00;  //100% on
 #define INPUT1_BTN_C      (1 << 7)      //IO1_7
 
 
-#define INPUT_BTN_POWER   (1 << 6)      //IO1_6
-
 #define PINB_POWER_BUTTON (1 << 5)    //PB5 is the power button, but it needs to be inverted (high when pressed)
                                         
 
@@ -274,13 +272,12 @@ byte g_pwm_step = 0x00;  //100% on
 
 #define PINB_IN1_MASK      (0b00111000)   //the pins from PINB that are used in IN1
 
+#define PINB_IN1_SHL       1
+
 #define PINB_GPIO_MASK     ((PINB_IN0_MASK | PINB_IN1_MASK) & ~PINB_UART_MASK)
 #define PINC_GPIO_MASK     (PINC_IN0_MASK)
 
-#define PINB_IN1_SHL       1
-
 #define PINA_IN2_MASK      (0b11110000)   //the pins from PINA that are used in IN2 extended input register
-
 
 #define PINA_ADC_MASK      (0b11110010)   //the pins in port A used for ADC
 
@@ -382,11 +379,9 @@ void setup_gpio(void)
   //PORTB_PIN2CTRL = PORT_PULLUPEN_bm;    //PB2 is PWM backlight output
   PORTB_PIN3CTRL = PORT_PULLUPEN_bm;
 #endif
-#if !defined(CONFIG_INVERT_POWER_BUTTON)    //don't use a pullup on the power button
   //PORTB_PIN4CTRL = PORT_PULLUPEN_bm;      //PB4 will have its own 200k external pull-up 
-#endif
-#ifndef USE_INTERRUPTS
-  PORTB_PIN5CTRL = PORT_PULLUPEN_bm;    //PB5 = BTN_Z or nINT
+#if !defined(CONFIG_INVERT_POWER_BUTTON)    //don't use a pullup on the power button
+  PORTB_PIN5CTRL = PORT_PULLUPEN_bm;    //PB5 = BTN_POWER
 #endif
   PORTB_PIN6CTRL = PORT_PULLUPEN_bm;
   PORTB_PIN7CTRL = PORT_PULLUPEN_bm;
@@ -569,7 +564,7 @@ void process_special_inputs()
     unsigned long current_millis = millis();
     if((current_millis - power_btn_start_millis) >= (POWEROFF_HOLD_SECONDS * 1000))
     {
-      digitalWrite(PIN_POWEROFF_OUT,LOW);
+      digitalWrite(PIN_POWEROFF_OUT,HIGH);
     }
   }
   else
