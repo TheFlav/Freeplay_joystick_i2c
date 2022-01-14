@@ -7,14 +7,29 @@
  * 
  */
 
+/* 
+ *  You can comment in/out the USE_* #defines to compile in/out features
+ */
+#define USE_PWM_BACKLIGHT
+#define USE_INTERRUPTS              //can interrupt the host when input0 or input1 changes
+#define USE_EEPROM
+//#define USE_PB4_RESISTOR_LADDER   //PB4 can be a single digital R2 button input or 3 (R2, LeftCenterClick, RightCenterClick) button inputs on an ADC pin
 
+#define USE_ADC0     //or can be used as digital input on input2 if desired
+#define USE_ADC1     //or can be used as digital input on input2 if desired
+#define USE_ADC2     //or can be used as digital input on input2 if desired
+#define USE_ADC3     //or can be used as digital input on input2 if desired
+//Keep in mind that these just turn on/off the ABILITY to use the ADCs.  You still need to enable them in adc_conf_bits, otherwise they're just digital inputs
 
 #include <Wire.h>
+
+#ifdef USE_EEPROM
 #include <EEPROM.h>
+#endif
 
 #define MANUF_ID         0xED
 #define DEVICE_ID        0x00
-#define VERSION_NUMBER   0x08
+#define VERSION_NUMBER   9
 
 
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
@@ -26,38 +41,35 @@
 
 //#define CONFIG_SERIAL_DEBUG  //shares pins with L2/R2 IO1_4/IO1_5
 
-#define USE_INTERRUPTS
-//#define USE_PB4_RESISTOR_LADDER
+
 
 //#define ADC_RESOLUTION 10
 //#define ADC_RESOLUTION 12  //can do analogReadResolution(12) on 2-series 427/827 chips
 #define ADC_RESOLUTION ADC_NATIVE_RESOLUTION
-#define USE_ADC0     //or can be used as digital input on input2 if desired
-#define USE_ADC1     //or can be used as digital input on input2 if desired
-#define USE_ADC2     //or can be used as digital input on input2 if desired
-#define USE_ADC3     //or can be used as digital input on input2 if desired
 
+#if ADC_RESOLUTION > 12
+#error ADC Resolution problem
+#endif
 
-
-//Interrupts are only really useful for digital inputs, so the nINT_PIN will go low only for input0 and input1 changes
-#define USE_INTERRUPTS
 
 #ifdef USE_INTERRUPTS
  #define nINT_PIN 20                  //AKA PA3
  bool g_nINT_state = false;
 #endif
 
-#define PIN_POWEROFF_OUT        19    //AKA PA2
-#define PIN_BACKLIGHT_PWM       9     //AKA PB2
-
-
+//#define PIN_POWEROFF_OUT        19    //AKA PA2
 
 #define CONFIG_INVERT_POWER_BUTTON      //power button is on PIN_PB5
 
-#define NUM_BACKLIGHT_PWM_STEPS 11
-uint8_t backlight_pwm_steps[NUM_BACKLIGHT_PWM_STEPS] = {0x00, 0x10, 0x20, 0x30, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xD0, 0xFF};
-#define CONFIG_BACKLIGHT_STEP_DEFAULT  4
+#ifdef USE_PWM_BACKLIGHT
+ #define PIN_BACKLIGHT_PWM       9     //AKA PB2
 
+ #define NUM_BACKLIGHT_PWM_STEPS 11
+ uint8_t backlight_pwm_steps[NUM_BACKLIGHT_PWM_STEPS] = {0x00, 0x10, 0x20, 0x30, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xD0, 0xFF};
+ #define CONFIG_BACKLIGHT_STEP_DEFAULT  4
+
+ byte g_pwm_step = 0x00;  //100% on
+#endif
 
 #ifdef USE_ADC0
   #define FEATURES_ADC0         (1 << 0)
@@ -92,23 +104,21 @@ uint8_t backlight_pwm_steps[NUM_BACKLIGHT_PWM_STEPS] = {0x00, 0x10, 0x20, 0x30, 
 #define FEATURES_AVAILABLE (FEATURES_ADC0 | FEATURES_ADC1 | FEATURES_ADC2 | FEATURES_ADC3 | FEATURES_IRQ)
 #define ADCS_AVAILABLE ((FEATURES_ADC0 | FEATURES_ADC1 | FEATURES_ADC2 | FEATURES_ADC3) << 4)
 
+#define CONFIG0_USE_PB4_RESISTOR_LADDER      (1<<7)
 
-#define CONFIG0_USE_EXTENDED_INPUTS          (1<<7)
-#define CONFIG0_USE_PB4_RESISTOR_LADDER      (1<<6)
-
-#define DEFAULT_CONFIG0     (0 /* | CONFIG0_USE_EXTENDED_INPUTS*/ /* | CONFIG0_USE_PB4_RESISTOR_LADDER*/)
+#define DEFAULT_CONFIG0     (0 /* | CONFIG0_USE_PB4_RESISTOR_LADDER*/)    //don't turn on the resisor ladder by default, for now
 
 struct i2c_joystick_register_struct 
 {
   uint8_t input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
   uint8_t input1;          // Reg: 0x01 - INPUT port 1 (digital buttons/dpad)
-  uint8_t a0_msb;          // Reg: 0x02 - ADC0 most significant 8 bits
-  uint8_t a1_msb;          // Reg: 0x03 - ADC1 most significant 8 bits
-  uint8_t a1a0_lsb;        // Reg: 0x04 - high nibble is a1 least significant 4 bits, low nibble is a0 least significant 4 bits
-  uint8_t a2_msb;          // Reg: 0x05 - ADC2 most significant 8 bits
-  uint8_t a3_msb;          // Reg: 0x06 - ADC2 most significant 8 bits
-  uint8_t a3a2_lsb;        // Reg: 0x07 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
-  uint8_t input2;          // Reg: 0x08 - INPUT port 2 (extended digital buttons)     BTN_Z and BTN_C among other things
+  uint8_t input2;          // Reg: 0x03 - INPUT port 2 (extended digital buttons)     BTN_Z and BTN_C among other things
+  uint8_t a0_msb;          // Reg: 0x04 - ADC0 most significant 8 bits
+  uint8_t a1_msb;          // Reg: 0x05 - ADC1 most significant 8 bits
+  uint8_t a1a0_lsb;        // Reg: 0x06 - high nibble is a1 least significant 4 bits, low nibble is a0 least significant 4 bits
+  uint8_t a2_msb;          // Reg: 0x07 - ADC2 most significant 8 bits
+  uint8_t a3_msb;          // Reg: 0x08 - ADC2 most significant 8 bits
+  uint8_t a3a2_lsb;        // Reg: 0x09 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
 #define REGISTER_ADC_CONF_BITS 0x09   //this one is writeable
   uint8_t adc_conf_bits;   // Reg: 0x09 - High Nibble is read-only.  ADC PRESENT = It tells which ADCs are available.
                            //             Low Nibble is read/write.  ADC ON/OFF = The system can read/write what ADCs are sampled and used for a#_msb and lsb above
@@ -167,7 +177,6 @@ volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. W
  volatile byte g_i2c_address = 0;  //if we're using multiple i2c addresses, we need to know which one is in use
 #endif
 
-byte g_pwm_step = 0x00;  //100% on
 
 /*
  * digital inputs
@@ -234,7 +243,6 @@ byte g_pwm_step = 0x00;  //100% on
 #define INPUT1_BTN_L2     (1 << 4)      //IO1_4
 #define INPUT1_BTN_R2     (1 << 5)      //IO1_5
 #define INPUT1_BTN_POWER  (1 << 6)      //IO1_6
-#define INPUT1_BTN_C      (1 << 7)      //IO1_7
 
 
 #define PINB_POWER_BUTTON (1 << 5)    //PB5 is the power button, but it needs to be inverted (high when pressed)
@@ -282,6 +290,7 @@ void resetViaSWR() {
 
 void eeprom_save()
 {
+#ifdef USE_EEPROM  
   uint8_t *eeprom_data_ptr = (uint8_t *) &eeprom_data;
   uint8_t i;
 
@@ -289,20 +298,22 @@ void eeprom_save()
   {
     EEPROM.update(i, *eeprom_data_ptr++);
   }
+#endif
 }
 
 
 void eeprom_restore_data()
 {
+#ifdef USE_EEPROM
   uint8_t *eeprom_data_ptr = (uint8_t *)&eeprom_data;
   uint8_t i;
-
+  
   for(i=0;i<sizeof(eeprom_data);i++)
   {
     *eeprom_data_ptr = EEPROM.read(i);
     eeprom_data_ptr++;
   }
-
+#endif
   
   if(!(eeprom_data.manuf_ID == MANUF_ID && eeprom_data.device_ID == DEVICE_ID && eeprom_data.version_ID == VERSION_NUMBER))
   {
@@ -311,7 +322,11 @@ void eeprom_restore_data()
     eeprom_data.device_ID = DEVICE_ID;
     eeprom_data.version_ID = VERSION_NUMBER;
 
+#ifdef USE_PWM_BACKLIGHT
     eeprom_data.sec_config_backlight = CONFIG_BACKLIGHT_STEP_DEFAULT;
+#else
+    eeprom_data.sec_config_backlight = 0;
+#endif
     eeprom_data.sec_joystick_i2c_addr = CONFIG_I2C_DEFAULT_ADDR;
 
     eeprom_data.joy_adc_conf_bits = ADCS_AVAILABLE;
@@ -413,10 +428,13 @@ void setup_gpio(void)
 
 
 /*
- * This function is getting out of hand.  We might have to build some macros to do it.
- * But, it's efficient.
+ * This function sets up digital input registers input0, input1, input2
+ * It's trying to be as efficient as possible to do all of the digital inputs.
+ * 
+ * Note:  The DPAD buttons (and potentially LeftCenter and RightCenter) are 
+ *        actually analog reads that get converted to bits in the input registers.
  */
-void read_all_gpio(void)
+void read_digital_inputs(void)
 {
   //we may want to turn off interrupts during this function
   //at the least, we need to poll the registers PA, PB, PC once
@@ -425,10 +443,12 @@ void read_all_gpio(void)
   //otherwise, if we get interrupted during the setup, things get out of whack
 
   uint8_t rldu = 0b1111;
-  uint8_t input0, input1;
+  uint8_t hhzc = 0b1111;    //high, high, z, c
+  uint8_t input0, input1, input2;
+  uint8_t pa_in = PORTA_IN;
   uint8_t pb_in = PORTB_IN;
   uint8_t pc_in = PORTC_IN;
-
+    
 #ifdef CONFIG_INVERT_POWER_BUTTON
   pb_in ^= PINB_POWER_BUTTON;
 #endif
@@ -437,6 +457,7 @@ void read_all_gpio(void)
   uint16_t adc18 = analogRead(18);
 
   //NOTE:  This code will not let you press Up&Down or Left&Right at the same time
+  //       The resistor ladder is very intentionally configured with this fact in mind.
 
   if(adc18 < 65)
   {
@@ -484,66 +505,80 @@ void read_all_gpio(void)
     rldu = 0b1010;
   }
 
+
   input0 = (pc_in & PINC_IN0_MASK) | (pb_in & PINB_IN0_MASK);
 
 #ifndef CONFIG_SERIAL_DEBUG
-  input1 = ((pb_in & PINB_IN1_MASK) << PINB_IN1_SHL) | rldu;
+  input1 = (1<<7) | ((pb_in & PINB_IN1_MASK) << PINB_IN1_SHL) | rldu;
 #else
-  input1 = ((pb_in & (PINB_IN1_MASK | PINB_UART_MASK)) << PINB_IN1_SHL) | rldu);   //act like the PINB_UART_MASK pins are never pressed
+  input1 = (1<<7) | ((pb_in & (PINB_IN1_MASK | PINB_UART_MASK)) << PINB_IN1_SHL) | rldu);   //act like the PINB_UART_MASK pins are never pressed
 #endif
 
-#ifdef USE_INTERRUPTS
-  input1 |=  (1<<7);
+
+#ifdef USE_PB4_RESISTOR_LADDER
+  #error PB4 resistor ladder not configured
 #endif
-  
-
-
+ 
+  input2 = (pa_in & PINA_IN2_MASK) | hhzc;
 
 
 
   i2c_joystick_registers.input0 = input0;
   i2c_joystick_registers.input1 = input1;
-
-
-
-  if(i2c_joystick_registers.config0 & CONFIG0_USE_EXTENDED_INPUTS)
-  {
-    uint8_t hhzc = 0b1111;    //high, high, z, c
-    uint8_t input2;
-    uint8_t pa_in = PORTA_IN;
-
-/*
- * A7  = IO2_0 = BTN_C aka LeftCenterPress
- * A7  = IO2_1 = BTN_Z aka RightCenterPress
- * --- = IO2_2 = 
- * --- = IO2_3 = 
- * PA4 = IO2_4 = BTN_??
- * PA5 = IO2_5 = BTN_??
- * PA6 = IO2_6 = BTN_??
- * PA7 = IO2_7 = BTN_??
- */
-
-#ifdef USE_PB4_RESISTOR_LADDER
-    #error PB4 resistor ladder not configured
-#endif
- 
-    input2 = (pa_in & PINA_IN2_MASK) | hhzc;
-
-    i2c_joystick_registers.input2 = input2;
-  }
+  i2c_joystick_registers.input2 = input2;
 }
+
+#if defined(USE_ADC0) || defined(USE_ADC1) || defined(USE_ADC2) || defined(USE_ADC3)
+void read_analog_inputs()
+{
+  word adc;
+
+#ifdef USE_ADC0
+  if(i2c_joystick_registers.adc_conf_bits & (1 << 0))
+  {
+    adc = analogRead(PIN_PA4);
+    i2c_joystick_registers.a0_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_joystick_registers.a1a0_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a1a0_lsb & 0xF0);
+  }
+#endif
+#ifdef USE_ADC1
+  if(i2c_joystick_registers.adc_conf_bits & (1 << 1))
+  {
+    adc = analogRead(PIN_PA5);
+    i2c_joystick_registers.a1_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_joystick_registers.a1a0_lsb = (adc << (8 - (ADC_RESOLUTION - 8)) & 0xF0) | (i2c_joystick_registers.a1a0_lsb & 0x0F);
+  }
+#endif
+#ifdef USE_ADC2
+  if(i2c_joystick_registers.adc_conf_bits & (1 << 2))
+  {
+    adc = analogRead(PIN_PA6);
+    i2c_joystick_registers.a2_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_joystick_registers.a3a2_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a3a2_lsb & 0xF0);
+  }
+#endif
+#ifdef USE_ADC3
+  if(i2c_joystick_registers.adc_conf_bits & (1 << 3))
+  {
+    adc = analogRead(PIN_PA7);
+    i2c_joystick_registers.a3_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_joystick_registers.a3a2_lsb = (adc << (8 - (ADC_RESOLUTION - 8)) & 0xF0) | (i2c_joystick_registers.a3a2_lsb & 0x0F);
+  }
+#endif  
+}
+#endif
 
 #define SPECIAL_LOOP_DELAY 0x3FFF
 #define POWEROFF_HOLD_SECONDS 20
 
 void process_special_inputs()
 {  
-  static uint16_t special_inputs_loop_counter = 0;
   //static uint32_t power_button_loop_counter = POWER_LOOP_DELAY;
   //static bool power_btn_prev_state = false;
-  static unsigned long power_btn_start_millis = 0;
   
 
+#ifdef USE_PWM_BACKLIGHT
+  static uint16_t special_inputs_loop_counter = 0;
   if(IS_SPECIAL_INPUT_MODE() && (IS_PRESSED_DPAD_UP() || IS_PRESSED_DPAD_DOWN()))
   {
     if(special_inputs_loop_counter)   
@@ -571,8 +606,10 @@ void process_special_inputs()
   {
     special_inputs_loop_counter = 0x10;  //tiny delay just for debounce
   }
+#endif
 
 #ifdef PIN_POWEROFF_OUT
+  static unsigned long power_btn_start_millis = 0;
   if(IS_PRESSED_BTN_POWER())
   {
     unsigned long current_millis = millis();
@@ -631,12 +668,14 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
   {
     byte temp = Wire.read(); //We might record it, we might throw it away
 
+#ifdef USE_PWM_BACKLIGHT
     if(x == REGISTER_SEC_CONFIG_BACKLIGHT)   //this is a writeable register
     {
       //set backlight value
       if(temp >= 0 && temp < NUM_BACKLIGHT_PWM_STEPS)
         i2c_secondary_registers.config_backlight = temp;      
     }
+#endif
 
     if(x == REGISTER_SEC_JOY_I2C_ADDR)
     {
@@ -774,7 +813,11 @@ void setup()
   i2c_joystick_registers.adc_conf_bits = ADCS_AVAILABLE;
 
 
+#ifdef USE_PWM_BACKLIGHT
   i2c_secondary_registers.backlight_max = NUM_BACKLIGHT_PWM_STEPS-1;
+#else
+  i2c_secondary_registers.backlight_max = 0;
+#endif
 
   eeprom_restore_data();      //should be done beore startI2C()
   
@@ -809,7 +852,9 @@ void setup()
 
   
   
+#ifdef USE_PWM_BACKLIGHT
   g_pwm_step = ~i2c_secondary_registers.config_backlight; //unset it
+#endif
 
   setup_gpio(); //make sure we call this AFTER we set restore eeprom data
 
@@ -819,9 +864,6 @@ void setup()
 
 void loop() 
 {
-  
-  word adc;
-
 #ifdef CONFIG_SERIAL_DEBUG
   Serial.print("g_i2c_address=");
   Serial.print(g_i2c_address);
@@ -833,8 +875,12 @@ void loop()
   Serial.println();
 #endif
 
-  read_all_gpio();
-  process_special_inputs();
+  read_digital_inputs();
+  process_special_inputs();     //make sure special inputs are digital (input0 and input1) only
+
+#if defined(USE_ADC0) || defined(USE_ADC1) || defined(USE_ADC2) || defined(USE_ADC3)
+  read_analog_inputs();
+#endif  
 
 #ifdef PIN_BACKLIGHT_PWM
 
@@ -862,40 +908,6 @@ void loop()
       resetViaSWR();    //reboot the chip to use new address
     }
   }
-  
-
-#ifdef USE_ADC0
-  if(i2c_joystick_registers.adc_conf_bits & (1 << 0))
-  {
-    adc = analogRead(PIN_PA4);
-    i2c_joystick_registers.a0_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_joystick_registers.a1a0_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a1a0_lsb & 0xF0);
-  }
-#endif
-#ifdef USE_ADC1
-  if(i2c_joystick_registers.adc_conf_bits & (1 << 1))
-  {
-    adc = analogRead(PIN_PA5);
-    i2c_joystick_registers.a1_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_joystick_registers.a1a0_lsb = (adc << (8 - (ADC_RESOLUTION - 8)) & 0xF0) | (i2c_joystick_registers.a1a0_lsb & 0x0F);
-  }
-#endif
-#ifdef USE_ADC2
-  if(i2c_joystick_registers.adc_conf_bits & (1 << 2))
-  {
-    adc = analogRead(PIN_PA6);
-    i2c_joystick_registers.a2_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_joystick_registers.a3a2_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a3a2_lsb & 0xF0);
-  }
-#endif
-#ifdef USE_ADC3
-  if(i2c_joystick_registers.adc_conf_bits & (1 << 3))
-  {
-    adc = analogRead(PIN_PA7);
-    i2c_joystick_registers.a3_msb = adc >> (ADC_RESOLUTION - 8);
-    i2c_joystick_registers.a3a2_lsb = (adc << (8 - (ADC_RESOLUTION - 8)) & 0xF0) | (i2c_joystick_registers.a3a2_lsb & 0x0F);
-  }
-#endif
 
 #ifdef nINT_PIN
   bool new_nINT = ((g_last_sent_input0 == i2c_joystick_registers.input0) && (g_last_sent_input1 == i2c_joystick_registers.input1));
