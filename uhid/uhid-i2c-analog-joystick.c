@@ -31,7 +31,7 @@
 int fd;
 
 #define I2C_BUSNAME "/dev/i2c-1"
-#define I2C_ADDRESS 0x20
+#define I2C_ADDRESS 0x30
 int i2c_file = -1;
 
 
@@ -421,7 +421,8 @@ int main(int argc, char **argv)
 
 	i2c_open();
     
-    i2c_smbus_write_byte_data(i2c_file, 0x08, 0x0F);        //turn on ADC3,2,1,0 in adc_on_bits
+    i2c_smbus_write_byte_data(i2c_file, 0x09, 0x0F);        //turn on ADC3,2,1,0 in adc_on_bits
+    i2c_smbus_write_byte_data(i2c_file, 0x0A, 0x00);        //make sure that CONFIG0_USE_EXTENDED_INPUTS is OFF
 
     
     fprintf(stderr, "Press '^C' to quit...\n");

@@ -41,7 +41,7 @@
 int fd;
 
 #define I2C_BUSNAME "/dev/i2c-1"
-#define I2C_ADDRESS 0x20
+#define I2C_ADDRESS 0x30
 int i2c_file = -1;
 
 
