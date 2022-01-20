@@ -156,6 +156,8 @@ static int freeplay_probe(struct i2c_client *client)
         struct freeplay_i2c_register_struct regs;
 	int err;
 
+	dev_dbg(&client->dev, "Freeplay i2c Joystick: probe\n");
+
 	err = i2c_smbus_read_i2c_block_data(client, FREEPLAY_JOY_REGISTER_INDEX,
 					    sizeof(regs), (u8 *)&regs);
 	if (err < 0)
