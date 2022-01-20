@@ -112,7 +112,7 @@ struct i2c_joystick_register_struct
 {
   uint8_t input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
   uint8_t input1;          // Reg: 0x01 - INPUT port 1 (digital buttons/dpad)
-  uint8_t input2;          // Reg: 0x03 - INPUT port 2 (extended digital buttons)     BTN_Z and BTN_C among other things
+  uint8_t input2;          // Reg: 0x03 - INPUT port 2 (extended digital buttons)     BTN_THUMBL and BTN_THUMBR among other things
   uint8_t a0_msb;          // Reg: 0x04 - ADC0 most significant 8 bits
   uint8_t a1_msb;          // Reg: 0x05 - ADC1 most significant 8 bits
   uint8_t a1a0_lsb;        // Reg: 0x06 - high nibble is a1 least significant 4 bits, low nibble is a0 least significant 4 bits
@@ -199,14 +199,14 @@ volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. W
  * A18 = IO1_2 = LEFT
  * A18 = IO1_3 = RIGHT
  * PB3 = IO1_4 = BTN_L2
- * PB4 = IO1_5 = BTN_R2   //PB4 can be turned into A7 to do an analog resistor ladder if we need LeftCenterPress (aka BTN_C) and RightCenterPress (aka BTN_Z) buttons
+ * PB4 = IO1_5 = BTN_R2   //PB4 can be turned into A7 to do an analog resistor ladder if we need BTN_THUMBL and BTN_THUMBR buttons
  * PB5 = IO1_6 = BTN_POWER
  * --- = IO1_7 = always high
  * 
  * input2       EXTENDED DIGITAL INPUT REGISTER 
  * 
- * A7  = IO2_0 = BTN_C aka LeftCenterPress
- * A7  = IO2_1 = BTN_Z aka RightCenterPress
+ * A7  = IO2_0 = BTN_THUMBL
+ * A7  = IO2_1 = BTN_THUMBR
  * --- = IO2_2 = 
  * --- = IO2_3 = 
  * PA4 = IO2_4 = BTN_??
