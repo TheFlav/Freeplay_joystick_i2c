@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Freeplay i2c Joystick driver
+ *   This Freeplay i2c Joystick is built into the Freeplay Zero/CM4
+ *   and it is on standalone DIY PCBs.
+ *
+ *   Where further functionality or customization is needed, it's
+ *     suggested to use a user-space UHID driver.
  *
  * Copyright (C) 2022 Edward Mandy (freeplaytech@gmail.com)
  *                    https://www.freeplaytech.com/contact/
@@ -18,15 +23,17 @@
 #include <linux/module.h>
 
 
-#define FREEPLAY_JOY_REGISTER_INDEX		0
+#define FREEPLAY_JOY_REGISTER_INDEX		0x00
+#define FREEPLAY_JOY_REGISTER_ADC_CONF_INDEX	0x09
 #define FREEPLAY_JOY_REGISTER_POLL_SIZE_ANALOG	9
 #define FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL 3
+
 
 #define FREEPLAY_JOY_AXIS_MAX  0b111111111111    //the Freeplay Joy will always return 12-bit resolution
 #define FREEPLAY_JOY_AXIS_FUZZ 16                //guess based on https://github.com/TheFlav/Freeplay_joystick_i2c_attiny/blob/main/uhid/uhid-i2c-gamepad.c
 #define FREEPLAY_JOY_AXIS_FLAT 10                //guess based on https://github.com/TheFlav/Freeplay_joystick_i2c_attiny/blob/main/uhid/uhid-i2c-gamepad.c
 
-#define FREEPLAY_JOY_POLL_MS (HZ/125)
+#define FREEPLAY_JOY_POLL_MS 8	//targetting 125Hz
 
 struct freeplay_joy {
 	char phys[32];
@@ -75,15 +82,24 @@ static void freeplay_i2c_poll(struct input_dev *input)
 	if (err != FREEPLAY_JOY_REGISTER_POLL_SIZE_ANALOG)	//don't use the registers past FREEPLAY_JOY_REGISTER_POLL_SIZE for polling
 		return;
 
+	/* The i2c device has registers for 4 ADC values (jeft joystick X, left joystick Y, right joystick x, and right joystick y).
+	 * These are 12-bit integers,
+	 *   but they are presented as the most-significant 8 bits of x, 
+	 *   followed by the most significant 8 bits of y, 
+	 *   followed by a byte that is broken into 2 nibbles holding the 
+	 *      least significant 4 bits of x followed by the
+	 *      least significant 4 bits of y
+	 * and then repeated for the other (right) analog stick
+	 */
 	adc0 = (regs.a0_msb << 4) | (regs.a1a0_lsb & 0x0F);
 	adc1 = (regs.a1_msb << 4) | (regs.a1a0_lsb >> 4);
 	adc2 = (regs.a2_msb << 4) | (regs.a3a2_lsb & 0x0F);
 	adc3 = (regs.a3_msb << 4) | (regs.a3a2_lsb >> 4);
 
-	input_report_abs(input, ABS_X, be16_to_cpu(adc0));
-	input_report_abs(input, ABS_Y, be16_to_cpu(adc1));
-	input_report_abs(input, ABS_RX, be16_to_cpu(adc2));
-	input_report_abs(input, ABS_RY, be16_to_cpu(adc3));
+	input_report_abs(input, ABS_X, adc0);
+	input_report_abs(input, ABS_Y, adc1);
+	input_report_abs(input, ABS_RX, adc2);
+	input_report_abs(input, ABS_RY, adc3);
 
 	//digital input0
 	temp_byte = regs.input0;
@@ -132,14 +148,14 @@ static void freeplay_i2c_poll(struct input_dev *input)
 	input_report_key(input, BTN_B, btn_b);
 	input_report_key(input, BTN_X, btn_x);
 	input_report_key(input, BTN_Y, btn_y);
-	input_report_key(input, BTN_TL, btn_l);
-	input_report_key(input, BTN_TR, btn_r);
 	input_report_key(input, BTN_START, btn_start);
 	input_report_key(input, BTN_SELECT, btn_select);
+	input_report_key(input, BTN_TL, btn_l);
+	input_report_key(input, BTN_TR, btn_r);
+	input_report_key(input, BTN_MODE, btn_power);
 
 	input_report_key(input, BTN_TL2, btn_l2);
 	input_report_key(input, BTN_TR2, btn_r2);
-	input_report_key(input, BTN_MODE, btn_power);
 
 	input_report_key(input, BTN_THUMBL, btn_thumbl);
 	input_report_key(input, BTN_THUMBR, btn_thumbr);
@@ -156,7 +172,7 @@ static int freeplay_probe(struct i2c_client *client)
         struct freeplay_i2c_register_struct regs;
 	int err;
 
-	dev_dbg(&client->dev, "Freeplay i2c Joystick: probe\n");
+	dev_info(&client->dev, "Freeplay i2c Joystick: probe\n");
 
 	err = i2c_smbus_read_i2c_block_data(client, FREEPLAY_JOY_REGISTER_INDEX,
 					    sizeof(regs), (u8 *)&regs);
@@ -165,12 +181,22 @@ static int freeplay_probe(struct i2c_client *client)
 	if (err != sizeof(regs))
 		return -EIO;
 
-	dev_dbg(&client->dev, "Freeplay i2c Joystick, ManufID: 0x%02X, DeviceID: 0x%02X, Ver: %u\n",
+	dev_info(&client->dev, "Freeplay i2c Joystick, ManufID: 0x%02X, DeviceID: 0x%02X, Ver: %u\n",
 		regs.manuf_ID, regs.device_ID, regs.version_ID);
 
 	priv = devm_kzalloc(&client->dev, sizeof(*priv), GFP_KERNEL);
 	if (!priv)
 		return -ENOMEM;
+
+	err = i2c_smbus_write_byte_data(client, FREEPLAY_JOY_REGISTER_ADC_CONF_INDEX, 0x0F);//turn on all ADCs
+        if (err < 0)
+                return err;
+
+	err = i2c_smbus_read_byte_data(client, FREEPLAY_JOY_REGISTER_ADC_CONF_INDEX);
+        if (err < 0)
+                return err;
+	dev_info(&client->dev, "Freeplay i2c Joystick: adc_conf=0x%02X\n", err);
+	
 
 	priv->client = client;
 	snprintf(priv->phys, sizeof(priv->phys),
@@ -209,9 +235,9 @@ static int freeplay_probe(struct i2c_client *client)
 	input_set_capability(priv->dev, EV_KEY, BTN_TR);
 
 	//buttons in input1 (dpad is also in input1)
+        input_set_capability(priv->dev, EV_KEY, BTN_MODE);	//power button used for hotkey stuff
         input_set_capability(priv->dev, EV_KEY, BTN_TL2);
         input_set_capability(priv->dev, EV_KEY, BTN_TR2);
-        input_set_capability(priv->dev, EV_KEY, BTN_MODE);	//power button used for hotkey stuff
 
 	//buttons in input2
 	input_set_capability(priv->dev, EV_KEY, BTN_THUMBL);

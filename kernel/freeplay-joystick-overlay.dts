@@ -1,0 +1,27 @@
+/*
+ * 2022 - Ed Mandy
+ */
+/dts-v1/;
+/plugin/;
+
+/{
+	compatible = "brcm,bcm2835";
+
+	fragment@0 {
+		target = <&i2c_arm>;
+		__overlay__ {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			fpjoy: fpjoy@30 {
+				compatible = "freeplay,freeplay-joystick";
+				reg = <0x30>;
+				status = "okay";
+			};
+		};
+	};
+	__overrides__ {
+		addr = <&fpjoy>,"reg:0";
+	};
+};
