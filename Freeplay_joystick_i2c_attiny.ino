@@ -10,8 +10,11 @@
 /* 
  *  You can comment in/out the USE_* #defines to compile in/out features
  */
-#define USE_PWM_BACKLIGHT
-#define USE_INTERRUPTS              //can interrupt the host when input0 or input1 changes
+#define USE_PWM_BACKLIGHT           //turning this off actually saves a fair bit of code space!
+
+#define USE_SECONDARY_I2C_ADDR      //turn this off if you only want joystick support and don't want/need the secondary i2c address functionality
+
+#define USE_INTERRUPTS              //can interrupt the host when input0 or input1 or input2 changes
 #define USE_EEPROM
 //#define USE_PB4_RESISTOR_LADDER   //PB4 can be a single digital R2 button input or 3 (R2, LeftCenterClick, RightCenterClick) button inputs on an ADC pin
 
@@ -37,8 +40,9 @@
 
 
 #define CONFIG_I2C_DEFAULT_ADDR     0x30
-#define CONFIG_I2C_2NDADDR          0x40  //0x30 wouldn't work
-
+#ifdef USE_SECONDARY_I2C_ADDR
+ #define CONFIG_I2C_2NDADDR          0x40  //0x30 wouldn't work
+#endif
 //#define CONFIG_SERIAL_DEBUG  //shares pins with L2/R2 IO1_4/IO1_5
 
 
@@ -170,6 +174,7 @@ struct eeprom_data_struct
 
 volatile byte g_last_sent_input0 = 0xFF;
 volatile byte g_last_sent_input1 = 0xFF;
+volatile byte g_last_sent_input2 = 0xFF;
 
 volatile byte g_i2c_index_to_read = 0;
 volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. We then serve the spot the user requested.
@@ -207,12 +212,12 @@ volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. W
  * 
  * A7  = IO2_0 = BTN_THUMBL
  * A7  = IO2_1 = BTN_THUMBR
- * --- = IO2_2 = 
- * --- = IO2_3 = 
- * PA4 = IO2_4 = BTN_??
- * PA5 = IO2_5 = BTN_??
- * PA6 = IO2_6 = BTN_??
- * PA7 = IO2_7 = BTN_??
+ * --- = IO2_2 = always high
+ * --- = IO2_3 = always high
+ * PA4 = IO2_4 = BTN_0 (when ADC0 not used)
+ * PA5 = IO2_5 = BTN_1 (when ADC1 not used)
+ * PA6 = IO2_6 = BTN_2 (when ADC2 not used)
+ * PA7 = IO2_7 = BTN_3 (when ADC3 not used)
  * 
  * 
  * POWER_BUTTON (Hotkey AKA poweroff_in) NEEDS TO BE IN HERE SOMEWHERE SOMEHOW
@@ -724,10 +729,17 @@ inline void request_i2c_callback_primary_address()
     //could use getBytesRead combined with g_i2c_command_index
     g_last_sent_input0 = i2c_joystick_registers.input0;
     g_last_sent_input1 = i2c_joystick_registers.input1;
+    g_last_sent_input2 = i2c_joystick_registers.input2;
   }
-  
-  if(g_i2c_index_to_read == 1)
+  else if(g_i2c_index_to_read == 1)
+  {
     g_last_sent_input1 = i2c_joystick_registers.input1;
+    g_last_sent_input2 = i2c_joystick_registers.input2;
+  }
+  else if(g_i2c_index_to_read == 2)
+  {
+    g_last_sent_input2 = i2c_joystick_registers.input2;
+  }
 }
 
 #ifdef CONFIG_I2C_2NDADDR  
@@ -910,7 +922,7 @@ void loop()
   }
 
 #ifdef nINT_PIN
-  bool new_nINT = ((g_last_sent_input0 == i2c_joystick_registers.input0) && (g_last_sent_input1 == i2c_joystick_registers.input1));
+  bool new_nINT = ((g_last_sent_input0 == i2c_joystick_registers.input0) && (g_last_sent_input1 == i2c_joystick_registers.input1) && (g_last_sent_input2 == i2c_joystick_registers.input2));
   if(g_nINT_state != new_nINT)
   {
     digitalWrite(nINT_PIN, new_nINT);
