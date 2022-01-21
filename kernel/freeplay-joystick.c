@@ -21,6 +21,7 @@
 #include <linux/input.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/interrupt.h>
 
 
 #define FREEPLAY_JOY_REGISTER_INDEX		0x00
@@ -33,7 +34,8 @@
 #define FREEPLAY_JOY_AXIS_FUZZ 16                //guess based on https://github.com/TheFlav/Freeplay_joystick_i2c_attiny/blob/main/uhid/uhid-i2c-gamepad.c
 #define FREEPLAY_JOY_AXIS_FLAT 10                //guess based on https://github.com/TheFlav/Freeplay_joystick_i2c_attiny/blob/main/uhid/uhid-i2c-gamepad.c
 
-#define FREEPLAY_JOY_POLL_MS 8	//targetting 125Hz
+//#define FREEPLAY_JOY_POLL_MS 8	//targetting 125Hz
+#define FREEPLAY_JOY_POLL_MS 1000//test	//targetting 125Hz
 
 struct freeplay_joy {
 	char phys[32];
@@ -64,6 +66,89 @@ struct freeplay_i2c_register_struct
   uint8_t device_ID;       // Reg: 0x0E -
   uint8_t version_ID;      // Reg: 0x0F -
 };
+
+static irqreturn_t fpjoy_irq(int irq, void *irq_data)
+{
+	struct freeplay_joy *priv = irq_data;
+//	struct i2c_client *client = priv->client;
+	struct input_dev *input = priv->dev;
+	struct freeplay_i2c_register_struct regs;
+	bool btn_a, btn_b, btn_power, btn_x, btn_y, btn_l, btn_r, btn_start, btn_select, btn_l2, btn_r2, btn_thumbl, btn_thumbr;
+	bool dpad_l, dpad_r, dpad_u, dpad_d;
+	uint8_t temp_byte;
+	int err;
+
+        err = i2c_smbus_read_i2c_block_data(priv->client, FREEPLAY_JOY_REGISTER_INDEX,
+                                            FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL, (u8 *)&regs);       //only poll the FREEPLAY_JOY_REGISTER_POLL_SIZE
+
+        if (err != FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL)      //don't use the registers past FREEPLAY_JOY_REGISTER_POLL_SIZE for polling
+        	return -1;//IRQ_UNHANDLED;
+
+
+        //digital input0
+        temp_byte = regs.input0;
+        temp_byte = ~temp_byte;         //the chip returns 0 for pressed, so invert all bits
+        btn_x = temp_byte & 0b1;
+        temp_byte >>= 1;
+        btn_y = temp_byte & 0b1;
+        temp_byte >>= 1;
+        btn_start = temp_byte & 0b1;
+        temp_byte >>= 1;
+        btn_select = temp_byte & 0b1;
+        temp_byte >>= 1;
+        btn_l = temp_byte & 0b1;
+        temp_byte >>= 1;
+        btn_r = temp_byte & 0b1;
+        temp_byte >>= 1;
+        btn_a = temp_byte & 0b1;
+        temp_byte >>= 1;
+        btn_b = temp_byte & 0b1;
+
+        //digital input1
+        temp_byte = regs.input1;
+        temp_byte = ~temp_byte;         //the chip returns 0 for pressed, so invert all bits
+        dpad_u = temp_byte & 0b1;
+        temp_byte >>= 1;
+        dpad_d = temp_byte & 0b1;
+        temp_byte >>= 1;
+        dpad_l = temp_byte & 0b1;
+        temp_byte >>= 1;
+        dpad_r = temp_byte & 0b1;
+        temp_byte >>= 1;
+        btn_l2 = temp_byte & 0b1;
+        temp_byte >>= 1;
+        btn_r2 = temp_byte & 0b1;
+        temp_byte >>= 1;
+        btn_power = temp_byte & 0b1;
+
+        //digital input2
+        temp_byte = regs.input2;
+        temp_byte = ~temp_byte;         //the chip returns 0 for pressed, so invert all bits
+        btn_thumbl = temp_byte & 0b1;
+        temp_byte >>= 1;
+        btn_thumbr = temp_byte & 0b1;
+
+        input_report_key(input, BTN_A, btn_a);
+        input_report_key(input, BTN_B, btn_b);
+        input_report_key(input, BTN_X, btn_x);
+        input_report_key(input, BTN_Y, btn_y);
+        input_report_key(input, BTN_START, btn_start);
+        input_report_key(input, BTN_SELECT, btn_select);
+        input_report_key(input, BTN_TL, btn_l);
+        input_report_key(input, BTN_TR, btn_r);
+        input_report_key(input, BTN_MODE, btn_power);
+
+        input_report_key(input, BTN_TL2, btn_l2);
+        input_report_key(input, BTN_TR2, btn_r2);
+
+        input_report_key(input, BTN_THUMBL, btn_thumbl);
+        input_report_key(input, BTN_THUMBR, btn_thumbr);
+
+        input_report_abs(input, ABS_HAT0X, dpad_r - dpad_l);
+        input_report_abs(input, ABS_HAT0Y, dpad_u - dpad_d);
+
+	return IRQ_HANDLED;
+}
 
 static void freeplay_i2c_poll(struct input_dev *input)
 {
@@ -173,6 +258,7 @@ static int freeplay_probe(struct i2c_client *client)
 	int err;
 
 	dev_info(&client->dev, "Freeplay i2c Joystick: probe\n");
+	dev_info(&client->dev, "Freeplay i2c Joystick: interrupt=%d\n", client->irq);
 
 	err = i2c_smbus_read_i2c_block_data(client, FREEPLAY_JOY_REGISTER_INDEX,
 					    sizeof(regs), (u8 *)&regs);
@@ -196,7 +282,6 @@ static int freeplay_probe(struct i2c_client *client)
         if (err < 0)
                 return err;
 	dev_info(&client->dev, "Freeplay i2c Joystick: adc_conf=0x%02X\n", err);
-	
 
 	priv->client = client;
 	snprintf(priv->phys, sizeof(priv->phys),
@@ -256,18 +341,28 @@ static int freeplay_probe(struct i2c_client *client)
 	input_set_min_poll_interval(priv->dev, FREEPLAY_JOY_POLL_MS-2);
 	input_set_max_poll_interval(priv->dev, FREEPLAY_JOY_POLL_MS+2);
 
+	err = devm_request_threaded_irq(&client->dev, client->irq, NULL, fpjoy_irq,
+					  IRQF_ONESHOT, client->name, priv);
+	if (err) {
+		dev_err(&client->dev, "Unable to request touchscreen IRQ, err: %d\n",
+			err);
+		return err;
+	}
+
 	err = input_register_device(priv->dev);
 	if (err) {
 		dev_err(&client->dev, "failed to register Freeplay joystick: %d\n", err);
 		return err;
 	}
 
+
+
 	return 0;
 }
 
 #ifdef CONFIG_OF
 static const struct of_device_id of_freeplay_match[] = {
-	{ .compatible = "freeplay,freeplay-joystick", },
+	{ .compatible = "freeplaytech,freeplay-joystick", },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, of_freeplay_match);

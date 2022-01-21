@@ -8,20 +8,38 @@
 	compatible = "brcm,bcm2835";
 
 	fragment@0 {
-		target = <&i2c_arm>;
+		target = <&gpio>;
+		__overlay__ {
+			fpjoy_pins: fpjoy_pins {
+				brcm,pins = <40>; // interrupt
+				brcm,function = <0>; // in
+				brcm,pull = <2>; // pull-up
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&i2c1>;
+//		target = <&i2c_arm>;
 		__overlay__ {
 			#address-cells = <1>;
 			#size-cells = <0>;
 			status = "okay";
+                        clock-frequency = <400000>; //???
 
 			fpjoy: fpjoy@30 {
 				compatible = "freeplaytech,freeplay-joystick";
 				reg = <0x30>;
-				status = "okay";
+				pinctrl-names = "default";
+				pinctrl-0 = <&fpjoy_pins>;
+				interrupt-parent = <&gpio>;
+				interrupts = <40 2>; // high-to-low edge triggered
 			};
 		};
 	};
 	__overrides__ {
+		interrupt = <&fpjoy_pins>, "brcm,pins:0",
+			<&fpjoy>,"interrupts:0";
 		addr = <&fpjoy>,"reg:0";
 	};
 };
