@@ -646,7 +646,7 @@ inline void receive_i2c_callback_main_address(int i2c_bytes_received)
       uint8_t mask;
       temp &= 0x0F;   //the top nibble is not writeable
       mask = (i2c_joystick_registers.adc_conf_bits >> 4);   //the high nibble defines what ADCs are available
-      i2c_joystick_registers.adc_conf_bits = i2c_joystick_registers.adc_conf_bits | (temp & mask);     //turn on any bits that are available and requested
+      i2c_joystick_registers.adc_conf_bits = temp & mask;     //turn on any bits that are available and requested (turn all others off)
       eeprom_data.joy_adc_conf_bits = i2c_joystick_registers.adc_conf_bits;
       setup_adc0_to_adc3();   //turn on/off ADC pullups
       eeprom_save();
