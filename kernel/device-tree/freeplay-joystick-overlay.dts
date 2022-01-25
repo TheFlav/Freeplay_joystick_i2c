@@ -33,7 +33,10 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&fpjoy_pins>;
 				interrupt-parent = <&gpio>;
-				interrupts = <40 2>; // high-to-low edge triggered
+				interrupts = <40 2>;		// high-to-low edge triggered
+				num-analogsticks = <0>;		//default to digital only 0=digital, 1=single analog stick (2ADCs), 2=dual analog sticks (4ADCs)
+				num-digitalbuttons = <11>;	//number of digital inputs to turn on and report to the system
+				num-dpads = <1>;		//1=process/report dpad up/down/left/right, 0=no dpad
 			};
 		};
 	};
@@ -41,5 +44,31 @@
 		interrupt = <&fpjoy_pins>, "brcm,pins:0",
 			<&fpjoy>,"interrupts:0";
 		addr = <&fpjoy>,"reg:0";
+		analogsticks = <&fpjoy>,"num-analogsticks:0";
+		digitalbuttons = <&fpjoy>,"num-digitalbuttons:0";
+		dpads = <&fpjoy>,"num-dpads:0";
+/*		joy0-fuzz-x
+		joy0-fuzz-y
+		joy0-flat-x
+		joy0-flat-y
+		joy0-min-x
+		joy0-min-y
+		joy0-max-x
+		joy0-max-y
+		joy0-swapped-x-y
+		joy0-inverted-x
+		joy0-inverted-y
+		joy1-fuzz-x
+		joy1-fuzz-y
+		joy1-flat-x
+		joy1-flat-y
+		joy1-min-x
+		joy1-min-y
+		joy1-max-x
+		joy1-max-y
+		joy1-swapped-x-y
+		joy1-inverted-x
+		joy1-inverted-y
+*/
 	};
 };
