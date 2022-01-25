@@ -35,7 +35,7 @@
 #define FREEPLAY_JOY_AXIS_FLAT 10                //guess based on https://github.com/TheFlav/Freeplay_joystick_i2c_attiny/blob/main/uhid/uhid-i2c-gamepad.c
 
 //#define FREEPLAY_JOY_POLL_MS 8	//targetting 125Hz
-#define FREEPLAY_JOY_POLL_MS 1000//test	//targetting 125Hz
+#define FREEPLAY_JOY_POLL_MS 5000	//targetting 125Hz
 
 struct freeplay_joy {
 	char phys[32];
@@ -78,11 +78,16 @@ static irqreturn_t fpjoy_irq(int irq, void *irq_data)
 	uint8_t temp_byte;
 	int err;
 
+//        dev_info(&priv->client->dev, "Freeplay i2c Joystick, fpjoy_irq\n");
+
         err = i2c_smbus_read_i2c_block_data(priv->client, FREEPLAY_JOY_REGISTER_INDEX,
                                             FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL, (u8 *)&regs);       //only poll the FREEPLAY_JOY_REGISTER_POLL_SIZE
 
         if (err != FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL)      //don't use the registers past FREEPLAY_JOY_REGISTER_POLL_SIZE for polling
+	{
+	        dev_info(&priv->client->dev, "Freeplay i2c Joystick, fpjoy_irq: err=%d\n", err);
         	return -1;//IRQ_UNHANDLED;
+	}
 
 
         //digital input0
@@ -146,6 +151,8 @@ static irqreturn_t fpjoy_irq(int irq, void *irq_data)
 
         input_report_abs(input, ABS_HAT0X, dpad_r - dpad_l);
         input_report_abs(input, ABS_HAT0Y, dpad_u - dpad_d);
+
+	input_sync(input);
 
 	return IRQ_HANDLED;
 }
@@ -342,7 +349,7 @@ static int freeplay_probe(struct i2c_client *client)
 	input_set_max_poll_interval(priv->dev, FREEPLAY_JOY_POLL_MS+2);
 
 	err = devm_request_threaded_irq(&client->dev, client->irq, NULL, fpjoy_irq,
-					  IRQF_ONESHOT, client->name, priv);
+					  IRQF_TRIGGER_FALLING | IRQF_ONESHOT, client->name, priv);
 	if (err) {
 		dev_err(&client->dev, "Unable to request touchscreen IRQ, err: %d\n",
 			err);
