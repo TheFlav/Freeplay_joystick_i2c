@@ -192,8 +192,8 @@ volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. W
  * PC1 = IO0_1 = BTN_Y
  * PC2 = IO0_2 = BTN_START
  * PC3 = IO0_3 = BTN_SELECT
- * PC4 = IO0_4 = BTN_L
- * PC5 = IO0_5 = BTN_R
+ * PC4 = IO0_4 = BTN_L    (AKA BTN_TL in Linux)
+ * PC5 = IO0_5 = BTN_R    (AKA BTN_TR in Linux)
  * PB6 = IO0_6 = BTN_A
  * PB7 = IO0_7 = BTN_B
  * 
@@ -203,8 +203,8 @@ volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. W
  * A18 = IO1_1 = DOWN
  * A18 = IO1_2 = LEFT
  * A18 = IO1_3 = RIGHT
- * PB3 = IO1_4 = BTN_L2
- * PB4 = IO1_5 = BTN_R2   //PB4 can be turned into A7 to do an analog resistor ladder if we need BTN_THUMBL and BTN_THUMBR buttons
+ * PB3 = IO1_4 = BTN_L2    (AKA BTN_TL2 in Linux)
+ * PB4 = IO1_5 = BTN_R2    (AKA BTN_TR2 in Linux)   //PB4 can be turned into A7 to do an analog resistor ladder if we need BTN_THUMBL and BTN_THUMBR buttons
  * PB5 = IO1_6 = BTN_POWER
  * --- = IO1_7 = always high
  * 
@@ -398,7 +398,7 @@ void setup_config0(void)
 {
   if(i2c_joystick_registers.config0 & CONFIG0_USE_PB4_RESISTOR_LADDER)
   {
-    
+    //there's really nothing to do here, at the moment 
   }
 }
 
@@ -545,6 +545,16 @@ void read_digital_inputs(void)
   //if we are not using the PB4 resistor ladder, then the above code would already have done a digital read for PB4 AKA BTN_TR2
   if(i2c_joystick_registers.config0 & CONFIG0_USE_PB4_RESISTOR_LADDER)
   {
+    /*
+     * PB4 resistor ladder calibrated using spreadsheet for 
+     *    GND BTN_TR2      50k resistor to PB4        
+     *    GND BTN_THUMBL  100k resistor to PB4
+     *    GND BTN_THUMBR  200k resistor to PB4
+     *                                     PB4  200K resistor pullup to 3.3v
+     *                                     
+     * In this way, if BTN_THUMBL and BTN_THUMBR are not populated/used, then PB4 can be a digital input for BTN_R2 (AKA BTN_TR2)
+     */
+    
     word adc = analogRead(PIN_PB4);
 
     if(adc > 767)
@@ -603,8 +613,6 @@ void read_digital_inputs(void)
       input1 = input1 & ~INPUT1_BTN_R2;
   }
 
-
-  #warning PB4 resistor ladder not calibrated
 
   
 #endif
