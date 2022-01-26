@@ -26,11 +26,16 @@
 #include <linux/module.h>
 #include <linux/interrupt.h>
 
+//#define DEBUG
+
 
 #define FREEPLAY_JOY_REGISTER_DIGITAL_INDEX		0x00
 #define FREEPLAY_JOY_REGISTER_ANALOG_INDEX      0x04
 #define FREEPLAY_JOY_REGISTER_ADC_CONF_INDEX	0x09
+#define FREEPLAY_JOY_REGISTER_CONFIG0_INDEX     0x0A
 #define FREEPLAY_JOY_REGISTER_BASE_INDEX        0x00
+
+#define FREEPLAY_JOY_REGISTER_CONFIG0_THUMB_ON (1<<7)
 
 #define FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL 3
 #define FREEPLAY_JOY_REGISTER_POLL_SIZE_SINGLE_ANALOG 3
@@ -43,7 +48,7 @@
 #define FREEPLAY_JOY_AXIS_FLAT 10                //guess based on https://github.com/TheFlav/Freeplay_joystick_i2c_attiny/blob/main/uhid/uhid-i2c-gamepad.c
 
 #define FREEPLAY_POLL_TARGET_HZ   125
-#define FREEPLAY_POLL_DIGITAL_DIVISOR 1250 //(FREEPLAY_POLL_TARGET_HZ / 1)             //targetting 1Hz
+#define FREEPLAY_POLL_DIGITAL_DIVISOR (FREEPLAY_POLL_TARGET_HZ / 1)             //targetting 1Hz
 #define FREEPLAY_JOY_POLL_MS (1000 / FREEPLAY_POLL_TARGET_HZ)                   //8ms = (1000 / FREEPLAY_POLL_TARGET_HZ) = targetting 125Hz
 
 #define FREEPLAY_MAX_DIGITAL_BUTTONS 17
@@ -149,7 +154,18 @@ struct freeplay_joy {
     u32 joy0_swapped_x_y;
     u32 joy1_swapped_x_y;
     
-    u16 poll_iterations_digital_skip;
+    u8 poll_iterations_digital_skip;
+    
+#ifdef DEBUG
+    u16 adc0_detected_min;
+    u16 adc0_detected_max;
+    u16 adc1_detected_min;
+    u16 adc1_detected_max;
+    u16 adc2_detected_min;
+    u16 adc2_detected_max;
+    u16 adc3_detected_min;
+    u16 adc3_detected_max;
+#endif
     
     bool using_irq_for_digital_inputs;
 };
@@ -257,12 +273,11 @@ static irqreturn_t fpjoy_irq(int irq, void *irq_data)
     
     if (err != FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL)      //don't use the registers past FREEPLAY_JOY_REGISTER_POLL_SIZE for polling
     {
-        dev_info(&priv->client->dev, "Freeplay i2c Joystick, fpjoy_irq: err=%d\n", err);
+        dev_err(&priv->client->dev, "Freeplay i2c Joystick, fpjoy_irq: i2c_smbus_read_i2c_block_data returned %d\n", err);
         return -1;//IRQ_UNHANDLED;
     }
     
     fpjoy_report_digital_inputs(input, priv->num_digitalbuttons, priv->num_dpads, regs.input0, regs.input1, regs.input2, true);
-    
     
     return IRQ_HANDLED;
 }
@@ -325,6 +340,32 @@ static void freeplay_i2c_get_and_report_inputs(struct input_dev *input, bool pol
             adc0 = (regs.a0_msb << 4) | (regs.a1a0_lsb & 0x0F);
             adc1 = (regs.a1_msb << 4) | (regs.a1a0_lsb >> 4);
             
+#ifdef DEBUG
+            if(adc0 < priv->adc0_detected_min)
+            {
+                priv->adc0_detected_min = adc0;
+                dev_info(&priv->client->dev, "Freeplay i2c Joystick, freeplay_i2c_get_and_report_inputs: new adc0 min=0x%02X\n", priv->adc0_detected_min);
+            }
+            
+            if(adc1 < priv->adc1_detected_min)
+            {
+                priv->adc1_detected_min = adc1;
+                dev_info(&priv->client->dev, "Freeplay i2c Joystick, freeplay_i2c_get_and_report_inputs: new adc1 min=0x%02X\n", priv->adc1_detected_min);
+            }
+
+            if(adc0 > priv->adc0_detected_max)
+            {
+                priv->adc0_detected_max = adc0;
+                dev_info(&priv->client->dev, "Freeplay i2c Joystick, freeplay_i2c_get_and_report_inputs: new adc0 max=0x%02X\n", priv->adc0_detected_max);
+            }
+
+            if(adc1 > priv->adc1_detected_max)
+            {
+                priv->adc1_detected_max = adc1;
+                dev_info(&priv->client->dev, "Freeplay i2c Joystick, freeplay_i2c_get_and_report_inputs: new adc1 max=0x%02X\n", priv->adc1_detected_max);
+            }
+#endif
+            
             input_report_abs(input, ABS_X, adc0);
             input_report_abs(input, ABS_Y, adc1);
             
@@ -333,6 +374,32 @@ static void freeplay_i2c_get_and_report_inputs(struct input_dev *input, bool pol
                 adc2 = (regs.a2_msb << 4) | (regs.a3a2_lsb & 0x0F);
                 adc3 = (regs.a3_msb << 4) | (regs.a3a2_lsb >> 4);
 
+#ifdef DEBUG
+                if(adc2 < priv->adc2_detected_min)
+                {
+                    priv->adc2_detected_min = adc2;
+                    dev_info(&priv->client->dev, "Freeplay i2c Joystick, freeplay_i2c_get_and_report_inputs: new adc2 min=0x%02X\n", priv->adc2_detected_min);
+                }
+                
+                if(adc3 < priv->adc3_detected_min)
+                {
+                    priv->adc3_detected_min = adc3;
+                    dev_info(&priv->client->dev, "Freeplay i2c Joystick, freeplay_i2c_get_and_report_inputs: new adc3 min=0x%02X\n", priv->adc3_detected_min);
+                }
+
+                if(adc2 > priv->adc2_detected_max)
+                {
+                    priv->adc2_detected_max = adc2;
+                    dev_info(&priv->client->dev, "Freeplay i2c Joystick, freeplay_i2c_get_and_report_inputs: new adc2 max=0x%02X\n", priv->adc2_detected_max);
+                }
+
+                if(adc3 > priv->adc3_detected_max)
+                {
+                    priv->adc3_detected_max = adc3;
+                    dev_info(&priv->client->dev, "Freeplay i2c Joystick, freeplay_i2c_get_and_report_inputs: new adc3 max=0x%02X\n", priv->adc3_detected_max);
+                }
+#endif
+                
                 input_report_abs(input, ABS_RX, adc2);
                 input_report_abs(input, ABS_RY, adc3);
             }
@@ -390,6 +457,7 @@ static int freeplay_probe(struct i2c_client *client)
     int err;
     u8 adc_mask;
     u8 i;
+    u8 new_config0;
     
     dev_info(&client->dev, "Freeplay i2c Joystick: probe\n");
     dev_info(&client->dev, "Freeplay i2c Joystick: interrupt=%d\n", client->irq);
@@ -516,11 +584,32 @@ static int freeplay_probe(struct i2c_client *client)
     err = i2c_smbus_write_byte_data(client, FREEPLAY_JOY_REGISTER_ADC_CONF_INDEX, adc_mask);       //turn on requested ADCs
     if (err < 0)
         return err;
-    
+
     err = i2c_smbus_read_byte_data(client, FREEPLAY_JOY_REGISTER_ADC_CONF_INDEX);
     if (err < 0)
         return err;
     dev_info(&client->dev, "Freeplay i2c Joystick: adc_conf=0x%02X\n", err);
+
+    
+    if(priv->num_digitalbuttons > 11)       //if we're using more than 11 buttons, then turn on THUMBL and THUMBR
+    {
+        new_config0 = regs.config0 | FREEPLAY_JOY_REGISTER_CONFIG0_THUMB_ON;        //turn THUMB support on
+    }
+    else
+    {
+        new_config0 = regs.config0 & ~FREEPLAY_JOY_REGISTER_CONFIG0_THUMB_ON;       //turn THUMB support OFF
+    }
+    
+
+    err = i2c_smbus_write_byte_data(client, FREEPLAY_JOY_REGISTER_CONFIG0_INDEX, new_config0);       //set new_config0
+    if (err < 0)
+        return err;
+
+    err = i2c_smbus_read_byte_data(client, FREEPLAY_JOY_REGISTER_CONFIG0_INDEX);
+    if (err < 0)
+        return err;
+    dev_info(&client->dev, "Freeplay i2c Joystick: config0=0x%02X (new_config0=0x%02X)\n", err, new_config0);
+
     
     priv->client = client;
     snprintf(priv->phys, sizeof(priv->phys),
@@ -625,7 +714,17 @@ static int freeplay_probe(struct i2c_client *client)
         return err;
     }
     
-    
+#ifdef DEBUG
+    priv->adc0_detected_min = 0xFFF;
+    priv->adc0_detected_max = 0x000;
+    priv->adc1_detected_min = 0xFFF;
+    priv->adc1_detected_max = 0x000;
+    priv->adc2_detected_min = 0xFFF;
+    priv->adc2_detected_max = 0x000;
+    priv->adc3_detected_min = 0xFFF;
+    priv->adc3_detected_max = 0x000;
+#endif
+
     
     return 0;
 }

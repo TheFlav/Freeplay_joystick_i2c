@@ -37,10 +37,10 @@
 				num-analogsticks = <0>;		//default to digital only 0=digital, 1=single analog stick (2ADCs), 2=dual analog sticks (4ADCs)
 				num-digitalbuttons = <11>;	//number of digital inputs to turn on and report to the system
 				num-dpads = <1>;		//1=process/report dpad up/down/left/right, 0=no dpad
-				joy0-x-params = <0 0xFFF 16 10 0>;	// < min max fuzz flat inverted >
-				joy0-y-params = <0 0xFFF 16 10 0>;      // < min max fuzz flat inverted >
-				joy1-x-params = <0 0xFFF 16 10 0>;      // < min max fuzz flat inverted >
-				joy1-y-params = <0 0xFFF 16 10 0>;      // < min max fuzz flat inverted >
+				joy0-x-params = <0 0xFFF 32 300 0>;	// < min max fuzz flat inverted >
+				joy0-y-params = <0 0xFFF 32 300 0>;      // < min max fuzz flat inverted >
+				joy1-x-params = <0 0xFFF 32 300 0>;      // < min max fuzz flat inverted >
+				joy1-y-params = <0 0xFFF 32 300 0>;      // < min max fuzz flat inverted >
 				joy0-swapped-x-y = <0>;			// if x/y is swapped (joystick rotated 90 or 270)
 				joy1-swapped-x-y = <0>;                 // if x/y is swapped (joystick rotated 90 or 270)
 			};
