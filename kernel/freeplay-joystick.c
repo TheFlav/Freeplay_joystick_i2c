@@ -266,15 +266,13 @@ static irqreturn_t fpjoy_irq(int irq, void *irq_data)
 
     int err;
     
-    //        dev_info(&priv->client->dev, "Freeplay i2c Joystick, fpjoy_irq\n");
-    
     err = i2c_smbus_read_i2c_block_data(priv->client, FREEPLAY_JOY_REGISTER_DIGITAL_INDEX,
                                         FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL, (u8 *)&regs);       //only poll the FREEPLAY_JOY_REGISTER_POLL_SIZE
     
     if (err != FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL)      //don't use the registers past FREEPLAY_JOY_REGISTER_POLL_SIZE for polling
     {
         dev_err(&priv->client->dev, "Freeplay i2c Joystick, fpjoy_irq: i2c_smbus_read_i2c_block_data returned %d\n", err);
-        return -1;//IRQ_UNHANDLED;
+        return IRQ_NONE;
     }
     
     fpjoy_report_digital_inputs(input, priv->num_digitalbuttons, priv->num_dpads, regs.input0, regs.input1, regs.input2, true);
@@ -459,28 +457,33 @@ static int freeplay_probe(struct i2c_client *client)
     u8 i;
     u8 new_config0;
     
-    dev_info(&client->dev, "Freeplay i2c Joystick: probe\n");
-    dev_info(&client->dev, "Freeplay i2c Joystick: interrupt=%d\n", client->irq);
-    
     err = i2c_smbus_read_i2c_block_data(client, FREEPLAY_JOY_REGISTER_BASE_INDEX,
                                         sizeof(regs), (u8 *)&regs);
     if (err < 0)
+    {
+        dev_err(&client->dev, "Freeplay i2c Joystick fatal i2c error %d\n", err);
         return err;
+    }
     if (err != sizeof(regs))
+    {
+        dev_err(&client->dev, "Freeplay i2c Joystick fatal i2c IO mismatch.  Received %d bytes.  Requested %d bytes.\n", err, sizeof(regs));
         return -EIO;
+    }
     
-    dev_info(&client->dev, "Freeplay i2c Joystick, ManufID: 0x%02X, DeviceID: 0x%02X, Ver: %u\n",
-             regs.manuf_ID, regs.device_ID, regs.version_ID);
+    dev_info(&client->dev, "Freeplay i2c Joystick Found, ManufID: 0x%02X, DeviceID: 0x%02X, Ver: %u\n", regs.manuf_ID, regs.device_ID, regs.version_ID);
     
     priv = devm_kzalloc(&client->dev, sizeof(*priv), GFP_KERNEL);
     if (!priv)
+    {
+        dev_err(&client->dev, "Freeplay i2c Joystick fatal error.  No memory available for allocation.\n");
         return -ENOMEM;
+    }
     
     err = device_property_read_u32(&client->dev, "num-analogsticks", &priv->num_analogsticks);
     if(err)
     {
         priv->num_analogsticks = 0;
-        dev_info(&client->dev, "Freeplay i2c Joystick: error reading analogsticks property\n");
+        //dev_dbg(&client->dev, "Freeplay i2c Joystick: error reading analogsticks property\n");
     }
     
     if(priv->num_analogsticks > 2)      //anything over 2 is an error
@@ -494,18 +497,15 @@ static int freeplay_probe(struct i2c_client *client)
     if(err)
     {
         priv->num_digitalbuttons = 11;
-        dev_info(&client->dev, "Freeplay i2c Joystick: error reading digitalbuttons property\n");
+        //dev_dbg(&client->dev, "Freeplay i2c Joystick: error reading digitalbuttons property\n");
     }
 
     err = device_property_read_u32(&client->dev, "num-dpads", &priv->num_dpads);
     if(err)
     {
         priv->num_dpads = 1;
-        dev_info(&client->dev, "Freeplay i2c Joystick: error reading num-dpads property\n");
+        //dev_dbg(&client->dev, "Freeplay i2c Joystick: error reading num-dpads property\n");
     }
-    
-    dev_info(&client->dev, "Freeplay i2c Joystick: analogsticks=%d digitalbuttons=%d dpad=%d\n", priv->num_analogsticks, priv->num_digitalbuttons, priv->num_dpads);
-
     
     err = device_property_read_u32_array(&client->dev, "joy0-x-params", (u32 *)&priv->joy0_x, sizeof(priv->joy0_x) / 4);
     if (err) {
@@ -514,10 +514,10 @@ static int freeplay_probe(struct i2c_client *client)
         priv->joy0_x.fuzz = FREEPLAY_JOY_AXIS_FUZZ;
         priv->joy0_x.flat = FREEPLAY_JOY_AXIS_FLAT;
         priv->joy0_x.inverted = 0;
-        dev_info(&client->dev, "Freeplay i2c Joystick: error %d reading joy0-x-params property\n", err);
+        //dev_err(&client->dev, "Freeplay i2c Joystick: error %d reading joy0-x-params property\n", err);
     }
     
-    dev_info(&client->dev, "Freeplay i2c Joystick 0 X: min=%d max=%d fuzz=%d flat=%d inverted=%d\n", priv->joy0_x.min, priv->joy0_x.max, priv->joy0_x.fuzz, priv->joy0_x.flat, priv->joy0_x.inverted);
+    //dev_dbg(&client->dev, "Freeplay i2c Joystick 0 X: min=%d max=%d fuzz=%d flat=%d inverted=%d\n", priv->joy0_x.min, priv->joy0_x.max, priv->joy0_x.fuzz, priv->joy0_x.flat, priv->joy0_x.inverted);
 
     
     err = device_property_read_u32_array(&client->dev, "joy0-y-params", (u32 *)&priv->joy0_y, sizeof(priv->joy0_y) / 4);
@@ -527,10 +527,10 @@ static int freeplay_probe(struct i2c_client *client)
         priv->joy0_y.fuzz = FREEPLAY_JOY_AXIS_FUZZ;
         priv->joy0_y.flat = FREEPLAY_JOY_AXIS_FLAT;
         priv->joy0_y.inverted = 0;
-        dev_info(&client->dev, "Freeplay i2c Joystick: error %d reading joy0-y-params property\n", err);
+        //dev_dbg(&client->dev, "Freeplay i2c Joystick: error %d reading joy0-y-params property\n", err);
     }
     
-    dev_info(&client->dev, "Freeplay i2c Joystick 0 Y: min=%d max=%d fuzz=%d flat=%d inverted=%d\n", priv->joy0_y.min, priv->joy0_y.max, priv->joy0_y.fuzz, priv->joy0_y.flat, priv->joy0_y.inverted);
+    //dev_dbg(&client->dev, "Freeplay i2c Joystick 0 Y: min=%d max=%d fuzz=%d flat=%d inverted=%d\n", priv->joy0_y.min, priv->joy0_y.max, priv->joy0_y.fuzz, priv->joy0_y.flat, priv->joy0_y.inverted);
 
     
     err = device_property_read_u32_array(&client->dev, "joy1-x-params", (u32 *)&priv->joy1_x, sizeof(priv->joy1_x) / 4);
@@ -540,10 +540,10 @@ static int freeplay_probe(struct i2c_client *client)
         priv->joy1_x.fuzz = FREEPLAY_JOY_AXIS_FUZZ;
         priv->joy1_x.flat = FREEPLAY_JOY_AXIS_FLAT;
         priv->joy1_x.inverted = 0;
-        dev_info(&client->dev, "Freeplay i2c Joystick: error %d reading joy1-x-params property\n", err);
+        //dev_dbg(&client->dev, "Freeplay i2c Joystick: error %d reading joy1-x-params property\n", err);
     }
     
-    dev_info(&client->dev, "Freeplay i2c Joystick 1 X: min=%d max=%d fuzz=%d flat=%d inverted=%d\n", priv->joy1_x.min, priv->joy1_x.max, priv->joy1_x.fuzz, priv->joy1_x.flat, priv->joy1_x.inverted);
+    //dev_dbg(&client->dev, "Freeplay i2c Joystick 1 X: min=%d max=%d fuzz=%d flat=%d inverted=%d\n", priv->joy1_x.min, priv->joy1_x.max, priv->joy1_x.fuzz, priv->joy1_x.flat, priv->joy1_x.inverted);
 
     
     err = device_property_read_u32_array(&client->dev, "joy1-y-params", (u32 *)&priv->joy1_y, sizeof(priv->joy1_y) / 4);
@@ -553,24 +553,24 @@ static int freeplay_probe(struct i2c_client *client)
         priv->joy1_y.fuzz = FREEPLAY_JOY_AXIS_FUZZ;
         priv->joy1_y.flat = FREEPLAY_JOY_AXIS_FLAT;
         priv->joy1_y.inverted = 0;
-        dev_info(&client->dev, "Freeplay i2c Joystick: error %d reading joy1-y-params property\n", err);
+        //dev_dbg(&client->dev, "Freeplay i2c Joystick: error %d reading joy1-y-params property\n", err);
     }
     
-    dev_info(&client->dev, "Freeplay i2c Joystick 1 Y: min=%d max=%d fuzz=%d flat=%d inverted=%d\n", priv->joy1_y.min, priv->joy1_y.max, priv->joy1_y.fuzz, priv->joy1_y.flat, priv->joy1_y.inverted);
+    //dev_dbg(&client->dev, "Freeplay i2c Joystick 1 Y: min=%d max=%d fuzz=%d flat=%d inverted=%d\n", priv->joy1_y.min, priv->joy1_y.max, priv->joy1_y.fuzz, priv->joy1_y.flat, priv->joy1_y.inverted);
 
     
     err = device_property_read_u32(&client->dev, "joy0-swapped-x-y", &priv->joy0_swapped_x_y);
     if(err)
     {
         priv->joy0_swapped_x_y = 0;
-        dev_info(&client->dev, "Freeplay i2c Joystick: error reading joy0_swapped_x_y property\n");
+        //dev_dbg(&client->dev, "Freeplay i2c Joystick: error reading joy0_swapped_x_y property\n");
     }
     
     err = device_property_read_u32(&client->dev, "joy1-swapped-x-y", &priv->joy1_swapped_x_y);
     if(err)
     {
         priv->joy1_swapped_x_y = 0;
-        dev_info(&client->dev, "Freeplay i2c Joystick: error reading joy1_swapped_x_y property\n");
+        //dev_dbg(&client->dev, "Freeplay i2c Joystick: error reading joy1_swapped_x_y property\n");
     }
     
     if(priv->num_analogsticks == 1)
@@ -588,7 +588,7 @@ static int freeplay_probe(struct i2c_client *client)
     err = i2c_smbus_read_byte_data(client, FREEPLAY_JOY_REGISTER_ADC_CONF_INDEX);
     if (err < 0)
         return err;
-    dev_info(&client->dev, "Freeplay i2c Joystick: adc_conf=0x%02X\n", err);
+    //dev_dbg(&client->dev, "Freeplay i2c Joystick: adc_conf=0x%02X\n", err);
 
     
     if(priv->num_digitalbuttons > 11)       //if we're using more than 11 buttons, then turn on THUMBL and THUMBR
@@ -608,12 +608,11 @@ static int freeplay_probe(struct i2c_client *client)
     err = i2c_smbus_read_byte_data(client, FREEPLAY_JOY_REGISTER_CONFIG0_INDEX);
     if (err < 0)
         return err;
-    dev_info(&client->dev, "Freeplay i2c Joystick: config0=0x%02X (new_config0=0x%02X)\n", err, new_config0);
+    //dev_dbg(&client->dev, "Freeplay i2c Joystick: config0=0x%02X (new_config0=0x%02X)\n", err, new_config0);
 
     
     priv->client = client;
-    snprintf(priv->phys, sizeof(priv->phys),
-             "i2c/%s", dev_name(&client->dev));
+    snprintf(priv->phys, sizeof(priv->phys), "i2c/%s", dev_name(&client->dev));
     i2c_set_clientdata(client, priv);
     
     priv->dev = devm_input_allocate_device(&client->dev);
@@ -656,7 +655,7 @@ static int freeplay_probe(struct i2c_client *client)
         err = devm_request_threaded_irq(&client->dev, client->irq, NULL, fpjoy_irq,
                                         IRQF_TRIGGER_FALLING | IRQF_ONESHOT, client->name, priv);
         if (err) {
-            dev_err(&client->dev, "Unable to request Freeplay joystick IRQ, err: %d\n", err);
+            dev_dbg(&client->dev, "Unable to request Freeplay joystick IRQ, err: %d\n", err);
             priv->using_irq_for_digital_inputs = false;
         }
         else
