@@ -172,26 +172,26 @@ struct freeplay_joy {
 
 struct freeplay_i2c_register_struct
 {
-    uint8_t input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
-    uint8_t input1;          // Reg: 0x01 - INPUT port 1 (digital buttons/dpad)
-    uint8_t input2;          // Reg: 0x03 - INPUT port 2 (extended digital buttons)     BTN_Z and BTN_C among other things
-    uint8_t a0_msb;          // Reg: 0x04 - ADC0 most significant 8 bits
-    uint8_t a1_msb;          // Reg: 0x05 - ADC1 most significant 8 bits
-    uint8_t a1a0_lsb;        // Reg: 0x06 - high nibble is a1 least significant 4 bits, low nibble is a0 least significant 4 bits
-    uint8_t a2_msb;          // Reg: 0x07 - ADC2 most significant 8 bits
-    uint8_t a3_msb;          // Reg: 0x08 - ADC2 most significant 8 bits
-    uint8_t a3a2_lsb;        // Reg: 0x09 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
-    uint8_t adc_conf_bits;   // Reg: 0x09 - R/W
+    u8 input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
+    u8 input1;          // Reg: 0x01 - INPUT port 1 (digital buttons/dpad)
+    u8 input2;          // Reg: 0x03 - INPUT port 2 (extended digital buttons)     BTN_Z and BTN_C among other things
+    u8 a0_msb;          // Reg: 0x04 - ADC0 most significant 8 bits
+    u8 a1_msb;          // Reg: 0x05 - ADC1 most significant 8 bits
+    u8 a1a0_lsb;        // Reg: 0x06 - high nibble is a1 least significant 4 bits, low nibble is a0 least significant 4 bits
+    u8 a2_msb;          // Reg: 0x07 - ADC2 most significant 8 bits
+    u8 a3_msb;          // Reg: 0x08 - ADC2 most significant 8 bits
+    u8 a3a2_lsb;        // Reg: 0x09 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
+    u8 adc_conf_bits;   // Reg: 0x09 - R/W
     //             High Nibble is read-only.  ADC PRESENT = It tells which ADCs are available.
     //             Low Nibble is read/write.  ADC ON/OFF = The system can read/write what ADCs are sampled and used for a#_msb and lsb above
     //                                                     (but can only turn ON ADCs that are present on in the high nibble.)
-    uint8_t config0;         // Reg: 0x0A - R/W
+    u8 config0;         // Reg: 0x0A - R/W
     //             config register (turn on/off PB4 resistor ladder)
-    uint8_t adc_res;         // Reg: 0x0B - current ADC resolution (even though the above a0-a3 will always return 12-bit)
-    uint8_t rfu0;            // Reg: 0x0C - reserved for future use (or device-specific use)
-    uint8_t manuf_ID;        // Reg: 0x0D - manuf_ID:device_ID:version_ID needs to be a unique ID that defines a specific device and how it will use above registers
-    uint8_t device_ID;       // Reg: 0x0E -
-    uint8_t version_ID;      // Reg: 0x0F -
+    u8 adc_res;         // Reg: 0x0B - current ADC resolution (even though the above a0-a3 will always return 12-bit)
+    u8 rfu0;            // Reg: 0x0C - reserved for future use (or device-specific use)
+    u8 manuf_ID;        // Reg: 0x0D - manuf_ID:device_ID:version_ID needs to be a unique ID that defines a specific device and how it will use above registers
+    u8 device_ID;       // Reg: 0x0E -
+    u8 version_ID;      // Reg: 0x0F -
 };
 
 void fpjoy_report_digital_inputs(struct input_dev *input, u8 num_digitalbuttons, u8 num_dpads, u8 input0, u8 input1, u8 input2, bool sync_when_done)
@@ -285,7 +285,7 @@ static void freeplay_i2c_get_and_report_inputs(struct input_dev *input, bool pol
     struct freeplay_joy *priv = input_get_drvdata(input);
     struct freeplay_i2c_register_struct regs;
     int err;
-    uint16_t adc0, adc1, adc2, adc3;
+    u16 adc0, adc1, adc2, adc3;
     u8 poll_size;
     u8 poll_base;
     
