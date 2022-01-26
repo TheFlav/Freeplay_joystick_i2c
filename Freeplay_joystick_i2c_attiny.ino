@@ -16,7 +16,7 @@
 
 #define USE_INTERRUPTS              //can interrupt the host when input0 or input1 or input2 changes
 #define USE_EEPROM
-//#define USE_PB4_RESISTOR_LADDER   //PB4 can be a single digital R2 button input or 3 (R2, LeftCenterClick, RightCenterClick) button inputs on an ADC pin
+#define USE_PB4_RESISTOR_LADDER   //PB4 can be a single digital R2 button input or 3 (R2, LeftCenterClick, RightCenterClick) button inputs on an ADC pin
 
 #define USE_ADC0     //or can be used as digital input on input2 if desired
 #define USE_ADC1     //or can be used as digital input on input2 if desired
@@ -249,6 +249,14 @@ volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. W
 #define INPUT1_BTN_R2     (1 << 5)      //IO1_5
 #define INPUT1_BTN_POWER  (1 << 6)      //IO1_6
 
+#define INPUT2_BTN_THUMBL (1 << 0)      //IO2_0
+#define INPUT2_BTN_THUMBR (1 << 1)      //IO2_1
+                                        //IO2_2
+                                        //IO2_3
+#define INPUT2_BTN_0      (1 << 4)      //IO2_4
+#define INPUT2_BTN_1      (1 << 5)      //IO2_5
+#define INPUT2_BTN_2      (1 << 6)      //IO2_6
+#define INPUT0_BTN_3      (1 << 7)      //IO2_7
 
 #define PINB_POWER_BUTTON (1 << 5)    //PB5 is the power button, but it needs to be inverted (high when pressed)
                                         
@@ -386,6 +394,14 @@ void setup_adc0_to_adc3()
     PORTA_PIN7CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC3
 }
 
+void setup_config0(void)
+{
+  if(i2c_joystick_registers.config0 & CONFIG0_USE_PB4_RESISTOR_LADDER)
+  {
+    
+  }
+}
+
 void setup_gpio(void)
 {
   //set as inputs
@@ -404,7 +420,7 @@ void setup_gpio(void)
 
 
   setup_adc0_to_adc3();
-  
+  setup_config0();
 
   
   //PORTB_PIN0CTRL = PORT_PULLUPEN_bm;    //i2c
@@ -448,11 +464,14 @@ void read_digital_inputs(void)
   //otherwise, if we get interrupted during the setup, things get out of whack
 
   uint8_t rldu = 0b1111;
-  uint8_t hhzc = 0b1111;    //high, high, z, c
   uint8_t input0, input1, input2;
   uint8_t pa_in = PORTA_IN;
   uint8_t pb_in = PORTB_IN;
   uint8_t pc_in = PORTC_IN;
+
+  uint8_t thumbr = 1;
+  uint8_t thumbl = 1;
+  
     
 #ifdef CONFIG_INVERT_POWER_BUTTON
   pb_in ^= PINB_POWER_BUTTON;
@@ -521,10 +540,76 @@ void read_digital_inputs(void)
 
 
 #ifdef USE_PB4_RESISTOR_LADDER
-  #error PB4 resistor ladder not configured
+  uint8_t r2;
+
+  //if we are not using the PB4 resistor ladder, then the above code would already have done a digital read for PB4 AKA BTN_TR2
+  if(i2c_joystick_registers.config0 & CONFIG0_USE_PB4_RESISTOR_LADDER)
+  {
+    word adc = analogRead(PIN_PB4);
+
+    if(adc > 767)
+    {
+      r2 = 1;
+      thumbl = 1;
+      thumbr = 1;
+    }
+    else if(adc > 426)
+    {
+      r2 = 1;
+      thumbl = 1;
+      thumbr = 0;
+    }
+    else if(adc > 298)
+    {
+      r2 = 1;
+      thumbl = 0;
+      thumbr = 1;
+    }
+    else if(adc > 230)
+    {
+      r2 = 1;
+      thumbl = 0;
+      thumbr = 0;
+    }
+    else if(adc > 188)
+    {
+      r2 = 0;
+      thumbl = 1;
+      thumbr = 1;
+    }    
+    else if(adc > 158)
+    {
+      r2 = 0;
+      thumbl = 1;
+      thumbr = 0;
+    }    
+    else if(adc > 137)
+    {
+      r2 = 0;
+      thumbl = 0;
+      thumbr = 1;
+    }    
+    else// if(adc < 64)
+    {
+      r2 = 0;
+      thumbl = 0;
+      thumbr = 0;
+    }   
+
+
+    if(r2)
+      input1 = input1 | INPUT1_BTN_R2;
+    else
+      input1 = input1 & ~INPUT1_BTN_R2;
+  }
+
+
+  #warning PB4 resistor ladder not calibrated
+
+  
 #endif
  
-  input2 = (pa_in & PINA_IN2_MASK) | hhzc;
+  input2 = (pa_in & PINA_IN2_MASK) | (1 << 3) | (1 << 2) | (thumbr << 1) | (thumbl << 0);
 
 
 
@@ -656,6 +741,7 @@ inline void receive_i2c_callback_main_address(int i2c_bytes_received)
     {
       i2c_joystick_registers.config0 = temp;
       eeprom_data.joy_config0 = i2c_joystick_registers.config0;
+      setup_config0();
       eeprom_save();
     }
   }
