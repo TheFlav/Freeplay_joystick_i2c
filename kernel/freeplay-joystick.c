@@ -43,7 +43,7 @@
 #define FREEPLAY_JOY_AXIS_FLAT 10                //guess based on https://github.com/TheFlav/Freeplay_joystick_i2c_attiny/blob/main/uhid/uhid-i2c-gamepad.c
 
 #define FREEPLAY_POLL_TARGET_HZ   125
-#define FREEPLAY_POLL_DIGITAL_DIVISOR (FREEPLAY_POLL_TARGET_HZ / 1)             //targetting 1Hz
+#define FREEPLAY_POLL_DIGITAL_DIVISOR 1250 //(FREEPLAY_POLL_TARGET_HZ / 1)             //targetting 1Hz
 #define FREEPLAY_JOY_POLL_MS (1000 / FREEPLAY_POLL_TARGET_HZ)                   //8ms = (1000 / FREEPLAY_POLL_TARGET_HZ) = targetting 125Hz
 
 #define FREEPLAY_MAX_DIGITAL_BUTTONS 17
@@ -84,6 +84,16 @@ static unsigned int button_codes[FREEPLAY_MAX_DIGITAL_BUTTONS] = {BTN_A, BTN_B, 
 #define INPUT1_BTN_TR2    (1 << 5)      //IO1_5
 #define INPUT1_BTN_MODE   (1 << 6)      //IO1_6
 
+#define INPUT2_BTN_THUMBL (1 << 0)      //IO2_0
+#define INPUT2_BTN_THUMBR (1 << 1)      //IO2_1
+                                        //IO2_2
+                                        //IO2_3
+#define INPUT2_BTN_0      (1 << 4)      //IO2_4
+#define INPUT2_BTN_1      (1 << 5)      //IO2_5
+#define INPUT2_BTN_2      (1 << 6)      //IO2_6
+#define INPUT0_BTN_3      (1 << 7)      //IO2_7
+
+
 
 //the chip returns 0 for pressed, so "invert" bits
 #define INPUT0_IS_PRESSED_BTN_A(i0) ((i0 & INPUT0_BTN_A) != INPUT0_BTN_A)
@@ -104,6 +114,13 @@ static unsigned int button_codes[FREEPLAY_MAX_DIGITAL_BUTTONS] = {BTN_A, BTN_B, 
 #define INPUT1_IS_PRESSED_BTN_TR2(i1) ((i1 & INPUT1_BTN_TR2) != INPUT1_BTN_TR2)
 #define INPUT1_IS_PRESSED_BTN_MODE(i1) ((i1 & INPUT1_BTN_MODE) != INPUT1_BTN_MODE)
 
+#define INPUT2_IS_PRESSED_BTN_THUMBL(i0) ((i0 & INPUT2_BTN_THUMBL) != INPUT2_BTN_THUMBL)
+#define INPUT2_IS_PRESSED_BTN_THUMBR(i0) ((i0 & INPUT2_BTN_THUMBR) != INPUT2_BTN_THUMBR)
+
+#define INPUT2_IS_PRESSED_BTN_0(i0) ((i0 & INPUT2_BTN_0) != INPUT2_BTN_0)
+#define INPUT2_IS_PRESSED_BTN_1(i0) ((i0 & INPUT2_BTN_1) != INPUT2_BTN_1)
+#define INPUT2_IS_PRESSED_BTN_2(i0) ((i0 & INPUT2_BTN_2) != INPUT2_BTN_2)
+#define INPUT2_IS_PRESSED_BTN_3(i0) ((i0 & INPUT0_BTN_3) != INPUT0_BTN_3)
 
 
 struct joystick_params_struct
@@ -132,7 +149,7 @@ struct freeplay_joy {
     u32 joy0_swapped_x_y;
     u32 joy1_swapped_x_y;
     
-    u8 poll_iterations_digital_skip;
+    u16 poll_iterations_digital_skip;
     
     bool using_irq_for_digital_inputs;
 };
@@ -185,6 +202,12 @@ void fpjoy_report_digital_inputs(struct input_dev *input, u8 num_digitalbuttons,
     button_states[BTN_INDEX_MODE] = INPUT1_IS_PRESSED_BTN_MODE(input1);
 
     //digital input2
+    button_states[BTN_INDEX_THUMBL]  = INPUT2_IS_PRESSED_BTN_THUMBL(input2);
+    button_states[BTN_INDEX_THUMBR]  = INPUT2_IS_PRESSED_BTN_THUMBR(input2);
+    button_states[BTN_INDEX_0]       = INPUT2_IS_PRESSED_BTN_0(input2);
+    button_states[BTN_INDEX_1]       = INPUT2_IS_PRESSED_BTN_1(input2);
+    button_states[BTN_INDEX_2]       = INPUT2_IS_PRESSED_BTN_2(input2);
+    button_states[BTN_INDEX_3]       = INPUT2_IS_PRESSED_BTN_3(input2);
 
     for(button_index = 0; button_index < num_digitalbuttons; button_index++)
     {
