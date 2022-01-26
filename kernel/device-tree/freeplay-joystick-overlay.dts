@@ -33,7 +33,16 @@
 				pinctrl-names = "default";
 				pinctrl-0 = <&fpjoy_pins>;
 				interrupt-parent = <&gpio>;
-				interrupts = <40 2>; // high-to-low edge triggered
+				interrupts = <40 2>;		// high-to-low edge triggered
+				num-analogsticks = <0>;		//default to digital only 0=digital, 1=single analog stick (2ADCs), 2=dual analog sticks (4ADCs)
+				num-digitalbuttons = <11>;	//number of digital inputs to turn on and report to the system
+				num-dpads = <1>;		//1=process/report dpad up/down/left/right, 0=no dpad
+				joy0-x-params = <0 0xFFF 32 300 0>;	// < min max fuzz flat inverted >
+				joy0-y-params = <0 0xFFF 32 300 0>;      // < min max fuzz flat inverted >
+				joy1-x-params = <0 0xFFF 32 300 0>;      // < min max fuzz flat inverted >
+				joy1-y-params = <0 0xFFF 32 300 0>;      // < min max fuzz flat inverted >
+				joy0-swapped-x-y = <0>;			// if x/y is swapped (joystick rotated 90 or 270)
+				joy1-swapped-x-y = <0>;                 // if x/y is swapped (joystick rotated 90 or 270)
 			};
 		};
 	};
@@ -41,5 +50,33 @@
 		interrupt = <&fpjoy_pins>, "brcm,pins:0",
 			<&fpjoy>,"interrupts:0";
 		addr = <&fpjoy>,"reg:0";
+		analogsticks = <&fpjoy>,"num-analogsticks:0";
+		digitalbuttons = <&fpjoy>,"num-digitalbuttons:0";
+		dpads = <&fpjoy>,"num-dpads:0";
+
+		joy0-x-min = <&fpjoy>,"joy0-x-params:0";
+		joy0-x-max = <&fpjoy>,"joy0-x-params:4";
+		joy0-x-fuzz = <&fpjoy>,"joy0-x-params:8";
+		joy0-x-flat = <&fpjoy>,"joy0-x-params:12";
+		joy0-x-inverted = <&fpjoy>,"joy0-x-params:16";
+		joy0-y-min = <&fpjoy>,"joy0-y-params:0";
+		joy0-y-max = <&fpjoy>,"joy0-y-params:4";
+		joy0-y-fuzz = <&fpjoy>,"joy0-y-params:8";
+		joy0-y-flat = <&fpjoy>,"joy0-y-params:12";
+		joy0-y-inverted = <&fpjoy>,"joy0-y-params:16";
+
+		joy1-x-min = <&fpjoy>,"joy1-x-params:0";
+		joy1-x-max = <&fpjoy>,"joy1-x-params:4";
+		joy1-x-fuzz = <&fpjoy>,"joy1-x-params:8";
+		joy1-x-flat = <&fpjoy>,"joy1-x-params:12";
+		joy1-x-inverted = <&fpjoy>,"joy1-x-params:16";
+		joy1-y-min = <&fpjoy>,"joy1-y-params:0";
+		joy1-y-max = <&fpjoy>,"joy1-y-params:4";
+		joy1-y-fuzz = <&fpjoy>,"joy1-y-params:8";
+		joy1-y-flat = <&fpjoy>,"joy1-y-params:12";
+		joy1-y-inverted = <&fpjoy>,"joy1-y-params:16";
+
+		joy0-swapped-x-y = <&fpjoy>,"joy0-swapped-x-y:0";
+		joy1-swapped-x-y = <&fpjoy>,"joy1-swapped-x-y:0";
 	};
 };
