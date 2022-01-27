@@ -35,6 +35,106 @@ int fd;
 int i2c_file = -1;
 
 
+/*
+ * digital inputs
+ *
+ * input0
+ *
+ * PC0 = IO0_0 = BTN_X
+ * PC1 = IO0_1 = BTN_Y
+ * PC2 = IO0_2 = BTN_START
+ * PC3 = IO0_3 = BTN_SELECT
+ * PC4 = IO0_4 = BTN_L    (AKA BTN_TL in Linux)
+ * PC5 = IO0_5 = BTN_R    (AKA BTN_TR in Linux)
+ * PB6 = IO0_6 = BTN_A
+ * PB7 = IO0_7 = BTN_B
+ *
+ * input1       A18 means analog pin 18 (A7 = analog 7 aka PB4)
+ *
+ * A18 = IO1_0 = UP
+ * A18 = IO1_1 = DOWN
+ * A18 = IO1_2 = LEFT
+ * A18 = IO1_3 = RIGHT
+ * PB3 = IO1_4 = BTN_L2    (AKA BTN_TL2 in Linux)
+ * PB4 = IO1_5 = BTN_R2    (AKA BTN_TR2 in Linux)   //PB4 can be turned into A7 to do an analog resistor ladder if we need BTN_THUMBL and BTN_THUMBR buttons
+ * PB5 = IO1_6 = BTN_POWER
+ * --- = IO1_7 = always high
+ *
+ * input2       EXTENDED DIGITAL INPUT REGISTER
+ *
+ * A7  = IO2_0 = BTN_THUMBL
+ * A7  = IO2_1 = BTN_THUMBR
+ * --- = IO2_2 = always high
+ * --- = IO2_3 = always high
+ * PA4 = IO2_4 = BTN_0 (when ADC0 not used)
+ * PA5 = IO2_5 = BTN_1 (when ADC1 not used)
+ * PA6 = IO2_6 = BTN_2 (when ADC2 not used)
+ * PA7 = IO2_7 = BTN_3 (when ADC3 not used)
+ *
+ *
+ * POWER_BUTTON (Hotkey AKA poweroff_in) NEEDS TO BE IN HERE SOMEWHERE SOMEHOW
+ *
+ *
+ *
+ *
+ * PA2 =         POWEROFF_OUT
+ * PA3 =         nINT OUT
+ * PB2 =         PWM Backlight OUT
+ *
+ */
+
+struct input0_bit_struct
+{
+    uint8_t btn_x : 1;
+    uint8_t btn_y : 1;
+    uint8_t btn_start : 1;
+    uint8_t btn_select : 1;
+    uint8_t btn_tl : 1;
+    uint8_t btn_tr : 1;
+    uint8_t btn_a : 1;
+    uint8_t btn_b : 1;
+};
+
+struct input1_bit_struct
+{
+    uint8_t dpad_u : 1;
+    uint8_t dpad_d : 1;
+    uint8_t dpad_l : 1;
+    uint8_t dpad_r : 1;
+    uint8_t btn_tl2 : 1;
+    uint8_t btn_tr2 : 1;
+    uint8_t btn_mode : 1;
+    uint8_t unused7 : 1;
+};
+
+struct input2_bit_struct
+{
+    uint8_t btn_thumbl : 1;
+    uint8_t btn_thumbr : 1;
+    uint8_t unused2 : 1;
+    uint8_t unused3 : 1;
+    uint8_t btn_0 : 1;
+    uint8_t btn_1 : 1;
+    uint8_t btn_2 : 1;
+    uint8_t btn_3 : 1;
+};
+
+struct a1a0_lsb_struct
+{
+    uint8_t a0_lsb : 4;
+    uint8_t a1_lsb : 4;
+};
+
+struct a3a2_lsb_struct
+{
+    uint8_t a2_lsb : 4;
+    uint8_t a3_lsb : 4;
+};
+
+#define BUTTON_PRESSED 0        //0 means pressed, 1 means unpressed
+#define IS_PRESSED(btn) (btn == BUTTON_PRESSED)
+
+
 static unsigned char rdesc[] =
 {
     0x05, 0x01, //; USAGE_PAGE (Generic Desktop)
@@ -189,45 +289,32 @@ static int event(int fd)
 }
 
 
-/*  From the attiny code     Dec 30, 2021
- *
- * PC0 = IO0_0 = BTN_X
- * PC1 = IO0_1 = BTN_Y
- * PC2 = IO0_2 = BTN_START
- * PC3 = IO0_3 = BTN_SELECT
- * PC4 = IO0_4 = BTN_L
- * PC5 = IO0_5 = BTN_R
- * PB6 = IO0_6 = BTN_A
- * PB7 = IO0_7 = BTN_B
- *
- * A18 means analog pin 18
- *
- * A18 = IO1_0 = UP
- * A18 = IO1_1 = DOWN
- * A18 = IO1_2 = LEFT
- * A18 = IO1_3 = RIGHT
- * PB2 = IO1_4 = BTN_L2 (in debug mode, can be used for serial TXD)
- * PB3 = IO1_5 = BTN_R2 (in debug mode, can be used for serial RXD)
- * PB4 = IO1_6 = POWER_BUTTON (Hotkey AKA poweroff_in)
- * ___ = IO1_7 = HIGH (logic 1)  maybe BTN_Z
- *
- *
- *
- */
 
-struct i2c_register_struct {
-    uint8_t input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
-    uint8_t input1;          // Reg: 0x01 - INPUT port 1 (digital buttons/dpad)
-    uint8_t a0_msb;          // Reg: 0x02 - ADC0 most significant 8 bits
-    uint8_t a1_msb;          // Reg: 0x03 - ADC1 most significant 8 bits
-    uint8_t a1a0_lsb;        // Reg: 0x04 - high nibble is a1 least significant 4 bits, low nibble is a0 least significant 4 bits
-    uint8_t a2_msb;          // Reg: 0x05 - ADC2 most significant 8 bits
-    uint8_t a3_msb;          // Reg: 0x06 - ADC2 most significant 8 bits
-    uint8_t a3a2_lsb;        // Reg: 0x07 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
-    uint8_t adc_conf_bits;   // Reg: 0x08 - turn ON bits here to activate ADC0 - ADC3 (only works if the USE_ADC# are turned on)
-    uint8_t config0;         // Reg: 0x09 - Configuration port 0
-    uint8_t adc_res;         // Reg: 0x0A - current ADC resolution (maybe settable?)
-} i2c_registers;
+struct i2c_register_struct
+{
+  struct input0_bit_struct input0;
+  struct input1_bit_struct input1;
+  struct input2_bit_struct input2;
+  uint8_t a0_msb;          // Reg: 0x04 - ADC0 most significant 8 bits
+  uint8_t a1_msb;          // Reg: 0x05 - ADC1 most significant 8 bits
+  struct a1a0_lsb_struct a1a0_lsb;
+  uint8_t a2_msb;          // Reg: 0x07 - ADC2 most significant 8 bits
+  uint8_t a3_msb;          // Reg: 0x08 - ADC2 most significant 8 bits
+  struct a3a2_lsb_struct a3a2_lsb;
+#define REGISTER_ADC_CONF_BITS 0x09   //this one is writeable
+  uint8_t adc_conf_bits;   // Reg: 0x09 - High Nibble is read-only.  ADC PRESENT = It tells which ADCs are available.
+                           //             Low Nibble is read/write.  ADC ON/OFF = The system can read/write what ADCs are sampled and used for a#_msb and lsb above
+                           //             (but can only turn ON ADCs that are turned on in the high nibble.)
+#define REGISTER_CONFIG_BITS 0x0A   //this one is writeable
+  uint8_t config0;         // Reg: 0x0A - config register (turn on/off PB4 resistor ladder)  //maybe allow PA4-7 to be digital inputs connected to input2  config0[7]=use_extended_inputs
+  uint8_t adc_res;         // Reg: 0x0B - current ADC resolution (maybe settable?)
+  uint8_t rfu0;            // Reg: 0x0C - reserved for future use (or device-specific use)
+  uint8_t manuf_ID;        // Reg: 0x0D - manuf_ID:device_ID:version_ID needs to be a unique ID that defines a specific device and how it will use above registers
+  uint8_t device_ID;       // Reg: 0x0E -
+  uint8_t version_ID;      // Reg: 0x0F -
+  
+} volatile i2c_registers;
+
 
 struct gamepad_report_t
 {
@@ -318,55 +405,26 @@ void i2c_poll_joystick()
         exit(1);
     
     
+    gamepad_report.buttons7to0 = (IS_PRESSED(i2c_registers.input0.btn_tr) << 7)
+                                | (IS_PRESSED(i2c_registers.input0.btn_tl) << 6)
+                                | (IS_PRESSED(i2c_registers.input0.btn_select) << 5)
+                                | (IS_PRESSED(i2c_registers.input0.btn_y) << 4)
+                                | (IS_PRESSED(i2c_registers.input0.btn_x) << 3)
+                                | (IS_PRESSED(i2c_registers.input1.btn_mode) << 2)
+                                | (IS_PRESSED(i2c_registers.input0.btn_b) << 1)
+                                | IS_PRESSED(i2c_registers.input0.btn_a);
+    gamepad_report.buttons11to8 = (IS_PRESSED(i2c_registers.input0.btn_start) << 2)
+                                | (IS_PRESSED(i2c_registers.input1.btn_tr2) << 1)
+                                | IS_PRESSED(i2c_registers.input1.btn_tl2);
     
-    ret = i2c_registers.input1 << 8 | i2c_registers.input0;
+    gamepad_report.hat_x = IS_PRESSED(i2c_registers.input1.dpad_r) - IS_PRESSED(i2c_registers.input1.dpad_l);
+    gamepad_report.hat_y = IS_PRESSED(i2c_registers.input1.dpad_u) - IS_PRESSED(i2c_registers.input1.dpad_d);
     
-    ret = ~ret;         //invert all bits 1=pressed 0=unpressed
+    gamepad_report.left_x = i2c_registers.a0_msb << 8 | i2c_registers.a1a0_lsb.a0_lsb;
+    gamepad_report.left_y = i2c_registers.a1_msb << 8 | i2c_registers.a1a0_lsb.a1_lsb;
     
-    
-    btn_x = ret & 0b1;
-    ret >>= 1;
-    btn_y = ret & 0b1;
-    ret >>= 1;
-    btn_start = ret & 0b1;
-    ret >>= 1;
-    btn_select = ret & 0b1;
-    ret >>= 1;
-    btn_l = ret & 0b1;
-    ret >>= 1;
-    btn_r = ret & 0b1;
-    ret >>= 1;
-    btn_a = ret & 0b1;
-    ret >>= 1;
-    btn_b = ret & 0b1;
-    ret >>= 1;
-    dpad_u = ret & 0b1;
-    ret >>= 1;
-    dpad_d = ret & 0b1;
-    ret >>= 1;
-    dpad_l = ret & 0b1;
-    ret >>= 1;
-    dpad_r = ret & 0b1;
-    ret >>= 1;
-    btn_l2 = ret & 0b1;
-    ret >>= 1;
-    btn_r2 = ret & 0b1;
-    ret >>= 1;
-    btn_power = ret & 0b1;
-    
-    gamepad_report.buttons7to0 = (btn_r << 7) | (btn_l << 6) | (btn_select << 5) | (btn_y << 4) | (btn_x << 3) | (btn_power << 2) | (btn_b << 1) | btn_a;
-    gamepad_report.buttons11to8 = (btn_start << 2) | (btn_r2 << 1) | btn_l2;
-    
-    gamepad_report.hat_x = dpad_r - dpad_l;
-    gamepad_report.hat_y = dpad_u - dpad_d;
-    
-    
-    gamepad_report.left_x = i2c_registers.a0_msb << 8 | ((i2c_registers.a1a0_lsb & 0x0F) << 4);
-    
-    gamepad_report.left_y = i2c_registers.a1_msb << 8 | (i2c_registers.a1a0_lsb & 0xF0);
-    
-    gamepad_report.right_x = i2c_registers.a2_msb << 8 | ((i2c_registers.a3a2_lsb & 0x0F) << 4);
-    gamepad_report.right_y = i2c_registers.a3_msb << 8 | (i2c_registers.a3a2_lsb & 0xF0);
+    gamepad_report.right_x = i2c_registers.a2_msb << 8 | i2c_registers.a3a2_lsb.a2_lsb;
+    gamepad_report.right_y = i2c_registers.a3_msb << 8 | i2c_registers.a3a2_lsb.a3_lsb;
     
     
     //printf("gamepad left_x=%d left_y=%d right_x=%d right_y=%d\n", gamepad_report.left_x, gamepad_report.left_y, gamepad_report.right_x, gamepad_report.right_y);
