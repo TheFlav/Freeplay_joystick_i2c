@@ -117,7 +117,6 @@ struct input1_bit_struct
     uint8_t unused7 : 1;
 };
 
-/*
 struct input2_bit_struct
 {
     uint8_t btn_thumbl : 1;
@@ -128,19 +127,20 @@ struct input2_bit_struct
     uint8_t btn_1 : 1;
     uint8_t btn_2 : 1;
     uint8_t btn_3 : 1;
-};*/
+};
 
 struct digital_inputs_struct
 {
     struct input0_bit_struct input0;
     struct input1_bit_struct input1;
+    struct input2_bit_struct input2;
 };
 
-union digital_inputs_union
+/*union digital_inputs_union
 {
     uint16_t digital_inputs_word;
     struct digital_inputs_struct digital_inputs;
-};
+};*/
 
 #define BUTTON_PRESSED 0        //0 means pressed, 1 means unpressed
 #define IS_PRESSED(btn) (btn == BUTTON_PRESSED)
@@ -152,7 +152,7 @@ static unsigned char rdesc[] = {
     0xA1, 0x01, //; COLLECTION (Application)
     0x05, 0x09,// ; USAGE_PAGE (Button)
     0x19, 0x01, //; USAGE_MINIMUM (Button 1)
-    0x29, 0x0B, //; USAGE_MAXIMUM (Button 11)
+    0x29, 0x0E, //; USAGE_MAXIMUM (Button 14)
     0x15, 0x00, //; LOGICAL_MINIMUM (0)
     0x25, 0x01, //; LOGICAL_MAXIMUM (1)
     0x75, 0x01, //; REPORT_SIZE (1)
@@ -292,7 +292,7 @@ static signed char wheel;
 struct gamepad_report_t
 {
     unsigned char buttons7to0;
-    unsigned char buttons11to8;
+    unsigned char buttons14to8;
     int8_t hat_x;
     int8_t hat_y;
 } gamepad_report, gamepad_report_prev;
@@ -307,7 +307,7 @@ static int send_event(int fd)
 	ev.type = UHID_INPUT;
 	ev.u.input.size = 4;
 	ev.u.input.data[0] = gamepad_report.buttons7to0;
-	ev.u.input.data[1] = gamepad_report.buttons11to8;
+	ev.u.input.data[1] = gamepad_report.buttons14to8;
 	ev.u.input.data[2] = (unsigned char) gamepad_report.hat_x;
 	ev.u.input.data[3] = (unsigned char) gamepad_report.hat_y;
 
@@ -334,9 +334,14 @@ void i2c_open()
 void i2c_poll_joystick()
 {
 	int ret;
+    struct digital_inputs_struct digital_inputs;
 
+    ret = i2c_smbus_read_i2c_block_data(i2c_file, 0, sizeof(digital_inputs), (uint8_t *)&digital_inputs);
+    if(ret < 0)
+        exit(1);
+    
 //printf("i2c_poll_joystick: reading i2c\n");
-	ret = i2c_smbus_read_word_data(i2c_file, 0);
+	/*ret = i2c_smbus_read_word_data(i2c_file, 0);
 	if(ret < 0)
 	{
 		printf("i2c_poll_joystick: exiting (ret=%d)\n", ret);
@@ -345,25 +350,31 @@ void i2c_poll_joystick()
     
     union digital_inputs_union digital_inputs;
     digital_inputs.digital_inputs_word = ret;
+     */
+    
     
     //printf("i2c_poll_joystick: u16=0x%02X input0=0x%02X input1=0x%02X btn_a=%d\n", digital_inputs.digital_inputs_word, digital_inputs.digital_inputs.input0, digital_inputs.digital_inputs.input1, digital_inputs.digital_inputs.input0.btn_a);
 
 
-    gamepad_report.buttons7to0 = (IS_PRESSED(digital_inputs.digital_inputs.input0.btn_tr) << 7)
-                                | (IS_PRESSED(digital_inputs.digital_inputs.input0.btn_tl) << 6)
-                                | (IS_PRESSED(digital_inputs.digital_inputs.input0.btn_select) << 5)
-                                | (IS_PRESSED(digital_inputs.digital_inputs.input0.btn_y) << 4)
-                                | (IS_PRESSED(digital_inputs.digital_inputs.input0.btn_x) << 3)
-                                | (IS_PRESSED(digital_inputs.digital_inputs.input1.btn_mode) << 2)
-                                | (IS_PRESSED(digital_inputs.digital_inputs.input0.btn_b) << 1)
-                                | IS_PRESSED(digital_inputs.digital_inputs.input0.btn_a);
-    gamepad_report.buttons11to8 = (IS_PRESSED(digital_inputs.digital_inputs.input0.btn_start) << 2)
-                                | (IS_PRESSED(digital_inputs.digital_inputs.input1.btn_tr2) << 1)
-                                | IS_PRESSED(digital_inputs.digital_inputs.input1.btn_tl2);
+    gamepad_report.buttons7to0 = (IS_PRESSED(digital_inputs.input0.btn_tr) << 7)
+                                | (IS_PRESSED(digital_inputs.input0.btn_tl) << 6)
+                                | (IS_PRESSED(digital_inputs.input2.btn_1) << 5)
+                                | (IS_PRESSED(digital_inputs.input0.btn_y) << 4)
+                                | (IS_PRESSED(digital_inputs.input0.btn_x) << 3)
+                                | (IS_PRESSED(digital_inputs.input2.btn_0) << 2)
+                                | (IS_PRESSED(digital_inputs.input0.btn_b) << 1)
+                                | IS_PRESSED(digital_inputs.input0.btn_a);
+    gamepad_report.buttons14to8 = 0
+                                | (IS_PRESSED(digital_inputs.input2.btn_thumbl) << 6)
+                                | (IS_PRESSED(digital_inputs.input2.btn_thumbr) << 5)
+                                | (IS_PRESSED(digital_inputs.input1.btn_mode) << 4)
+                                | (IS_PRESSED(digital_inputs.input0.btn_start) << 3)
+                                | (IS_PRESSED(digital_inputs.input0.btn_select) << 2)
+                                | (IS_PRESSED(digital_inputs.input1.btn_tr2) << 1)
+                                | IS_PRESSED(digital_inputs.input1.btn_tl2);
 
-
-    gamepad_report.hat_x = IS_PRESSED(digital_inputs.digital_inputs.input1.dpad_r) - IS_PRESSED(digital_inputs.digital_inputs.input1.dpad_l);
-    gamepad_report.hat_y = IS_PRESSED(digital_inputs.digital_inputs.input1.dpad_u) - IS_PRESSED(digital_inputs.digital_inputs.input1.dpad_d);
+    gamepad_report.hat_x = IS_PRESSED(digital_inputs.input1.dpad_r) - IS_PRESSED(digital_inputs.input1.dpad_l);
+    gamepad_report.hat_y = IS_PRESSED(digital_inputs.input1.dpad_u) - IS_PRESSED(digital_inputs.input1.dpad_d);
 }
 
 
@@ -441,6 +452,10 @@ int main(int argc, char **argv)
 	pfds[1].events = POLLIN;
 
 	i2c_open();
+    
+    i2c_smbus_write_byte_data(i2c_file, 0x09, 0x00);        //turn off ADC3,2,1,0 in adc_on_bits
+    i2c_smbus_write_byte_data(i2c_file, 0x0A, 0x00);        //make sure that use of the PB4 resistor ladder is OFF
+
     
     fprintf(stderr, "Press '^C' to quit...\n");
 
