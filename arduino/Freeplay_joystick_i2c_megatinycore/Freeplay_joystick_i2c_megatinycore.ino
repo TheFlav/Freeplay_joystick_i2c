@@ -301,9 +301,19 @@ void resetViaSWR() {
   _PROTECTED_WRITE(RSTCTRL.SWRR,1);
 }
 
-void eeprom_save()
+#ifdef USE_EEPROM
+bool g_eeprom_needs_saving = false;
+#endif
+inline void eeprom_save_deferred()
 {
-#ifdef USE_EEPROM  
+#ifdef USE_EEPROM
+  g_eeprom_needs_saving = true;
+#endif
+}
+
+void eeprom_save_now()
+{
+#ifdef USE_EEPROM
   uint8_t *eeprom_data_ptr = (uint8_t *) &eeprom_data;
   uint8_t i;
 
@@ -311,8 +321,18 @@ void eeprom_save()
   {
     EEPROM.update(i, *eeprom_data_ptr++);
   }
+  g_eeprom_needs_saving = false;
 #endif
 }
+
+void eeprom_save_if_needed()
+{
+#ifdef USE_EEPROM
+  if(g_eeprom_needs_saving)
+    eeprom_save_now();
+#endif    
+}
+
 
 
 void eeprom_restore_data()
@@ -367,7 +387,7 @@ void eeprom_restore_data()
     
   i2c_joystick_registers.config0 = eeprom_data.joy_config0; 
 
-  eeprom_save();
+  eeprom_save_now();
 }
 
 void setup_adc0_to_adc3()
@@ -742,7 +762,7 @@ inline void receive_i2c_callback_main_address(int i2c_bytes_received)
       i2c_joystick_registers.adc_conf_bits = (i2c_joystick_registers.adc_conf_bits & 0xF0) | (temp & mask);     //turn on any bits that are available and requested (turn all others off)
       eeprom_data.joy_adc_conf_bits = i2c_joystick_registers.adc_conf_bits;
       setup_adc0_to_adc3();   //turn on/off ADC pullups
-      eeprom_save();
+      eeprom_save_deferred();
     }
 
     if(x == REGISTER_CONFIG_BITS)   //this is a writeable register
@@ -750,7 +770,7 @@ inline void receive_i2c_callback_main_address(int i2c_bytes_received)
       i2c_joystick_registers.config0 = temp;
       eeprom_data.joy_config0 = i2c_joystick_registers.config0;
       setup_config0();
-      eeprom_save();
+      eeprom_save_deferred();
     }
   }
 }
@@ -970,6 +990,9 @@ void setup()
 
 void loop() 
 {
+  static unsigned long timer_start_millis = millis();
+  unsigned long current_millis;
+  
 #ifdef CONFIG_SERIAL_DEBUG
   Serial.print("g_i2c_address=");
   Serial.print(g_i2c_address);
@@ -1000,7 +1023,7 @@ void loop()
     g_pwm_step = i2c_secondary_registers.config_backlight;
 
     eeprom_data.sec_config_backlight = i2c_secondary_registers.config_backlight;
-    eeprom_save();
+    eeprom_save_deferred();
   }
 #endif
 
@@ -1009,7 +1032,7 @@ void loop()
     if(i2c_secondary_registers.joystick_i2c_addr >= 0x10 && i2c_secondary_registers.joystick_i2c_addr < 0x70)
     {
       eeprom_data.sec_joystick_i2c_addr = i2c_secondary_registers.joystick_i2c_addr;
-      eeprom_save();    //save to EEPROM
+      eeprom_save_now();    //save to EEPROM right away, becuase we'll reboot next
       
       resetViaSWR();    //reboot the chip to use new address
     }
@@ -1023,4 +1046,13 @@ void loop()
     g_nINT_state = new_nINT;    
   }
 #endif
+
+  //run a 5-second timer to do certain periodic tasks
+  current_millis = millis();
+  if(current_millis - timer_start_millis >= 5000)
+  {
+    eeprom_save_if_needed();      //if any deferred eeprom saves occurred, write to eeprom
+    
+    timer_start_millis = current_millis;
+  }
 }
