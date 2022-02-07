@@ -1,5 +1,5 @@
 rm main
-gcc -o main main.c -lm 
+gcc -o main main.c
 
 sudo ./main
 
