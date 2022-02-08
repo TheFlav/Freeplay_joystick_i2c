@@ -38,17 +38,20 @@ static void debug_print_binary_int_term(int line, int col, int val, int bits, ch
 
 //I2C/ADC related
 struct adc_t {
+    char name[32]; //name of current axis
 	int raw, raw_prev, raw_min, raw_max; //store raw values for min-max report
 	unsigned char res; unsigned int res_limit; //adc resolution/limit set during runtime
 	int value, min, max; //current value, min/max limits
 	int fuzz, flat; //fuzz, flat
 	bool reversed, autocenter; //reverse reading, autocenter: check adc value once to set as offset
 } adc_data[4] = {
-	{-1,-1,123/*INT_MAX*/,723/*INT_MIN*/, 10,1023, 0x7FFF,0,0xFFFF, 24,51, false,false,},
-	{-1,-1,145/*INT_MAX*/,745/*INT_MIN*/, 10,1023, 0x7FFF,0,0xFFFF, 24,51, false,false,},
-	{-1,-1,167/*INT_MAX*/,767/*INT_MIN*/, 10,1023, 0x7FFF,0,0xFFFF, 24,51, false,false,},
-	{-1,-1,189/*INT_MAX*/,789/*INT_MIN*/, 10,1023, 0x7FFF,0,0xFFFF, 24,51, false,false,},
-};
+	{"X1", -1,-1,INT_MAX,INT_MIN, 10,1023, 0x7FFF,0,0xFFFF, 24,51, false,false,},
+	{"Y1", -1,-1,INT_MAX,INT_MIN, 10,1023, 0x7FFF,0,0xFFFF, 24,51, false,false,},
+	{"X2", -1,-1,INT_MAX,INT_MIN, 10,1023, 0x7FFF,0,0xFFFF, 24,51, false,false,},
+	{"Y2", -1,-1,INT_MAX,INT_MIN, 10,1023, 0x7FFF,0,0xFFFF, 24,51, false,false,},
+}, adc_data_backup[4] = {0};
+
+bool adc_axis_swap[2] = {false, false}, adc_axis_swap_backup[2] = {0};
 
 typedef union {struct {uint8_t use0:1, use1:1, use2:1, use3:1, en0:1, en1:1, en2:1, en3:1;} vals; uint8_t bits;} mcu_adc_conf_t;
 
@@ -94,14 +97,15 @@ struct winsize ws; //terminal size
 struct termios term_backup; //original terminal state backup
 void restore_term(void){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
 
+bool save_boot_resquested = false, save_text_resquested = false, reset_resquested = false; //footer buttons bools
+
 const int term_adc_width = 30; //ADC section width
 const int term_adc_vertspacing = 9; //vertical spacing between each horizontal ADC elements
 const int term_esc_col_normal = 92; //terminal normal color escape code
 const int term_esc_col_disabled = 91; //terminal disabled color escape code
 
 const int term_buttons_width = 15;
-#define term_buttons_count 3
-const int term_buttons_hintoffset = 6;
+#define term_buttons_count 4
 
 struct term_adc_pos_t { //adc terminal data
     struct {int x, y, w; int* value;} //term col, row, length, pointer to value
@@ -116,6 +120,7 @@ struct term_adc_pos_t { //adc terminal data
     bool use_raw_min, use_raw_max; //raw min/max used as actual limits
 };
 
+struct term_toogle_pos_t {int x, y, w;}; //toggle "box", set w to 1
 struct term_button_pos_t {int x, y, w; char str[buffer_size];}; //buttons
 
 #define term_selectible_count 255 //absolute limit to selectible elements
@@ -132,7 +137,20 @@ struct term_selectible_t { //selectible terminal elements data
 };
 int select_index_current = 0, select_index_last = 1; //current element selected, last selected
 
-
+const int term_buttons_hintoffset = 7;
+char* term_hint[]={
+    "press [TAB] [UP] [DOWN] or (^) (v) to navigate",
+    "press [LEFT] [RIGHT] or (<) (>) to change value",
+    "press [ENTER] or (A) to enable or disable",
+    "press [ENTER] or (A) to switch axis direction",
+    "press [ENTER] or (A) to set as MIN limit value",
+    "press [ENTER] or (A) to set as MAX limit value",
+    "press [ENTER] or (A) to enable axis swap, apply only on driver",
+    "Save new configuration to /boot/config.txt",
+    "Save new configuration to *program_path*/config.txt",
+    "Reset values to default",
+    "Discard any modifications",
+};
 
 
 
@@ -189,14 +207,11 @@ int main (int argc, char** argv){
     term_new.c_lflag &= ~(ECHO | ECHONL | ICANON); //disable input characters, new line character echo, disable canonical input to avoid needs of enter press for user unput submit
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &term_new) != 0){print_stderr("tcsetattr term_new failed\n"); return EXIT_FAILURE;}
 
-
-
-
-    //TODO i2c part
-    int ret = 0b10111010;
+    //TODO i2c whole part
+    int ret = 0b10111111;
     mcu_adc_conf_t mcu_conf_current/*, mcu_conf_new*/;
     mcu_conf_current.bits = /*mcu_conf_new.bits = */(uint8_t)ret;
-    bool adc_reg_enable[4]={false, false, false, false}, adc_reg_used[4]={false, false, false, false}, adc_reg_used_prev[4]={false, false, false, false};
+    bool adc_reg_enable[4]={0}, adc_reg_used[4]={0}, adc_reg_used_prev[4]={0}, adc_reg_used_backup[4]={0};
 
     print_stdout("current MCU ADC configuration:\n");
     for (uint8_t i=0; i<4; i++){
@@ -205,79 +220,40 @@ int main (int argc, char** argv){
         print_stdout("ADC%d: enabled:%d, used:%d\n", i, adc_reg_enable[i]?1:0, adc_reg_used[i]?1:0);
     }
 
-    fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
-
-
-
-
-
-
-
-    //struct term_selectible_t term_select[term_selectible_count];
+    //backup adc default data
+    memcpy(&adc_data_backup, &adc_data, sizeof(adc_data));
+    memcpy(&adc_axis_swap_backup, &adc_axis_swap, sizeof(adc_axis_swap));
+    memcpy(&adc_reg_used_backup, &adc_reg_used, sizeof(adc_reg_used));
 
     tty_start:; //landing point if tty is resized
-    ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); int tty_last_width = ws.ws_col, tty_last_height = ws.ws_row, tty_line = 2; //tty size
+    fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
+    ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); int tty_last_width = ws.ws_col, tty_last_height = ws.ws_row, tty_line = 3; //tty size
     fprintf(stdout, "\e[?25l\e[2J"); //hide cursor, reset tty
     if (debug){fprintf(stdout, "\e[1;1H\e[100mtty:%dx%d\e[0m", tty_last_width, tty_last_height);} //print tty size, 640x480 is 80cols by 30rows
 
     struct term_adc_pos_t term_adc[4] = {0};
+    struct term_toogle_pos_t term_adc_swap[2] = {0};
+    struct term_button_pos_t term_buttons[term_buttons_count] = {0};
     struct term_selectible_t term_select[term_selectible_count] = {0};
-
+    
     int select_index = 0;
-
 
     char buffer[buffer_size], buffer_esc[buffer_size], buffer1[buffer_size], buffer2[buffer_size];
 
-    char* term_hint[]={
-    "press [TAB] [UP] [DOWN] or (^) (v) to navigate",
-    "press [LEFT] [RIGHT] or (<) (>) to change value",
-    "press [ENTER] or (A) to enable or disable",
-    "press [ENTER] or (A) to switch axis direction",
-    "press [ENTER] or (A) to set as MIN limit value",
-    "press [ENTER] or (A) to set as MAX limit value",
-    "Save new configuration to /boot/config.txt",
-    "Save new configuration to *program_path*/config.txt",
-    "Discard any modifications",
-    };
-
-
-
-
-
-
-
-
     int term_adc_pad = (tty_last_width - term_adc_width * 2) / 3; //padding between each ADC sections
 
-
-
-    for(int draw_x_loop=0, adc_loop=0; draw_x_loop<2; draw_x_loop++){
-        for(int draw_y_loop=0; draw_y_loop<2; draw_y_loop++){
-            int tmp_line = tty_line + term_adc_vertspacing * draw_y_loop, /*tmp_col = 3 + draw_x_loop * 4, */term_esc_col = term_esc_col_disabled;
+    for(int x_loop=0, adc_loop=0; x_loop<2; x_loop++){
+        int term_left = 1 + term_adc_pad + (term_adc_width + term_adc_pad) * x_loop, term_right = term_left + term_adc_width, tmp_line_last = tty_line; //left/right border of current adc
+        for(int y_loop=0; y_loop<2; y_loop++){
+            int tmp_line = tty_line + term_adc_vertspacing * y_loop, /*tmp_col = 3 + x_loop * 4, */term_esc_col = term_esc_col_disabled;
             struct term_adc_pos_t* adc_pos = &term_adc[adc_loop];
             bool adc_used = adc_reg_used[adc_loop];
 
-            int term_left = 1 + term_adc_pad + (term_adc_width + term_adc_pad) * draw_x_loop, term_right = term_left + term_adc_width; //left/right border of current adc
-
             //adc "title"
-            if (adc_used){
-                sprintf (buffer1, "%dbits", adc_data[adc_loop].res); term_esc_col = term_esc_col_normal;
-            } else if (adc_reg_enable[adc_loop]){
-                
-
-                sprintf (buffer1, "available");
-            } else {
-                sprintf (buffer1, "disabled");
-            }
-            sprintf(buffer, "ADC%d(%s)", adc_loop, buffer1); strcpy(adc_pos->title.str, buffer);
+            if (adc_used){sprintf (buffer1, "%dbits", adc_data[adc_loop].res); term_esc_col = term_esc_col_normal;} else if (adc_reg_enable[adc_loop]){sprintf (buffer1, "available");} else {sprintf (buffer1, "disabled");}
+            sprintf(buffer, "ADC%d(%s)(%s)", adc_loop, adc_data[adc_loop].name, buffer1); strcpy(adc_pos->title.str, buffer);
             adc_pos->title.x = term_left + array_pad(buffer, strlen(buffer), term_adc_width, '_', 0); adc_pos->title.y = tmp_line; adc_pos->title.w = strlen(adc_pos->title.str); //coordinates
             fprintf(stdout, "\e[%d;%dH\e[4;%dm%s\e[0m", tmp_line++, term_left, term_esc_col, buffer);
-            
-
-
-
-
-
             if (adc_reg_enable[adc_loop]){term_select_add(&term_select[select_index++], 1, &adc_pos->title.x, &adc_pos->title.y, &adc_pos->title.w, 0, 0, false, NULL, adc_pos->title.str, &adc_reg_used[adc_loop], term_hint[2]);}
 
             //limits
@@ -309,7 +285,7 @@ int main (int argc, char** argv){
             fprintf(stdout, "\e[%d;%dH\e[%dmmax:------\e[0m", tmp_line, adc_pos->raw_max.x - 4, term_esc_col);
 
             if (adc_used){
-                term_select_add(&term_select[select_index++], 2, &adc_pos->reversed.x, &adc_pos->reversed.y, &adc_pos->reversed.w, 0, 0, true, NULL, NULL, adc_pos->reversed.var, term_hint[3]);
+                term_select_add(&term_select[select_index++], 2, &adc_pos->reversed.x, &adc_pos->reversed.y, &adc_pos->reversed.w, 0, 0, false, NULL, NULL, adc_pos->reversed.var, term_hint[3]);
                 term_select_add(&term_select[select_index++], 1, &adc_pos->raw_min.x, &adc_pos->raw_min.y, &adc_pos->raw_min.w, 0, 0, true, adc_pos->raw_min.value, NULL, &adc_pos->use_raw_min, term_hint[4]);
                 term_select_add(&term_select[select_index++], 1, &adc_pos->raw_max.x, &adc_pos->raw_max.y, &adc_pos->raw_max.w, 0, 0, true, adc_pos->raw_max.value, NULL, &adc_pos->use_raw_max, term_hint[5]);
             }
@@ -325,28 +301,36 @@ int main (int argc, char** argv){
                 term_select_add(&term_select[select_index++], 0, &adc_pos->fuzz.x, &adc_pos->fuzz.y, &adc_pos->fuzz.w, 0, adc_data[adc_loop].res_limit, false, adc_pos->fuzz.value, NULL, NULL, term_hint[1]);
             }
 
+            tmp_line_last = tmp_line;
             adc_loop++;
         }
+
+        //swap xy axis
+        sprintf(buffer, "Swap %s/%s axis:-", adc_data[adc_loop-2].name, adc_data[adc_loop-1].name);
+        int term_swap_offset = (term_adc_width - strlen(buffer)) / 2;
+        bool js_used = adc_reg_used[adc_loop-2] && adc_reg_used[adc_loop-1];
+
+        fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tmp_line_last + 2, term_left + term_swap_offset, js_used?term_esc_col_normal:term_esc_col_disabled, buffer);
+        if (js_used){
+            term_adc_swap[x_loop].x = term_left + term_swap_offset + strlen(buffer) - 1; term_adc_swap[x_loop].y = tmp_line_last + 2; term_adc_swap[x_loop].w = 1;
+            term_select_add(&term_select[select_index++], 2, &term_adc_swap[x_loop].x, &term_adc_swap[x_loop].y, &term_adc_swap[x_loop].w, 0, 0, false, NULL, NULL, &adc_axis_swap[x_loop], term_hint[6]);
+        }
     }
-    tty_line += term_adc_vertspacing * 2;
+    tty_line += term_adc_vertspacing * 2 + 2;
 
     //footer
     fprintf(stdout, "\e[%d;%dH\e[2K\e[1m%s\e[0m", tty_last_height-4, (tty_last_width - strlen(term_hint[0])) / 2, term_hint[0]); //nav hint
 
     //buttons
     int term_buttons_pad = (tty_last_width - term_buttons_width * term_buttons_count) / (term_buttons_count + 1);
-    char* term_buttons_name[term_buttons_count] = {"Save to boot", "Save to file", "Close"};
-    bool* term_buttons_bool[term_buttons_count] = {&kill_resquested, &kill_resquested, &kill_resquested};
-
-    struct term_button_pos_t term_buttons[term_buttons_count] = {0};
+    char* term_buttons_name[term_buttons_count] = {"Save to boot", "Save to file", "Default", "Close"};
+    bool* term_buttons_bool[term_buttons_count] = {&save_boot_resquested, &save_text_resquested, &reset_resquested, &kill_resquested};
 
     for (int i = 0; i < term_buttons_count; i++){
         term_buttons[i].x = term_buttons_pad + (term_buttons_width + term_buttons_pad) * i; term_buttons[i].y = tty_last_height - 1;
         strcpy(buffer, term_buttons_name[i]); term_buttons[i].w = array_pad(buffer, strlen(buffer), term_buttons_width, ' ', 0); strcpy(term_buttons[i].str, buffer);
-        term_select_add(&term_select[select_index++], 1, &term_buttons[i].x, &term_buttons[i].y, &term_buttons[i].w, 0, 0, false, NULL, term_buttons[i].str, &kill_resquested, term_hint[term_buttons_hintoffset + i]);
+        term_select_add(&term_select[select_index++], 1, &term_buttons[i].x, &term_buttons[i].y, &term_buttons[i].w, 0, 0, false, NULL, term_buttons[i].str, term_buttons_bool[i], term_hint[term_buttons_hintoffset + i]);
     }
-
-
 
     select_index_last = -1; //force update all selectible element
     char last_key[100] = {'\0'}; //debug, last char used
@@ -386,7 +370,7 @@ int main (int argc, char** argv){
             } else if (debug){sprintf(last_key, "'%c'(%d), no used", term_read_char, term_read_char);} //debug
             
             tcflush(STDIN_FILENO, TCIOFLUSH); //flush STDIN, useful?
-            if (debug){fprintf(stdout, "\e[%d;%dH\e[2K\e[100mDEBUG last key: %s\e[0m\n", tty_last_height-5, 1, last_key);} //print last char to STDIN if debug
+            if (debug){fprintf(stdout, "\e[1;12H\e[0K\e[100mDEBUG last key: %s\e[0m\n", last_key);} //print last char to STDIN if debug
         }
 
         //handle i2c input
@@ -413,13 +397,14 @@ int main (int argc, char** argv){
                 if (selected){
                     if ((term_select[i].type == 1 || term_select[i].type == 2) && select_select && term_select[i].ptrbool){ //set button pressed while selected element is bool
                         *term_select[i].ptrbool = !(*term_select[i].ptrbool); //toggle bool
+                         select_update = true;
                     } else if (term_select[i].type == 0 && (select_minus || select_plus) && term_select[i].ptrint){ //minus/plus button pressed while selected element is int
                         if (select_minus && *(term_select[i].ptrint) - 1 >= term_select[i].min){
                             *term_select[i].ptrint = *(term_select[i].ptrint) - 1;
                         } else if (select_plus && *(term_select[i].ptrint) + 1 <= term_select[i].max){
                             *term_select[i].ptrint = *(term_select[i].ptrint) + 1;
                         }
-                        select_update = true; 
+                        select_update = true;
                     }
                 }
 
@@ -436,6 +421,14 @@ int main (int argc, char** argv){
         }
 
         if (select_update){select_index_last = select_index_current;}
+
+        if (reset_resquested){ //restore defaults requested
+            memcpy(&adc_data, &adc_data_backup, sizeof(adc_data_backup));
+            memcpy(&adc_axis_swap, &adc_axis_swap_backup, sizeof(adc_axis_swap_backup));
+            memcpy(&adc_reg_used, &adc_reg_used_backup, sizeof(adc_reg_used_backup));
+            reset_resquested = false;
+            goto tty_start; //force full redraw
+        }
 
         //non selectible elements or specific update
         for(int i=0; i<4; i++){ //adc loop
@@ -459,11 +452,26 @@ int main (int argc, char** argv){
             }
         }
 
+        if (save_boot_resquested || save_text_resquested){kill_resquested = true;} //save requested
 
         fprintf(stdout, "\e[%d;0H\n", tty_last_height-1); //force tty update
         usleep (10000);
     }
 
-    fprintf(stdout, "\e[%d;0H\e[?25h", tty_last_height+1); //set position to end, show cursor
+    tcflush(STDOUT_FILENO, TCIOFLUSH); //flush STDOUT
+    fprintf(stdout, "\e[0;0H\e[2J\e[?25h"); //reset tty, show cursor
+    restore_term(); //restore tty original state
+
+    if (save_boot_resquested){ //save to boot requested
+        fprintf(stdout, "TODO SAVE boot/config.txt\n");
+    } else if(save_text_resquested){ //save to text requested
+        fprintf(stdout, "TODO SAVE text file\n");
+    } else if(kill_resquested){
+        fprintf(stdout, "normal close\n");
+    }
+
+
+
+
     return 0;
 }
