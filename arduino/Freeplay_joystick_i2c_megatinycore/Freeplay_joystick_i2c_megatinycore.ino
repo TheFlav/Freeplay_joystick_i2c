@@ -395,23 +395,47 @@ void setup_adc0_to_adc3()
   if(i2c_joystick_registers.adc_conf_bits & (1 << 0))
     PORTA_PIN4CTRL &= ~PORT_PULLUPEN_bm;  //clear pullup when using ADC0
   else
+  {
     PORTA_PIN4CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC0
+
+    word adc = ADC_RESOLUTION / 2;
+    i2c_joystick_registers.a0_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_joystick_registers.a1a0_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a1a0_lsb & 0xF0);    
+  }
     
   if(i2c_joystick_registers.adc_conf_bits & (1 << 1))
     PORTA_PIN5CTRL &= ~PORT_PULLUPEN_bm;  //clear pullup when using ADC1
   else
+  {
     PORTA_PIN5CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC1
+    
+    word adc = ADC_RESOLUTION / 2;
+    i2c_joystick_registers.a1_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_joystick_registers.a1a0_lsb = (adc << (8 - (ADC_RESOLUTION - 8)) & 0xF0) | (i2c_joystick_registers.a1a0_lsb & 0x0F);
+  }
 
     
   if(i2c_joystick_registers.adc_conf_bits & (1 << 2))
     PORTA_PIN6CTRL &= ~PORT_PULLUPEN_bm;  //clear pullup when using ADC2
   else
+  {
     PORTA_PIN6CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC2
+
+    word adc = ADC_RESOLUTION / 2;
+    i2c_joystick_registers.a2_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_joystick_registers.a3a2_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a3a2_lsb & 0xF0);
+  }
   
   if(i2c_joystick_registers.adc_conf_bits & (1 << 3))
     PORTA_PIN7CTRL &= ~PORT_PULLUPEN_bm;  //clear pullup when using ADC3
   else
+  {
     PORTA_PIN7CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC3
+    
+    word adc = ADC_RESOLUTION / 2;
+    i2c_joystick_registers.a3_msb = adc >> (ADC_RESOLUTION - 8);
+    i2c_joystick_registers.a3a2_lsb = (adc << (8 - (ADC_RESOLUTION - 8)) & 0xF0) | (i2c_joystick_registers.a3a2_lsb & 0x0F);
+  }   
 }
 
 void setup_config0(void)
