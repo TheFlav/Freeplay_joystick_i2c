@@ -12,6 +12,7 @@ int i2c_bus = 1; //I2C bus
 int i2c_addr = 0x30; //main MCU I2C address
 int i2c_addr_sec = 0x40; //secondary MCU I2C address
 int i2c_addr_adc[] = {0xFF, 0xFF, 0xFF, 0xFF}; //external ADC I2C address, set to 0xFF to disable
+bool i2c_ignore_busy = true; //ignore errno 1
 
 int nINT_GPIO = 40; //gpio pin used for IRQ, limited to 31 for pigpio, set to -1 to disable
 #define USE_WIRINGPI_IRQ //uncomment to use wiringPi for IRQ

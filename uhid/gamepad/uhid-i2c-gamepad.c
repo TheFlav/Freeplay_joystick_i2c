@@ -138,7 +138,7 @@ static int i2c_open(int bus, int addr){ //open I2C file
 		program_close(); exit(EXIT_FAILURE);
 	}
 
-	int ret = ioctl(fd, I2C_SLAVE, addr);
+	int ret = ioctl(fd, i2c_ignore_busy ? I2C_SLAVE_FORCE : I2C_SLAVE, addr);
 	if (ret < 0) {
 		close(fd); print_stderr("FATAL: ioctl failed for address 0x%02X, errno:%d (%m)\n", addr, -ret);
 		program_close(); exit(EXIT_FAILURE);
