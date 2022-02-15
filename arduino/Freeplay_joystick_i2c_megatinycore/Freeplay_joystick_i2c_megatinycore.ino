@@ -1,5 +1,11 @@
 //Freeplay_joystick_i2c_attiny
 
+#define ATTINY817 817
+#define ATTINY1627 1627
+
+//#define TARGET_CPU ATTINY817
+#define TARGET_CPU ATTINY1627
+
 /*
  * 
  * TODO:  Maybe Add poweroff control via SECONDARY i2c address
@@ -16,12 +22,12 @@
 
 #define USE_INTERRUPTS              //can interrupt the host when input0 or input1 or input2 changes
 #define USE_EEPROM
-#define USE_PB4_RESISTOR_LADDER   //PB4 can be a single digital R2 button input or 3 (R2, LeftCenterClick, RightCenterClick) button inputs on an ADC pin
+//#define USE_PB4_RESISTOR_LADDER   //PB4 can be a single digital R2 button input or 3 (R2, LeftCenterClick, RightCenterClick) button inputs on an ADC pin
 
-#define USE_ADC0     //or can be used as digital input on input2 if desired
-#define USE_ADC1     //or can be used as digital input on input2 if desired
-#define USE_ADC2     //or can be used as digital input on input2 if desired
-#define USE_ADC3     //or can be used as digital input on input2 if desired
+//#define USE_ADC0     //or can be used as digital input on input2 if desired
+//#define USE_ADC1     //or can be used as digital input on input2 if desired
+//#define USE_ADC2     //or can be used as digital input on input2 if desired
+//#define USE_ADC3     //or can be used as digital input on input2 if desired
 //Keep in mind that these just turn on/off the ABILITY to use the ADCs.  You still need to enable them in adc_conf_bits, otherwise they're just digital inputs
 
 #include <Wire.h>
@@ -47,13 +53,15 @@
 
 
 
-//#define ADC_RESOLUTION 10
+#define ADC_RESOLUTION 10
 //#define ADC_RESOLUTION 12  //can do analogReadResolution(12) on 2-series 427/827 chips
-#define ADC_RESOLUTION ADC_NATIVE_RESOLUTION
+//#define ADC_RESOLUTION ADC_NATIVE_RESOLUTION
 
 #if ADC_RESOLUTION > 12
 #error ADC Resolution problem
 #endif
+
+#define MAX_ADC ((1<<ADC_RESOLUTION)-1)
 
 
 #ifdef USE_INTERRUPTS
@@ -398,7 +406,7 @@ void setup_adc0_to_adc3()
   {
     PORTA_PIN4CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC0
 
-    word adc = ADC_RESOLUTION / 2;
+    word adc = MAX_ADC / 2;
     i2c_joystick_registers.a0_msb = adc >> (ADC_RESOLUTION - 8);
     i2c_joystick_registers.a1a0_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a1a0_lsb & 0xF0);    
   }
@@ -409,7 +417,7 @@ void setup_adc0_to_adc3()
   {
     PORTA_PIN5CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC1
     
-    word adc = ADC_RESOLUTION / 2;
+    word adc = MAX_ADC / 2;
     i2c_joystick_registers.a1_msb = adc >> (ADC_RESOLUTION - 8);
     i2c_joystick_registers.a1a0_lsb = (adc << (8 - (ADC_RESOLUTION - 8)) & 0xF0) | (i2c_joystick_registers.a1a0_lsb & 0x0F);
   }
@@ -421,7 +429,7 @@ void setup_adc0_to_adc3()
   {
     PORTA_PIN6CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC2
 
-    word adc = ADC_RESOLUTION / 2;
+    word adc = MAX_ADC / 2;
     i2c_joystick_registers.a2_msb = adc >> (ADC_RESOLUTION - 8);
     i2c_joystick_registers.a3a2_lsb = (adc << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a3a2_lsb & 0xF0);
   }
@@ -432,7 +440,7 @@ void setup_adc0_to_adc3()
   {
     PORTA_PIN7CTRL |= PORT_PULLUPEN_bm;   //set pullup when not using ADC3
     
-    word adc = ADC_RESOLUTION / 2;
+    word adc = MAX_ADC / 2;
     i2c_joystick_registers.a3_msb = adc >> (ADC_RESOLUTION - 8);
     i2c_joystick_registers.a3a2_lsb = (adc << (8 - (ADC_RESOLUTION - 8)) & 0xF0) | (i2c_joystick_registers.a3a2_lsb & 0x0F);
   }   
@@ -524,9 +532,12 @@ void read_digital_inputs(void)
 
   uint16_t adc18 = analogRead(18);
 
+  i2c_joystick_registers.a0_msb = adc18 >> (ADC_RESOLUTION - 8);
+  i2c_joystick_registers.a1a0_lsb = (adc18 << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a1a0_lsb & 0xF0);
+
   //NOTE:  This code will not let you press Up&Down or Left&Right at the same time
   //       The resistor ladder is very intentionally configured with this fact in mind.
-
+#if 1 //TARGET_CPU == ATTINY817
   if(adc18 < 65)
   {
     //no dpad pressed
@@ -572,7 +583,11 @@ void read_digital_inputs(void)
     //up and to the left
     rldu = 0b1010;
   }
-
+#elif TARGET_CPU == ATTINY1627
+  
+#else
+#error Unknown TARGET_CPU
+#endif
 
   input0 = (pc_in & PINC_IN0_MASK) | (pb_in & PINB_IN0_MASK);
 
