@@ -184,6 +184,7 @@ static int adc_correct_offset_center(int adc_resolution, int adc_value, int adc_
 	int dir = 1, limit;
 	if (adc_value < 0){dir = -1; adc_value *= -1; limit = (adc_min - offset) * -1; //convert adc value to positive
 	} else {limit = adc_max - offset;}
+    if(limit==0){limit=1;} //avoid div by 0
 
 	adc_value = adc_value * (max + flat_out) / limit; //convert to 0->adc_min/adc_max to 0->adc_resolution+(outside flat)
 	if (flat_in > 0){adc_value = (adc_value - flat_in) * (max + flat_out) / ((max + flat_out) - flat_in);} //convert to (-inside flat)->adc_resolution+(outside flat) to 0->adc_resolution+(outside flat)
