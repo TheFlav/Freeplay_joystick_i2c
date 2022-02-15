@@ -22,12 +22,12 @@
 
 #define USE_INTERRUPTS              //can interrupt the host when input0 or input1 or input2 changes
 #define USE_EEPROM
-//#define USE_PB4_RESISTOR_LADDER   //PB4 can be a single digital R2 button input or 3 (R2, LeftCenterClick, RightCenterClick) button inputs on an ADC pin
+#define USE_PB4_RESISTOR_LADDER   //PB4 can be a single digital R2 button input or 3 (R2, LeftCenterClick, RightCenterClick) button inputs on an ADC pin
 
-//#define USE_ADC0     //or can be used as digital input on input2 if desired
-//#define USE_ADC1     //or can be used as digital input on input2 if desired
-//#define USE_ADC2     //or can be used as digital input on input2 if desired
-//#define USE_ADC3     //or can be used as digital input on input2 if desired
+#define USE_ADC0     //or can be used as digital input on input2 if desired
+#define USE_ADC1     //or can be used as digital input on input2 if desired
+#define USE_ADC2     //or can be used as digital input on input2 if desired
+#define USE_ADC3     //or can be used as digital input on input2 if desired
 //Keep in mind that these just turn on/off the ABILITY to use the ADCs.  You still need to enable them in adc_conf_bits, otherwise they're just digital inputs
 
 #include <Wire.h>
@@ -53,9 +53,9 @@
 
 
 
-#define ADC_RESOLUTION 10
+//#define ADC_RESOLUTION 10
 //#define ADC_RESOLUTION 12  //can do analogReadResolution(12) on 2-series 427/827 chips
-//#define ADC_RESOLUTION ADC_NATIVE_RESOLUTION
+#define ADC_RESOLUTION ADC_NATIVE_RESOLUTION
 
 #if ADC_RESOLUTION > 12
 #error ADC Resolution problem
@@ -532,12 +532,13 @@ void read_digital_inputs(void)
 
   uint16_t adc18 = analogRead(18);
 
-  i2c_joystick_registers.a0_msb = adc18 >> (ADC_RESOLUTION - 8);
-  i2c_joystick_registers.a1a0_lsb = (adc18 << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a1a0_lsb & 0xF0);
+//  i2c_joystick_registers.a0_msb = adc18 >> (ADC_RESOLUTION - 8);
+//  i2c_joystick_registers.a1a0_lsb = (adc18 << (4 - (ADC_RESOLUTION - 8)) & 0x0F) | (i2c_joystick_registers.a1a0_lsb & 0xF0);
+  
 
   //NOTE:  This code will not let you press Up&Down or Left&Right at the same time
   //       The resistor ladder is very intentionally configured with this fact in mind.
-#if 1 //TARGET_CPU == ATTINY817
+#if TARGET_CPU == ATTINY817
   if(adc18 < 65)
   {
     //no dpad pressed
@@ -584,7 +585,8 @@ void read_digital_inputs(void)
     rldu = 0b1010;
   }
 #elif TARGET_CPU == ATTINY1627
-  
+      rldu = 0b1111;
+
 #else
 #error Unknown TARGET_CPU
 #endif
