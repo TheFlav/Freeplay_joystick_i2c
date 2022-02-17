@@ -40,6 +40,22 @@ static void debug_print_binary_int_term(int line, int col, int val, int bits, ch
 	printf("\e[%d;%dH\e[1;100m%s : ", line, col, var); for(int i = bits-1; i > -1; i--){printf("%d", (val >> i) & 0b1);} printf("\e[0m");
 }
 
+
+//time related
+double program_start_time = 0.; //program start time
+
+static double get_time_double(void){ //get time in double (seconds)
+	struct timespec tp; int result = clock_gettime(CLOCK_MONOTONIC, &tp);
+	if (result == 0) {return tp.tv_sec + (double)tp.tv_nsec/1e9;}
+	return -1.; //failed
+}
+
+
+//print related
+#define print_stderr(fmt, ...) do {fprintf(stderr, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time , __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
+#define print_stdout(fmt, ...) do {fprintf(stdout, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time , __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
+
+
 //DToverlay related
 typedef struct dtoverlay_driver_struct { //converted from freeplay-joystick-overlay.dts
     int bus, addr; //i2c bus, address //TODO UPDATE DTOVERLAY STRUCT
@@ -48,31 +64,132 @@ typedef struct dtoverlay_driver_struct { //converted from freeplay-joystick-over
     int digitalbuttons; //digital buttons count
     bool dpads; //dpad enabled
 
-    char joy0_x_params[buffer_size], joy0_y_params[buffer_size]; //joystick0 config: min,max,fuzz,flat,inverted. default:"0 0xFFF 32 300 0"
-    int joy0_x_min, joy0_x_max, joy0_x_fuzz, joy0_x_flat; bool joy0_x_inverted;
-    int joy0_y_min, joy0_y_max, joy0_y_fuzz, joy0_y_flat; bool joy0_y_inverted;
+    //char joy0_x_params[buffer_size], joy0_y_params[buffer_size]; //joystick0 config: min,max,fuzz,flat,inverted. default:"0 0xFFF 32 300 0"
+    int joy0_x_min, joy0_x_max, joy0_x_fuzz, joy0_x_flat; bool joy0_x_inverted/*, joy0_x_enabled*/; //TODO UPDATE DTOVERLAY STRUCT: enable
+    int joy0_y_min, joy0_y_max, joy0_y_fuzz, joy0_y_flat; bool joy0_y_inverted/*, joy0_y_enabled*/; //TODO UPDATE DTOVERLAY STRUCT: enable
     bool joy0_swapped_x_y; //xy swapped. default:0
     bool joy0_enabled; //TODO UPDATE DTOVERLAY STRUCT
 
-    char joy1_x_params[buffer_size], joy1_y_params[buffer_size]; //joystick1 config: min,max,fuzz,flat,inverted. default:"0 0xFFF 32 300 0"
-    int joy1_x_min, joy1_x_max, joy1_x_fuzz, joy1_x_flat; bool joy1_x_inverted;
-    int joy1_y_min, joy1_y_max, joy1_y_fuzz, joy1_y_flat; bool joy1_y_inverted;
+    //char joy1_x_params[buffer_size], joy1_y_params[buffer_size]; //joystick1 config: min,max,fuzz,flat,inverted. default:"0 0xFFF 32 300 0"
+    int joy1_x_min, joy1_x_max, joy1_x_fuzz, joy1_x_flat; bool joy1_x_inverted/*, joy1_x_enabled*/; //TODO UPDATE DTOVERLAY STRUCT: enable
+    int joy1_y_min, joy1_y_max, joy1_y_fuzz, joy1_y_flat; bool joy1_y_inverted/*, joy1_y_enabled*/; //TODO UPDATE DTOVERLAY STRUCT: enable
     bool joy1_swapped_x_y; //xy swapped. default:0
     bool joy1_enabled; //TODO UPDATE DTOVERLAY STRUCT
 } dtoverlay_driver_t;
 
 dtoverlay_driver_t driver_user = {0}, driver_back = {0}, driver_default = { //dtoverlay default settings
     .bus=1, .addr=0x30, .interrupt=40, /*.analogsticks=0,*/ .digitalbuttons=11, .dpads=false,
-    .joy0_x_min=0, .joy0_x_max=0xFFF, .joy0_x_fuzz=32, .joy0_x_flat=300, .joy0_x_inverted=false,
-    .joy0_y_min=0, .joy0_y_max=0xFFF, .joy0_y_fuzz=32, .joy0_y_flat=300, .joy0_y_inverted=false,
+    .joy0_x_min=0, .joy0_x_max=0xFFF, .joy0_x_fuzz=32, .joy0_x_flat=300, .joy0_x_inverted=false,/* .joy0_x_enabled=false,*/
+    .joy0_y_min=0, .joy0_y_max=0xFFF, .joy0_y_fuzz=32, .joy0_y_flat=300, .joy0_y_inverted=false,/* .joy0_y_enabled=false,*/
     .joy0_swapped_x_y=false, .joy0_enabled=false,
-    .joy1_x_min=0, .joy1_x_max=0xFFF, .joy1_x_fuzz=32, .joy1_x_flat=300, .joy1_x_inverted=false,
-    .joy1_y_min=0, .joy1_y_max=0xFFF, .joy1_y_fuzz=32, .joy1_y_flat=300, .joy1_y_inverted=false,
+    .joy1_x_min=0, .joy1_x_max=0xFFF, .joy1_x_fuzz=32, .joy1_x_flat=300, .joy1_x_inverted=false,/* .joy1_x_enabled=false,*/
+    .joy1_y_min=0, .joy1_y_max=0xFFF, .joy1_y_fuzz=32, .joy1_y_flat=300, .joy1_y_inverted=false,/* .joy1_y_enabled=false,*/
     .joy1_swapped_x_y=false, .joy1_enabled=false,
 };
 
 
+//dtoverlay parser related
+char* dtoverlay_file = "/boot/config.txt";
 
+typedef struct dtoverlay_parser_store_struct_t {
+	const char* name; //IMPORTANT: no space
+	const int type; //0:int, 1:hex, 2:bool. int and hex split for saving part
+	const void* ptr;
+} dtoverlay_parser_store_t;
+
+dtoverlay_parser_store_t dtoverlay_store[] = {
+    {"interrupt", 0, &driver_user.interrupt},
+    {"addr", 1, &driver_user.addr},
+    {"digitalbuttons", 0, &driver_user.digitalbuttons},
+    {"dpads", 2, &driver_user.dpads},
+
+    {"joy0-x-min", 0, &driver_user.joy0_x_min},
+    {"joy0-x-max", 0, &driver_user.joy0_x_max},
+    {"joy0-x-fuzz", 0, &driver_user.joy0_x_fuzz},
+    {"joy0-x-flat", 0, &driver_user.joy0_x_flat},
+    {"joy0-x-inverted", 2, &driver_user.joy0_x_inverted},
+    /*{"joy0-x-enable", 2, &driver_user.joy0_x_enabled},*/
+    {"joy0-y-min", 0, &driver_user.joy0_y_min},
+    {"joy0-y-max", 0, &driver_user.joy0_y_max},
+    {"joy0-y-fuzz", 0, &driver_user.joy0_y_fuzz},
+    {"joy0-y-flat", 0, &driver_user.joy0_y_flat},
+    {"joy0-y-inverted", 2, &driver_user.joy0_y_inverted},
+    /*{"joy0-y-enable", 2, &driver_user.joy0_y_enabled},*/
+    {"joy0-swapped-x-y", 2, &driver_user.joy0_swapped_x_y},
+    {"joy0-enabled", 2, &driver_user.joy0_enabled},
+
+    {"joy1-x-min", 0, &driver_user.joy1_x_min},
+    {"joy1-x-max", 0, &driver_user.joy1_x_max},
+    {"joy1-x-fuzz", 0, &driver_user.joy1_x_fuzz},
+    {"joy1-x-flat", 0, &driver_user.joy1_x_flat},
+    {"joy1-x-inverted", 2, &driver_user.joy1_x_inverted},
+    /*{"joy1-x-enable", 2, &driver_user.joy1_x_enabled},*/
+    {"joy1-y-min", 0, &driver_user.joy1_y_min},
+    {"joy1-y-max", 0, &driver_user.joy1_y_max},
+    {"joy1-y-fuzz", 0, &driver_user.joy1_y_fuzz},
+    {"joy1-y-flat", 0, &driver_user.joy1_y_flat},
+    {"joy1-y-inverted", 2, &driver_user.joy1_y_inverted},
+    /*{"joy1-y-enable", 2, &driver_user.joy1_y_enabled},*/
+    {"joy1-swapped-x-y", 2, &driver_user.joy1_swapped_x_y},
+    {"joy1-enabled", 2, &driver_user.joy1_enabled},
+};
+const int dtoverlay_store_size = sizeof(dtoverlay_store) / sizeof(dtoverlay_parser_store_t);
+
+int dtoverlay_parser_search_name(dtoverlay_parser_store_t* store, unsigned int store_size, char *value){ //search name into dtoverlay parser store, return index on success, -1 on failure
+    char *rowPtr;
+    for (unsigned int i = 0; i < store_size; i++) {
+		char tmpVar[strlen(store[i].name)+1]; strcpy (tmpVar, store[i].name);
+        if (tmpVar[0]=='\n'){rowPtr = tmpVar + 1;} else {rowPtr = tmpVar;}
+        if (strcmp(rowPtr, value) == 0){return i;}
+    }
+    return -1;
+}
+
+int dtoverlay_parser(char* filename, char* dtoverlay_name, dtoverlay_parser_store_t* store, unsigned int store_size){ //parse file that content dtoverlay declaration, e.g /boot/config.txt
+    int found = 0;
+    FILE *filehandle = fopen(filename, "r");
+    if (filehandle != NULL){
+        char strBuffer[4096]={'\0'}; bool line_found = false; int line = 0;
+        while (fgets (strBuffer, 4095, filehandle) != NULL && !line_found){ //line loop
+            bool first = true; line++;
+            char *bufferTokPtr, *tmpPtr = strtok_r(strBuffer, ",", &bufferTokPtr); //split element
+            while (tmpPtr != NULL){ //var=val loop
+                char buffer[strlen(tmpPtr)+1]; strcpy(buffer, tmpPtr); //copy element to new buffer to avoid pointer mess
+                char *tmpPtr1 = strchr(buffer, '='); //'=' char position
+                if (tmpPtr1 != NULL){ //contain '='
+                    *tmpPtr1='\0';
+                    char tmpVar[strlen(buffer)+1]; strcpy(tmpVar, buffer); char *tmpVarPtr = tmpVar; //extract var
+                    char *trimPtrE = tmpVarPtr+strlen(tmpVar); while(isspace(*(trimPtrE-1))){trimPtrE--;} *trimPtrE='\0'; while(isspace(*tmpVarPtr)){tmpVarPtr++;} //skip var leading/trailing spaces
+                    if (first){
+                        char *commentPtr = strchr(tmpVarPtr, '#'); if (commentPtr && commentPtr == tmpVarPtr){if(debug){print_stderr("DEBUG: line %d, skip commented\n", line);} break;} //skip commented line
+                        if (strcmp(tmpVarPtr, "dtoverlay")!=0){if (debug){print_stderr("DEBUG: line %d, skip line not starting by \"dtoverlay\"\n", line);} break;}
+                    }
+                    char tmpVal[strlen(tmpPtr1+1)+1]; strcpy(tmpVal, tmpPtr1+1); char *tmpValPtr = tmpVal;//extract val
+                    trimPtrE = tmpValPtr+strlen(tmpVal); while(isspace(*(trimPtrE-1))){trimPtrE--;} *trimPtrE='\0'; while(isspace(*tmpValPtr)){tmpValPtr++;} //skip val leading/trailing spaces
+                    if (first){
+                        if (strcmp(tmpValPtr, dtoverlay_name)!=0){if (debug){print_stderr("DEBUG: line %d, skip invalid dtoverlay:\"%s\"\n", line, tmpValPtr);} break;} //invalid dtoverlay
+                        first = false;
+                    } else {
+                        int tmpIndex = dtoverlay_parser_search_name(store, store_size, tmpVarPtr); //var in store
+                        if (tmpIndex != -1 && store[tmpIndex].ptr){ //found in config array
+                            int type = store[tmpIndex].type;
+                            if (type == 0 || type == 1){ //0:int, 2:hex
+                                if (strchr(tmpValPtr,'x')){sscanf(tmpValPtr, "0x%x", (int*)store[tmpIndex].ptr);}else{*(int*)store[tmpIndex].ptr = atoi(tmpValPtr);} found++; //hex or int?
+                                if (debug){print_stderr("DEBUG: line %d, %s=%d\n", line, tmpVarPtr, *(int*)store[tmpIndex].ptr);} //debug
+                            } else if (type == 2){ //3:bool
+                                *(bool*)store[tmpIndex].ptr = atoi(tmpValPtr)?true:false; found++;
+                            } else if (debug){print_stderr("DEBUG: invalid type:%d\n", type);}
+                        } else if (debug){print_stderr("DEBUG: line %d, var '%s' not allowed, typo?\n", line, tmpVarPtr);} //invalid var
+                    }
+                }
+                tmpPtr = strtok_r(NULL, ",", &bufferTokPtr); //next element
+            }
+        }
+    } else {print_stderr("file not found\n"); return -1;}
+    return found;
+}
+
+//TODO DTOVERLAY WRITE FILE
 
 //I2C/ADC related
 const uint8_t i2c_dev_manuf = 0xED; //MCU manufacturer signature, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
@@ -134,31 +251,32 @@ typedef struct adc_settings_struct_t {
 	int *min, *max; //current value, min/max limits
 	int *fuzz, *flat; //fuzz, flat
 	bool *reversed; //reverse reading
+	/*bool *enabled;*/
 } adc_settings_t;
 
 adc_settings_t adc_settings[4] = {
-    {&driver_user.joy0_x_min, &driver_user.joy0_x_max, &driver_user.joy0_x_fuzz, &driver_user.joy0_x_flat, &driver_user.joy0_x_inverted},
-    {&driver_user.joy0_y_min, &driver_user.joy0_y_max, &driver_user.joy0_y_fuzz, &driver_user.joy0_y_flat, &driver_user.joy0_y_inverted},
-    {&driver_user.joy1_x_min, &driver_user.joy1_x_max, &driver_user.joy1_x_fuzz, &driver_user.joy1_x_flat, &driver_user.joy1_x_inverted},
-    {&driver_user.joy1_y_min, &driver_user.joy1_y_max, &driver_user.joy1_y_fuzz, &driver_user.joy1_y_flat, &driver_user.joy1_y_inverted},
+    {&driver_user.joy0_x_min, &driver_user.joy0_x_max, &driver_user.joy0_x_fuzz, &driver_user.joy0_x_flat, &driver_user.joy0_x_inverted/*, &driver_user.joy0_x_enabled*/},
+    {&driver_user.joy0_y_min, &driver_user.joy0_y_max, &driver_user.joy0_y_fuzz, &driver_user.joy0_y_flat, &driver_user.joy0_y_inverted/*, &driver_user.joy0_y_enabled*/},
+    {&driver_user.joy1_x_min, &driver_user.joy1_x_max, &driver_user.joy1_x_fuzz, &driver_user.joy1_x_flat, &driver_user.joy1_x_inverted/*, &driver_user.joy1_x_enabled*/},
+    {&driver_user.joy1_y_min, &driver_user.joy1_y_max, &driver_user.joy1_y_fuzz, &driver_user.joy1_y_flat, &driver_user.joy1_y_inverted/*, &driver_user.joy1_y_enabled*/},
 };
 bool *adc_axis_swap[2] = {&driver_user.joy0_swapped_x_y, &driver_user.joy1_swapped_x_y};
 bool *js_enabled[2] = {&driver_user.joy0_enabled, &driver_user.joy1_enabled}, js_enabled_prev[2]={0};
 
 adc_settings_t adc_settings_back[4] = {
-    {&driver_back.joy0_x_min, &driver_back.joy0_x_max, &driver_back.joy0_x_fuzz, &driver_back.joy0_x_flat, &driver_back.joy0_x_inverted},
-    {&driver_back.joy0_y_min, &driver_back.joy0_y_max, &driver_back.joy0_y_fuzz, &driver_back.joy0_y_flat, &driver_back.joy0_y_inverted},
-    {&driver_back.joy1_x_min, &driver_back.joy1_x_max, &driver_back.joy1_x_fuzz, &driver_back.joy1_x_flat, &driver_back.joy1_x_inverted},
-    {&driver_back.joy1_y_min, &driver_back.joy1_y_max, &driver_back.joy1_y_fuzz, &driver_back.joy1_y_flat, &driver_back.joy1_y_inverted},
+    {&driver_back.joy0_x_min, &driver_back.joy0_x_max, &driver_back.joy0_x_fuzz, &driver_back.joy0_x_flat, &driver_back.joy0_x_inverted/*, &driver_back.joy0_x_enabled*/},
+    {&driver_back.joy0_y_min, &driver_back.joy0_y_max, &driver_back.joy0_y_fuzz, &driver_back.joy0_y_flat, &driver_back.joy0_y_inverted/*, &driver_back.joy0_y_enabled*/},
+    {&driver_back.joy1_x_min, &driver_back.joy1_x_max, &driver_back.joy1_x_fuzz, &driver_back.joy1_x_flat, &driver_back.joy1_x_inverted/*, &driver_back.joy1_x_enabled*/},
+    {&driver_back.joy1_y_min, &driver_back.joy1_y_max, &driver_back.joy1_y_fuzz, &driver_back.joy1_y_flat, &driver_back.joy1_y_inverted/*, &driver_back.joy1_y_enabled*/},
 };
 bool *adc_axis_swap_backup[2] = {&driver_back.joy0_swapped_x_y, &driver_back.joy1_swapped_x_y};
 bool *js_enabled_backup[2] = {&driver_back.joy0_enabled, &driver_back.joy1_enabled};
 
 adc_settings_t adc_settings_default[4] = {
-    {&driver_default.joy0_x_min, &driver_default.joy0_x_max, &driver_default.joy0_x_fuzz, &driver_default.joy0_x_flat, &driver_default.joy0_x_inverted},
-    {&driver_default.joy0_y_min, &driver_default.joy0_y_max, &driver_default.joy0_y_fuzz, &driver_default.joy0_y_flat, &driver_default.joy0_y_inverted},
-    {&driver_default.joy1_x_min, &driver_default.joy1_x_max, &driver_default.joy1_x_fuzz, &driver_default.joy1_x_flat, &driver_default.joy1_x_inverted},
-    {&driver_default.joy1_y_min, &driver_default.joy1_y_max, &driver_default.joy1_y_fuzz, &driver_default.joy1_y_flat, &driver_default.joy1_y_inverted},
+    {&driver_default.joy0_x_min, &driver_default.joy0_x_max, &driver_default.joy0_x_fuzz, &driver_default.joy0_x_flat, &driver_default.joy0_x_inverted/*, &driver_default.joy0_x_enabled*/},
+    {&driver_default.joy0_y_min, &driver_default.joy0_y_max, &driver_default.joy0_y_fuzz, &driver_default.joy0_y_flat, &driver_default.joy0_y_inverted/*, &driver_default.joy0_y_enabled*/},
+    {&driver_default.joy1_x_min, &driver_default.joy1_x_max, &driver_default.joy1_x_fuzz, &driver_default.joy1_x_flat, &driver_default.joy1_x_inverted/*, &driver_default.joy1_x_enabled*/},
+    {&driver_default.joy1_y_min, &driver_default.joy1_y_max, &driver_default.joy1_y_fuzz, &driver_default.joy1_y_flat, &driver_default.joy1_y_inverted/*, &driver_default.joy1_y_enabled*/},
 };
 bool *adc_axis_swap_default[2] = {&driver_default.joy0_swapped_x_y, &driver_default.joy1_swapped_x_y};
 bool *js_enabled_default[2] = {&driver_default.joy0_enabled, &driver_default.joy1_enabled};
@@ -235,21 +353,6 @@ static int adc_correct_offset_center(int adc_resolution, int adc_value, int adc_
     
 	return adc_value;
 }
-
-
-//time related
-double program_start_time = 0.; //program start time
-
-static double get_time_double(void){ //get time in double (seconds)
-	struct timespec tp; int result = clock_gettime(CLOCK_MONOTONIC, &tp);
-	if (result == 0) {return tp.tv_sec + (double)tp.tv_nsec/1e9;}
-	return -1.; //failed
-}
-
-
-//print related
-#define print_stderr(fmt, ...) do {fprintf(stderr, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time , __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
-#define print_stdout(fmt, ...) do {fprintf(stdout, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time , __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
 
 
 //array manipulation related
@@ -329,38 +432,38 @@ typedef struct term_pos_generic_struct {int x, y, w;} term_pos_generic_t;
 typedef struct term_pos_string_struct {int x, y, w; char str[buffer_size];} term_pos_string_t;
 
 char* term_hint_i2c_failed[]={ //follow i2c_failed_bus, i2c_failed_dev, i2c_failed_sig, i2c_failed bool order
-    "Invalid I2C bus\0",
-    "Invalid I2C address\0",
-    "Invalid I2C device signature\0",
-    "I2C reading failed\0",
+    "Invalid I2C bus",
+    "Invalid I2C address",
+    "Invalid I2C device signature",
+    "I2C reading failed",
 };
 
 char* term_hint_generic[]={
-    "Press \e[1m[TAB]\e[0m,\e[1m[UP]\e[0m,\e[1m[DOWN]\e[0m or \e[1m(^)(v)\e[0m to navigate\0",
-    "Press \e[1m[LEFT]\e[0m,\e[1m[RIGHT]\e[0m or \e[1m(<)(>)\e[0m to change value, \e[1m[-]\e[0m,\e[1m[+]\e[0m for big increment\0",
-    "Save new configuration to \e[1m/boot/config.txt\e[0m\0",
-    "Save new configuration to \e[1m*program_path*/config.txt\e[0m\0",
-    "Reset values to default\0",
-    "Discard current modifications\0",
-    "Return to main screen\0",
-    "Close without saving\0",
+    "Press \e[1m[TAB]\e[0m,\e[1m[UP]\e[0m,\e[1m[DOWN]\e[0m or \e[1m(^)(v)\e[0m to navigate",
+    "Press \e[1m[LEFT]\e[0m,\e[1m[RIGHT]\e[0m or \e[1m(<)(>)\e[0m to change value, \e[1m[-]\e[0m,\e[1m[+]\e[0m for big increment",
+    "Save new configuration to \e[1m/boot/config.txt\e[0m",
+    "Save new configuration to \e[1m*program_path*/config.txt\e[0m",
+    "Reset values to default",
+    "Discard current modifications",
+    "Return to main screen",
+    "Close without saving",
 };
 
 char* term_hint_main[]={
-    "Bus to use, change with caution\0",
-    "Address of the device\0",
-    "GPIO pin used for interrupt, -1 to disable\0",
-    "Amount of reported digital buttons (excl Dpad)\0",
-    "Enable/disable Dpad report\0",
-    "Change enable ADCs, limits, fuzz, flat values\0",
+    "Bus to use, change with caution",
+    "Address of the device",
+    "GPIO pin used for interrupt, -1 to disable",
+    "Amount of reported digital buttons (excl Dpad)",
+    "Enable/disable Dpad report",
+    "Change enable ADCs, limits, fuzz, flat values",
 };
 
 char* term_hint_adc[]={
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to enable or disable\0",
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to switch axis direction\0",
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to set as MIN limit value\0",
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to set as MAX limit value\0",
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to enable axis swap, apply only on driver\0",
+    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to enable or disable",
+    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to switch axis direction",
+    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to set as MIN limit value",
+    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to set as MAX limit value",
+    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to enable axis swap, apply only on driver",
 };
 
 
@@ -542,7 +645,7 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
 
     //adc configuration
     bool term_go_adc_config = false;
-    char* term_buttons_adc_config = " Analog Configuration \0";
+    char* term_buttons_adc_config = " Analog Configuration ";
     term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=strlen(term_buttons_adc_config)}, .type=1, .value={.ptrchar=term_buttons_adc_config, .ptrbool=&term_go_adc_config}, .hint={.y=hint_line, .str=term_hint_main[5]}};
 
     i2c_failed_jump:; //jump point for i2c failure
@@ -554,7 +657,7 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
     const int term_buttons0_footer_count = 2;
     int term_buttons0_pad = (tty_last_width - term_footer_buttons_width * term_buttons0_footer_count) / (term_buttons0_footer_count + 1);
     term_pos_string_t term_buttons0_footer_string[2] = {0};
-    char* term_buttons0_name[] = {"Discard\0", "Default\0"};
+    char* term_buttons0_name[] = {"Discard", "Default"};
     bool* term_buttons0_bool[] = {&reset_resquested, &default_resquested};
     const int term_buttons0_hint[] = {5, 4};
     for (int i = 0; i < term_buttons0_footer_count; i++){
@@ -566,7 +669,7 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
     const int term_buttons1_footer_count = 3;
     int term_buttons1_pad = (tty_last_width - term_footer_buttons_width * term_buttons1_footer_count) / (term_buttons1_footer_count + 1);
     term_pos_string_t term_buttons1_footer_string[3] = {0};
-    char* term_buttons1_name[] = {"Save config\0", "Save file\0", "Close\0"};
+    char* term_buttons1_name[] = {"Save config", "Save file", "Close"};
     bool* term_buttons1_bool[] = {&save_boot_resquested, &save_text_resquested, &kill_resquested};
     bool term_buttons1_bool_disabled[] = {i2c_failed, i2c_failed, false};
     const int term_buttons1_hint[] = {2, 3, 7};
@@ -699,7 +802,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
     const int term_buttons_footer_count = 3;
     term_pos_string_t term_buttons_footer_string[3] = {0};
     int term_buttons_pad = (tty_last_width - term_footer_buttons_width * term_buttons_footer_count) / (term_buttons_footer_count + 1);
-    char* term_buttons_name[] = {"Discard\0", "Default\0", "Back\0"};
+    char* term_buttons_name[] = {"Discard", "Default", "Back"};
     bool* term_buttons_bool[] = {&reset_resquested, &default_resquested, &term_back_mainscreen};
     bool term_buttons_bool_disabled[] = {i2c_failed, i2c_failed, false};
     const int term_buttons_hint[] = {5, 4, 6};
@@ -851,7 +954,7 @@ int main (int argc, char** argv){
 
     //dtoverlay
     memcpy(&driver_user, &driver_default, sizeof(driver_default));
-//TODO parse dtoverlay arguments
+    dtoverlay_parser(dtoverlay_file, "freeplay-joystick", dtoverlay_store, dtoverlay_store_size);
     memcpy(&driver_back, &driver_user, sizeof(driver_user)); //backup detected dtoverlay settings
 
     //i2c
