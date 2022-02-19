@@ -1,6 +1,4 @@
 
-
-
 #include <unistd.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -30,6 +28,7 @@
 //program related
 const char programversion[] = "0.1a"; //program version
 bool kill_resquested = false; //program kill requested, stop main loop in a smooth way
+char program_path[PATH_MAX] = {'\0'}; //full path to this program
 #define buffer_size 1024 //char array buffer size
 
 
@@ -54,6 +53,20 @@ static double get_time_double(void){ //get time in double (seconds)
 //print related
 #define print_stderr(fmt, ...) do {fprintf(stderr, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time , __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
 #define print_stdout(fmt, ...) do {fprintf(stdout, "%lf: %s:%d: %s(): " fmt, get_time_double() - program_start_time , __FILE__, __LINE__, __func__, ##__VA_ARGS__);} while (0) //Flavor: print advanced debug to stderr
+
+static void program_get_path(char** args, char* var){ //get current program path
+	char tmp_path[PATH_MAX], tmp_subpath[PATH_MAX];
+	struct stat file_stat = {0};
+	strcpy(tmp_path, args[0]); if (args[0][0]=='.'){strcpy(var, ".\0");}
+	char *tmpPtr = strtok (tmp_path, "/");
+	while (tmpPtr != NULL) {
+		sprintf(tmp_subpath, "%s/%s", var, tmpPtr);
+		if (stat(tmp_subpath, &file_stat) == 0 && S_ISDIR(file_stat.st_mode) != 0){strcpy(var, tmp_subpath);}
+		tmpPtr = strtok (NULL, "/");
+	}
+	if (strcmp(var, "./.") == 0){getcwd(var, PATH_MAX);}
+	if (debug){print_stdout("program path:'%s'\n", var);}
+}
 
 
 //DToverlay related
@@ -189,7 +202,7 @@ int dtoverlay_parser(char* filename, char* dtoverlay_name, dtoverlay_parser_stor
     return found;
 }
 
-//TODO DTOVERLAY WRITE FILE
+//TODO DTOVERLAY WRITE FILE FUNCT
 
 //I2C/ADC related
 const uint8_t i2c_dev_manuf = 0xED; //MCU manufacturer signature, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
@@ -229,7 +242,7 @@ typedef union {
 } mcu_adc_conf_t;
 mcu_adc_conf_t mcu_conf_current;
 bool adc_reg_enable[4]={0};
-bool adc_reg_used[4]={0}, adc_reg_used_prev[4]={0}/*, adc_reg_used_backup[4]={0}*/;
+bool adc_reg_used[4]={0}, adc_reg_used_prev[4]={0}, adc_reg_used_backup[4]={0};
 bool adc_use_raw_min[4] = {0}, adc_use_raw_max[4] = {0};
 int adc_res = 10, adc_res_limit = 1023;
 
@@ -316,7 +329,7 @@ static int i2c_init(int* fd, int bus, int addr){
                 adc_data[i].raw_min = adc_res_limit; adc_data[i].raw_max = 0;
 
                 adc_reg_enable[i] = (bool)((mcu_conf_current.bits >> i+4) & 0b1);
-                if (adc_reg_enable[i]){adc_reg_used[i] = adc_reg_used_prev[i] = (bool)((mcu_conf_current.bits >> i) & 0b1);}
+                if (adc_reg_enable[i]){adc_reg_used_backup[i] = adc_reg_used[i] = adc_reg_used_prev[i] = (bool)((mcu_conf_current.bits >> i) & 0b1);}
             }
             if (!(adc_reg_used[0] && adc_reg_used[1])){*js_enabled[0] = false;} if (!(adc_reg_used[2] && adc_reg_used[3])){*js_enabled[1] = false;}
             js_enabled_prev[0] = *js_enabled[0]; js_enabled_prev[1] = *js_enabled[1];
@@ -430,6 +443,18 @@ term_input_t term_input = {0};
 
 typedef struct term_pos_generic_struct {int x, y, w;} term_pos_generic_t;
 typedef struct term_pos_string_struct {int x, y, w; char str[buffer_size];} term_pos_string_t;
+typedef struct term_pos_button_struct {int x, y, w; char str[buffer_size]; bool *ptrbool; char *ptrhint; bool disabled;} term_pos_button_t;
+
+char* term_hint_generic[]={
+    "Press \e[1m[TAB]\e[0m,\e[1m[UP]\e[0m,\e[1m[DOWN]\e[0m or \e[1m(^)(v)\e[0m to navigate",
+    "Press \e[1m[LEFT]\e[0m,\e[1m[RIGHT]\e[0m or \e[1m(<)(>)\e[0m to change value, \e[1m[-]\e[0m,\e[1m[+]\e[0m for big increment",
+    "Save new configuration",
+    "Reset values to default",
+    "Discard current modifications",
+    "Return to main screen",
+    "Close without saving",
+    "Close the program",
+};
 
 char* term_hint_i2c_failed[]={ //follow i2c_failed_bus, i2c_failed_dev, i2c_failed_sig, i2c_failed bool order
     "Invalid I2C bus",
@@ -438,33 +463,6 @@ char* term_hint_i2c_failed[]={ //follow i2c_failed_bus, i2c_failed_dev, i2c_fail
     "I2C reading failed",
 };
 
-char* term_hint_generic[]={
-    "Press \e[1m[TAB]\e[0m,\e[1m[UP]\e[0m,\e[1m[DOWN]\e[0m or \e[1m(^)(v)\e[0m to navigate",
-    "Press \e[1m[LEFT]\e[0m,\e[1m[RIGHT]\e[0m or \e[1m(<)(>)\e[0m to change value, \e[1m[-]\e[0m,\e[1m[+]\e[0m for big increment",
-    "Save new configuration to \e[1m/boot/config.txt\e[0m",
-    "Save new configuration to \e[1m*program_path*/config.txt\e[0m",
-    "Reset values to default",
-    "Discard current modifications",
-    "Return to main screen",
-    "Close without saving",
-};
-
-char* term_hint_main[]={
-    "Bus to use, change with caution",
-    "Address of the device",
-    "GPIO pin used for interrupt, -1 to disable",
-    "Amount of reported digital buttons (excl Dpad)",
-    "Enable/disable Dpad report",
-    "Change enable ADCs, limits, fuzz, flat values",
-};
-
-char* term_hint_adc[]={
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to enable or disable",
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to switch axis direction",
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to set as MIN limit value",
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to set as MAX limit value",
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to enable axis swap, apply only on driver",
-};
 
 
 static void term_user_input(term_input_t* input){ //process terminal key inputs
@@ -592,7 +590,68 @@ static void term_select_update(term_select_t* store, int* index, int* index_last
 int term_screen_current = 0, term_screen_last = -1;
 bool term_screen_update = false;
 
-static void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){ //main screen
+static void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){ //save screen:2
+    char* term_hint_save[]={
+        "Save new configuration to \e[1m/boot/config.txt\e[0m",
+        "Save new configuration to \e[1m*program_path*/config.txt\e[0m",
+    };
+    
+    char buffer[buffer_size], buffer1[buffer_size];
+    int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2/*, tmp_esc_col = term_esc_col_normal*/; 
+
+
+
+
+    fprintf(stdout, "\e[2;2HTODO SAVE SCREEN");
+
+    fprintf(stdout, "\e[3;1Hprogram_path:%s", program_path);
+
+
+    //footer
+    fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_generic[0], 20)) / 2, term_hint_generic[0]); //nav hint
+
+    //buttons
+    bool term_go_mainscreen = false;
+    #define term_footer_save_btn_count 2
+    int term_buttons_pad = (tty_last_width - term_footer_buttons_width * term_footer_save_btn_count) / (term_footer_save_btn_count + 1);
+    term_pos_button_t term_footer_save_btn[term_footer_save_btn_count] = {{.str="Close", .ptrbool=&kill_resquested, .ptrhint=term_hint_generic[7]}, {.str="Back", .ptrbool=&term_go_mainscreen, .ptrhint=term_hint_generic[5]},};
+    for (int i=0; i<term_footer_save_btn_count; i++){
+        int x = term_buttons_pad + (term_footer_buttons_width + term_buttons_pad) * i;
+        array_pad(term_footer_save_btn[i].str, strlen(term_footer_save_btn[i].str), term_footer_buttons_width, ' ', 0);
+        term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tty_last_height-1, .size=term_footer_buttons_width}, .type=1, .disabled=term_footer_save_btn[i].disabled, .value={.ptrchar=term_footer_save_btn[i].str, .ptrbool=term_footer_save_btn[i].ptrbool}, .hint={.y=hint_line, .str=term_footer_save_btn[i].ptrhint}};
+    }
+
+    while (!kill_resquested){
+        ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
+
+        term_user_input(&term_input); //handle terminal user input
+        term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
+
+
+
+
+
+
+        if (term_go_mainscreen){term_screen_current = 0; goto funct_end;} //return to main screen requested
+
+        fprintf(stdout, "\e[%d;0H\n", tty_last_height-1); //force tty update
+        usleep (10000);
+    }
+    funct_end:; //jump point for fast exit
+}
+
+static void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){ //main screen:0
+    char* term_hint_main[]={
+        "", //"Bus to use, change with caution",
+        "Address of the device, bus used by default:1",
+        "GPIO pin used for interrupt, -1 to disable",
+        "Amount of reported digital buttons (excl Dpad)",
+        "Enable/disable Dpad report",
+        "Change enable ADCs, limits, fuzz, flat values",
+        "Discard current modifications (exclude Analog Configuration)",
+        "Reset values to default (exclude Analog Configuration)",
+    };
+
     char buffer[buffer_size], buffer1[buffer_size];
 
     int hint_line = tty_last_height - 6, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal; 
@@ -605,13 +664,15 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
     }
     tty_line+=2;
 
-    //i2c bus
+    //i2c bus, commented because of the way dtoverlay
+    /*
     if (i2c_failed_bus){tmp_esc_col = term_esc_col_error;}
     sprintf(buffer, "%s", i2c_failed_bus?term_hint_i2c_failed[0]:term_hint_main[0]);
     fprintf(stdout, "\e[%d;%dH\e[%dmI2C bus:___ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, buffer);
     term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+8, .y=tty_line, .size=3}, .type=0, .value={.min=0, .max=255, .ptrint=&driver_user.bus}, .defval={.ptrint=&driver_default.bus, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_generic[1]}};
     if (i2c_failed_bus){goto i2c_failed_jump;} //skip other settings if i2c failed
     tty_line+=2;
+    */
 
     //i2c address
     if (i2c_failed_dev){tmp_esc_col = term_esc_col_error;}
@@ -644,9 +705,9 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
     tty_line+=2;
 
     //adc configuration
-    bool term_go_adc_config = false;
+    bool term_go_adcconf = false;
     char* term_buttons_adc_config = " Analog Configuration ";
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=strlen(term_buttons_adc_config)}, .type=1, .value={.ptrchar=term_buttons_adc_config, .ptrbool=&term_go_adc_config}, .hint={.y=hint_line, .str=term_hint_main[5]}};
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=strlen(term_buttons_adc_config)}, .type=1, .value={.ptrchar=term_buttons_adc_config, .ptrbool=&term_go_adcconf}, .hint={.y=hint_line, .str=term_hint_main[5]}};
 
     i2c_failed_jump:; //jump point for i2c failure
 
@@ -654,29 +715,32 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
     fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-5, (tty_last_width - strcpy_noescape(NULL, term_hint_generic[0], 20)) / 2, term_hint_generic[0]); //nav hint
 
     //buttons
-    const int term_buttons0_footer_count = 2;
-    int term_buttons0_pad = (tty_last_width - term_footer_buttons_width * term_buttons0_footer_count) / (term_buttons0_footer_count + 1);
-    term_pos_string_t term_buttons0_footer_string[2] = {0};
-    char* term_buttons0_name[] = {"Discard", "Default"};
-    bool* term_buttons0_bool[] = {&reset_resquested, &default_resquested};
-    const int term_buttons0_hint[] = {5, 4};
-    for (int i = 0; i < term_buttons0_footer_count; i++){
+    bool term_go_save = false;
+    #define term_footer_main_btn0_count 2
+    #define term_footer_main_btn1_count 2
+    int term_buttons0_pad = (tty_last_width - term_footer_buttons_width * term_footer_main_btn0_count) / (term_footer_main_btn0_count + 1);
+    int term_buttons1_pad = (tty_last_width - term_footer_buttons_width * term_footer_main_btn1_count) / (term_footer_main_btn1_count + 1);
+
+    term_pos_button_t term_footer_main_btn0[term_footer_main_btn0_count] = {
+        {.str="Discard", .ptrbool=&reset_resquested, .ptrhint=term_hint_main[6]},
+        {.str="Default", .ptrbool=&default_resquested, .ptrhint=term_hint_main[7]},
+    };
+
+    term_pos_button_t term_footer_main_btn1[term_footer_main_btn1_count] = {
+        {.str="Save", .ptrbool=&term_go_save, .ptrhint=term_hint_generic[2], .disabled=i2c_failed},
+        {.str="Close", .ptrbool=&kill_resquested, .ptrhint=term_hint_generic[6]},
+    };
+
+    for (int i=0; i<term_footer_main_btn0_count; i++){
         int x = term_buttons0_pad + (term_footer_buttons_width + term_buttons0_pad) * i;
-        strcpy(buffer, term_buttons0_name[i]); array_pad(buffer, strlen(buffer), term_footer_buttons_width, ' ', 0); strcpy(term_buttons0_footer_string[i].str, buffer);
-        term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tty_last_height-3, .size=term_footer_buttons_width}, .type=1, .value={.ptrchar=term_buttons0_footer_string[i].str, .ptrbool=term_buttons0_bool[i]}, .hint={.y=hint_line, .str=term_hint_generic[term_buttons0_hint[i]]}};
+        array_pad(term_footer_main_btn0[i].str, strlen(term_footer_main_btn0[i].str), term_footer_buttons_width, ' ', 0);
+        term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tty_last_height-3, .size=term_footer_buttons_width}, .type=1, .disabled=term_footer_main_btn0[i].disabled, .value={.ptrchar=term_footer_main_btn0[i].str, .ptrbool=term_footer_main_btn0[i].ptrbool}, .hint={.y=hint_line, .str=term_footer_main_btn0[i].ptrhint}};
     }
 
-    const int term_buttons1_footer_count = 3;
-    int term_buttons1_pad = (tty_last_width - term_footer_buttons_width * term_buttons1_footer_count) / (term_buttons1_footer_count + 1);
-    term_pos_string_t term_buttons1_footer_string[3] = {0};
-    char* term_buttons1_name[] = {"Save config", "Save file", "Close"};
-    bool* term_buttons1_bool[] = {&save_boot_resquested, &save_text_resquested, &kill_resquested};
-    bool term_buttons1_bool_disabled[] = {i2c_failed, i2c_failed, false};
-    const int term_buttons1_hint[] = {2, 3, 7};
-    for (int i = 0; i < term_buttons1_footer_count; i++){
+    for (int i=0; i<term_footer_main_btn1_count; i++){
         int x = term_buttons1_pad + (term_footer_buttons_width + term_buttons1_pad) * i;
-        strcpy(buffer, term_buttons1_name[i]); array_pad(buffer, strlen(buffer), term_footer_buttons_width, ' ', 0); strcpy(term_buttons1_footer_string[i].str, buffer);
-        term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tty_last_height-1, .size=term_footer_buttons_width}, .type=1, .disabled=term_buttons1_bool_disabled[i], .value={.ptrchar=term_buttons1_footer_string[i].str, .ptrbool=term_buttons1_bool[i]}, .hint={.y=hint_line, .str=term_hint_generic[term_buttons1_hint[i]]}};
+        array_pad(term_footer_main_btn1[i].str, strlen(term_footer_main_btn1[i].str), term_footer_buttons_width, ' ', 0);
+        term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tty_last_height-1, .size=term_footer_buttons_width}, .type=1, .disabled=term_footer_main_btn1[i].disabled, .value={.ptrchar=term_footer_main_btn1[i].str, .ptrbool=term_footer_main_btn1[i].ptrbool}, .hint={.y=hint_line, .str=term_footer_main_btn1[i].ptrhint}};
     }
 
     select_index_last = -1; //force selectible element update on first loop
@@ -686,8 +750,9 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
         term_user_input(&term_input); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
 
-        if (term_go_adc_config){term_screen_current = 1; goto funct_end;} //return to adc configuration screen requested
-        if (save_boot_resquested || save_text_resquested){kill_resquested = true; goto funct_end;}
+        if (term_go_adcconf){term_screen_current = 1; goto funct_end;} //return to adc configuration screen requested
+        if (term_go_save){term_screen_current = 2; goto funct_end;} //return to save screen requested
+        //if (save_boot_resquested || save_text_resquested){kill_resquested = true; goto funct_end;}
 
         if (reset_resquested){ //restore backup requested
             driver_user.bus = driver_back.bus; driver_user.addr = driver_back.addr;
@@ -712,8 +777,17 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
     funct_end:; //jump point for fast exit
 }
 
+static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){ //display adc screen:1
+    char* term_hint_adc[]={
+        "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to enable or disable",
+        "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to switch axis direction",
+        "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to set as MIN limit value",
+        "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to set as MAX limit value",
+        "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to enable axis swap, apply only on driver",
+        "Discard current modifications (exclude Main Settings)",
+        "Reset values to default (exclude Main Settings)",
+    };
 
-static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){ //display adc screen
     term_pos_generic_t term_adc_raw[4] = {0}, term_adc_output[4] = {0};
     term_pos_string_t term_adc_string[4] = {0};
 
@@ -798,18 +872,18 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
     fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_generic[0], 20)) / 2, term_hint_generic[0]); //nav hint
 
     //buttons
-    bool term_back_mainscreen = false;
-    const int term_buttons_footer_count = 3;
-    term_pos_string_t term_buttons_footer_string[3] = {0};
-    int term_buttons_pad = (tty_last_width - term_footer_buttons_width * term_buttons_footer_count) / (term_buttons_footer_count + 1);
-    char* term_buttons_name[] = {"Discard", "Default", "Back"};
-    bool* term_buttons_bool[] = {&reset_resquested, &default_resquested, &term_back_mainscreen};
-    bool term_buttons_bool_disabled[] = {i2c_failed, i2c_failed, false};
-    const int term_buttons_hint[] = {5, 4, 6};
-    for (int i=0; i<term_buttons_footer_count; i++){
+    bool term_go_mainscreen = false;
+    #define term_footer_adc_btn_count 3
+    int term_buttons_pad = (tty_last_width - term_footer_buttons_width * term_footer_adc_btn_count) / (term_footer_adc_btn_count + 1);
+    term_pos_button_t term_footer_adc_btn[term_footer_adc_btn_count] = {
+        {.str="Discard", .ptrbool=&reset_resquested, .ptrhint=term_hint_adc[5], .disabled=i2c_failed},
+        {.str="Default", .ptrbool=&default_resquested, .ptrhint=term_hint_adc[6], .disabled=i2c_failed},
+        {.str="Back", .ptrbool=&term_go_mainscreen, .ptrhint=term_hint_generic[5]},
+    };
+    for (int i=0; i<term_footer_adc_btn_count; i++){
         int x = term_buttons_pad + (term_footer_buttons_width + term_buttons_pad) * i;
-        strcpy(buffer, term_buttons_name[i]); array_pad(buffer, strlen(buffer), term_footer_buttons_width, ' ', 0); strcpy(term_buttons_footer_string[i].str, buffer);
-        term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tty_last_height-1, .size=term_footer_buttons_width}, .type=1, .disabled=term_buttons_bool_disabled[i] ,.value={.ptrchar=term_buttons_footer_string[i].str, .ptrbool=term_buttons_bool[i]}, .hint={.y=hint_line, .str=term_hint_generic[term_buttons_hint[i]]}};
+        array_pad(term_footer_adc_btn[i].str, strlen(term_footer_adc_btn[i].str), term_footer_buttons_width, ' ', 0);
+        term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tty_last_height-1, .size=term_footer_buttons_width}, .type=1, .disabled=term_footer_adc_btn[i].disabled, .value={.ptrchar=term_footer_adc_btn[i].str, .ptrbool=term_footer_adc_btn[i].ptrbool}, .hint={.y=hint_line, .str=term_footer_adc_btn[i].ptrhint}};
     }
 
     select_index_last = -1; //force selectible element update on first loop
@@ -857,18 +931,32 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
         term_user_input(&term_input); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
 
-        if (term_input.escape){term_back_mainscreen = true;}
-        if (term_back_mainscreen){term_screen_current = 0; goto funct_end;} //return to main screen requested
+        if (term_input.escape){term_go_mainscreen = true;}
+        if (term_go_mainscreen){term_screen_current = 0; goto funct_end;} //return to main screen requested
 
         if (reset_resquested){ //restore backup requested
-            for (int i=0; i<4; i++){*adc_settings[i].min = *adc_settings_back[i].min; *adc_settings[i].max = *adc_settings_back[i].max; *adc_settings[i].fuzz = *adc_settings_back[i].fuzz; *adc_settings[i].flat = *adc_settings_back[i].flat; *adc_settings[i].reversed = *adc_settings_back[i].reversed;}
+            for (int i=0; i<4; i++){
+                *adc_settings[i].min = *adc_settings_back[i].min;
+                *adc_settings[i].max = *adc_settings_back[i].max;
+                *adc_settings[i].fuzz = *adc_settings_back[i].fuzz;
+                *adc_settings[i].flat = *adc_settings_back[i].flat;
+                *adc_settings[i].reversed = *adc_settings_back[i].reversed;
+                adc_reg_used[i] = adc_reg_used_backup[i]; //replace by *adc_settings[i].enabled if dtoverlay updated to allow individual ADC
+            }
             *js_enabled[0] = *js_enabled_backup[0]; *js_enabled[1] = *js_enabled_backup[1]; //js enabled
             *adc_axis_swap[0] = *adc_axis_swap_backup[0]; *adc_axis_swap[1] = *adc_axis_swap_backup[1]; //axis swap
             select_index_current = 0; reset_resquested = false; term_screen_update = true; goto funct_end; //force full redraw
         }
 
         if (default_resquested){ //restore defaults requested
-            for (int i=0; i<4; i++){*adc_settings[i].min = *adc_settings_default[i].min; *adc_settings[i].max = *adc_settings_default[i].max; *adc_settings[i].fuzz = *adc_settings_default[i].fuzz; *adc_settings[i].flat = *adc_settings_default[i].flat; *adc_settings[i].reversed = *adc_settings_default[i].reversed;}
+            for (int i=0; i<4; i++){
+                *adc_settings[i].min = *adc_settings_default[i].min;
+                *adc_settings[i].max = *adc_settings_default[i].max;
+                *adc_settings[i].fuzz = *adc_settings_default[i].fuzz;
+                *adc_settings[i].flat = *adc_settings_default[i].flat;
+                *adc_settings[i].reversed = *adc_settings_default[i].reversed;
+                adc_reg_used[i] = adc_reg_used_backup[i]; //replace by *adc_settings[i].enabled if dtoverlay updated to allow individual ADC
+            }
             *js_enabled[0] = *js_enabled_default[0]; *js_enabled[1] = *js_enabled_default[1]; //js enabled
             *adc_axis_swap[0] = *adc_axis_swap_default[0]; *adc_axis_swap[1] = *adc_axis_swap_default[1]; //axis swap
             select_index_current = 0; default_resquested = false; term_screen_update = true; goto funct_end; //force full redraw
@@ -886,7 +974,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
                     if (adc_use_raw_min[i]){*adc_settings[i].min = adc_data[i].raw_min; adc_use_raw_min[i] = false;} //set raw min as min limit
                     if (adc_use_raw_max[i]){*adc_settings[i].max = adc_data[i].raw_max; adc_use_raw_max[i] = false;} //set raw max as max limit
                     adc_data[i].raw_prev = adc_data[i].raw;
-                } else {adc_reg_used[i] = adc_reg_used_prev[i] = false;} //adc not enabled
+                } else {adc_reg_used_prev[i] = adc_reg_used[i] = false;} //adc not enabled
             }
 
             //update joystick enabled based on adc enabled
@@ -915,7 +1003,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
     funct_end:; //jump point for fast exit
 }
 
-void (*term_screen_funct_ptr[term_screen_count])(int, int, int) = {term_screen_main, term_screen_adc}; //pointer to screen functions
+void (*term_screen_funct_ptr[term_screen_count])(int, int, int) = {term_screen_main, term_screen_adc, term_screen_save}; //pointer to screen functions
 
 static void tty_signal_handler(int sig){ //signal handle func
 	if (debug){print_stderr("DEBUG: signal received: %d\n", sig);}
@@ -942,6 +1030,7 @@ void program_close(void){
 int main (int argc, char** argv){
     program_start_time = get_time_double();
 	if (getuid() != 0) {print_stderr("FATAL: this program needs to run as root, current user:%d\n", getuid()); program_usage(argv[0]); return EXIT_FAILURE;} //not running as root
+    program_get_path(argv, program_path); //get current program path
 
 	for(int i=1; i<argc; ++i){ //program arguments parse
 		if (strcmp(argv[1],"-help") == 0 || strcmp(argv[1],"-h") == 0){program_usage(argv[0]); return 0;} //-h -help argument
