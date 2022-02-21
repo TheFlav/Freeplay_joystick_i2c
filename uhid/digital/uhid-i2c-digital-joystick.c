@@ -34,11 +34,19 @@
  #include <wiringPi.h>
  #define nINT_GPIO 40
 #elif defined(USE_PIGPIO_IRQ)
+#warning PiGPIO seems not so good, becuase you cannot use pins higher than GPIO 31
  #include <pigpio.h>
  #define nINT_GPIO 10   //pigpio won't allow >31
 #endif
 
 int fd;
+
+//#define NUM_DIGITAL_BUTTONS 13
+#define NUM_DIGITAL_BUTTONS 15
+
+#if(NUM_DIGITAL_BUTTONS > 15)
+#error Unimplemented number of digital inputs
+#endif
 
 #define I2C_BUSNAME "/dev/i2c-1"
 #define I2C_ADDRESS 0x30
@@ -136,11 +144,11 @@ struct digital_inputs_struct
     struct input2_bit_struct input2;
 };
 
-/*union digital_inputs_union
+union digital_inputs_union
 {
     uint16_t digital_inputs_word;
     struct digital_inputs_struct digital_inputs;
-};*/
+};
 
 #define BUTTON_PRESSED 0        //0 means pressed, 1 means unpressed
 #define IS_PRESSED(btn) (btn == BUTTON_PRESSED)
@@ -152,13 +160,14 @@ static unsigned char rdesc[] = {
     0xA1, 0x01, //; COLLECTION (Application)
     0x05, 0x09,// ; USAGE_PAGE (Button)
     0x19, 0x01, //; USAGE_MINIMUM (Button 1)
-    0x29, 0x0E, //; USAGE_MAXIMUM (Button 14)
+    0x29, NUM_DIGITAL_BUTTONS, //; USAGE_MAXIMUM (Button __)       This is the actual number of buttons we will report via UHID
     0x15, 0x00, //; LOGICAL_MINIMUM (0)
     0x25, 0x01, //; LOGICAL_MAXIMUM (1)
     0x75, 0x01, //; REPORT_SIZE (1)
-    0x95, 0x10, //; REPORT_COUNT (16)
+    0x95, 0x10, //; REPORT_COUNT (16)               This must be USAGE_MAXIMUM rounded up to the next 8, so we don't need to pack bits
     0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
     
+    //DPAD START
         0x05, 0x01,  // Usage Page (Generic Desktop Ctrls)
         0x15, 0xFF,  // Logical Minimum (-1)
         0x25, 0x01,              //     LOGICAL_MAXIMUM (1)
@@ -167,6 +176,7 @@ static unsigned char rdesc[] = {
         0x75, 0x08,  // Report Size (8)
         0x95, 0x02,  // Report Count (2)
         0x81, 0x02,  // Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+    //DPAD END
  0xC0,// ; END_COLLECTION
 };
 
@@ -219,22 +229,22 @@ static void destroy(int fd)
  * uhid program shouldn't do this but instead just forward the raw report.
  * However, for ducomentational purposes, we try to detect LED events here and
  * print debug messages for it. */
-static void handle_output(struct uhid_event *ev)
+/*static void handle_output(struct uhid_event *ev)
 {
-	/* LED messages are adverised via OUTPUT reports; ignore the rest */
+	// LED messages are adverised via OUTPUT reports; ignore the rest
 	if (ev->u.output.rtype != UHID_OUTPUT_REPORT)
 		return;
-	/* LED reports have length 2 bytes */
+	// LED reports have length 2 bytes
 	if (ev->u.output.size != 2)
 		return;
-	/* first byte is report-id which is 0x02 for LEDs in our rdesc */
+	// first byte is report-id which is 0x02 for LEDs in our rdesc
 	if (ev->u.output.data[0] != 0x2)
 		return;
 
-	/* print flags payload */
+	// print flags payload
 	fprintf(stderr, "LED output report received with flags %x\n",
 		ev->u.output.data[1]);
-}
+}*/
 
 static int event(int fd)
 {
@@ -270,7 +280,7 @@ static int event(int fd)
 		break;
 	case UHID_OUTPUT:
 		fprintf(stderr, "UHID_OUTPUT from uhid-dev\n");
-		handle_output(&ev);
+		//handle_output(&ev);
 		break;
 	case UHID_OUTPUT_EV:
 		fprintf(stderr, "UHID_OUTPUT_EV from uhid-dev\n");
@@ -308,6 +318,7 @@ static int send_event(int fd)
 	ev.u.input.size = 4;
 	ev.u.input.data[0] = gamepad_report.buttons7to0;
 	ev.u.input.data[1] = gamepad_report.buttons14to8;
+    //to do more than 14 buttons, we need to add byte(s) in here
 	ev.u.input.data[2] = (unsigned char) gamepad_report.hat_x;
 	ev.u.input.data[3] = (unsigned char) gamepad_report.hat_y;
 
@@ -317,14 +328,18 @@ static int send_event(int fd)
 
 void i2c_open()
 {
+    int err;
 	i2c_file = open(I2C_BUSNAME, O_RDWR);
 	if (i2c_file < 0) {
 	  /* ERROR HANDLING; you can check errno to see what went wrong */
+      printf("i2c_open: error %d opening i2c bus\n", i2c_file);
 	  exit(1);
 	}
 
-	if (ioctl(i2c_file, I2C_SLAVE, I2C_ADDRESS) < 0) {
+    err = ioctl(i2c_file, I2C_SLAVE, I2C_ADDRESS);
+	if (err < 0) {
 	  /* ERROR HANDLING; you can check errno to see what went wrong */
+      printf("i2c_open: error %d registering i2c device address 0x%02X\n", i2c_file, I2C_ADDRESS);
 	  exit(1);
 	}
 }
@@ -336,21 +351,29 @@ void i2c_poll_joystick()
 	int ret;
     struct digital_inputs_struct digital_inputs;
 
+    //printf("i2c_poll_joystick: reading i2c\n");
+
+#define USE_BLOCK_READ
+    
+#ifdef USE_BLOCK_READ
     ret = i2c_smbus_read_i2c_block_data(i2c_file, 0, sizeof(digital_inputs), (uint8_t *)&digital_inputs);
     if(ret < 0)
+    {
+        printf("i2c_poll_joystick: error %d reading i2c block data (%d bytes requested)\n", ret, sizeof(digital_inputs));
         exit(1);
-    
-//printf("i2c_poll_joystick: reading i2c\n");
-	/*ret = i2c_smbus_read_word_data(i2c_file, 0);
+    }
+#else
+	ret = i2c_smbus_read_word_data(i2c_file, 0);
 	if(ret < 0)
 	{
 		printf("i2c_poll_joystick: exiting (ret=%d)\n", ret);
 		exit(1);
 	}
     
-    union digital_inputs_union digital_inputs;
-    digital_inputs.digital_inputs_word = ret;
-     */
+    union digital_inputs_union digital_inputs_u;
+    digital_inputs_u.digital_inputs_word = ret;
+    digital_inputs = digital_inputs_u.digital_inputs;
+#endif
     
     
     //printf("i2c_poll_joystick: u16=0x%02X input0=0x%02X input1=0x%02X btn_a=%d\n", digital_inputs.digital_inputs_word, digital_inputs.digital_inputs.input0, digital_inputs.digital_inputs.input1, digital_inputs.digital_inputs.input0.btn_a);
@@ -375,6 +398,21 @@ void i2c_poll_joystick()
 
     gamepad_report.hat_x = IS_PRESSED(digital_inputs.input1.dpad_r) - IS_PRESSED(digital_inputs.input1.dpad_l);
     gamepad_report.hat_y = IS_PRESSED(digital_inputs.input1.dpad_u) - IS_PRESSED(digital_inputs.input1.dpad_d);
+    
+    uint8_t adcbytes[3];
+    static uint16_t adcval_prev;
+    uint16_t adcval;
+    ret = i2c_smbus_read_i2c_block_data(i2c_file, 0x03, 3, adcbytes);
+    if(ret < 0)
+    {
+        printf("i2c_poll_joystick: error %d reading i2c block data (%d bytes requested)\n", ret, sizeof(digital_inputs));
+        exit(1);
+    }
+    adcval = (adcbytes[0] << 8) | ((adcbytes[2] & 0x0F) << 4);
+    
+    if(adcval != adcval_prev)
+        printf("adcval=0x%04X %9d         %9d\n", adcval,adcval,adcval>>6);
+    adcval_prev = adcval;
 }
 
 
@@ -408,7 +446,6 @@ void attiny_irq_handler(void)
 int main(int argc, char **argv)
 {
 	const char *path = "/dev/uhid";
-	struct pollfd pfds[2];
 	int ret;
 	struct termios state;
 
@@ -446,15 +483,15 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
-	pfds[0].fd = STDIN_FILENO;
-	pfds[0].events = POLLIN;
-	pfds[1].fd = fd;
-	pfds[1].events = POLLIN;
-
 	i2c_open();
     
-    i2c_smbus_write_byte_data(i2c_file, 0x09, 0x00);        //turn off ADC3,2,1,0 in adc_on_bits
-    i2c_smbus_write_byte_data(i2c_file, 0x0A, 0x00);        //make sure that use of the PB4 resistor ladder is OFF
+    i2c_smbus_write_byte_data(i2c_file, 0x09, 0x00);        //turn off ADC3,2,1,0 in adc_on_bits (because this code is for digital only)
+    
+    if(NUM_DIGITAL_BUTTONS > 13)
+        i2c_smbus_write_byte_data(i2c_file, 0x0A, 0x80);        //make sure that use of the PB4 resistor ladder is ON (but you could turn it off by setting 0x00 and then get 2 less digital inputs)
+    else
+        i2c_smbus_write_byte_data(i2c_file, 0x0A, 0x00);        //make sure that use of the PB4 resistor ladder is OFF
+
 
     
     fprintf(stderr, "Press '^C' to quit...\n");

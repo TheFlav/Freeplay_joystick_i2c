@@ -420,14 +420,15 @@ void i2c_poll_joystick()
     gamepad_report.hat_x = IS_PRESSED(i2c_registers.input1.dpad_r) - IS_PRESSED(i2c_registers.input1.dpad_l);
     gamepad_report.hat_y = IS_PRESSED(i2c_registers.input1.dpad_u) - IS_PRESSED(i2c_registers.input1.dpad_d);
     
-    gamepad_report.left_x = i2c_registers.a0_msb << 8 | i2c_registers.a1a0_lsb.a0_lsb;
-    gamepad_report.left_y = i2c_registers.a1_msb << 8 | i2c_registers.a1a0_lsb.a1_lsb;
+    gamepad_report.left_x = i2c_registers.a0_msb << 8 | (i2c_registers.a1a0_lsb.a0_lsb<<4);
+    gamepad_report.left_y = i2c_registers.a1_msb << 8 | (i2c_registers.a1a0_lsb.a1_lsb<<4);
     
-    gamepad_report.right_x = i2c_registers.a2_msb << 8 | i2c_registers.a3a2_lsb.a2_lsb;
-    gamepad_report.right_y = i2c_registers.a3_msb << 8 | i2c_registers.a3a2_lsb.a3_lsb;
+    gamepad_report.right_x = i2c_registers.a2_msb << 8 | (i2c_registers.a3a2_lsb.a2_lsb<<4);
+    gamepad_report.right_y = i2c_registers.a3_msb << 8 | (i2c_registers.a3a2_lsb.a3_lsb<<4);
     
     
-    //printf("gamepad left_x=%d left_y=%d right_x=%d right_y=%d\n", gamepad_report.left_x, gamepad_report.left_y, gamepad_report.right_x, gamepad_report.right_y);
+    printf("gamepad left_x=0x%04X left_y=0x%04X right_x=0x%04X right_y=0x%04X\n", gamepad_report.left_x, gamepad_report.left_y, gamepad_report.right_x, gamepad_report.right_y);
+    printf("gamepad left_x=%d left_y=%d right_x=%d right_y=%d\n", gamepad_report.left_x, gamepad_report.left_y, gamepad_report.right_x, gamepad_report.right_y);
 }
 
 

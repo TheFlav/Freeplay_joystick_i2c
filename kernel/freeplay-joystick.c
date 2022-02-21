@@ -37,7 +37,8 @@
 
 #define FREEPLAY_JOY_REGISTER_CONFIG0_THUMB_ON (1<<7)
 
-#define FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL 3
+#define FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL2 2
+#define FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL3 3
 #define FREEPLAY_JOY_REGISTER_POLL_SIZE_SINGLE_ANALOG 3
 #define FREEPLAY_JOY_REGISTER_POLL_SIZE_DUAL_ANALOG 6
 
@@ -67,8 +68,8 @@ static unsigned int button_codes[FREEPLAY_MAX_DIGITAL_BUTTONS] = {BTN_A, BTN_B, 
 #define BTN_INDEX_TR2 10
 #define BTN_INDEX_THUMBL 11
 #define BTN_INDEX_THUMBR 12
-#define BTN_INDEX_2 13
-#define BTN_INDEX_3 14
+#define BTN_INDEX_C 13
+#define BTN_INDEX_Z 14
 #define BTN_INDEX_0 15
 #define BTN_INDEX_1 16
 
@@ -95,8 +96,8 @@ static unsigned int button_codes[FREEPLAY_MAX_DIGITAL_BUTTONS] = {BTN_A, BTN_B, 
                                         //IO2_3
 #define INPUT2_BTN_0      (1 << 4)      //IO2_4
 #define INPUT2_BTN_1      (1 << 5)      //IO2_5
-#define INPUT2_BTN_2      (1 << 6)      //IO2_6
-#define INPUT0_BTN_3      (1 << 7)      //IO2_7
+#define INPUT2_BTN_C      (1 << 6)      //IO2_6
+#define INPUT0_BTN_Z      (1 << 7)      //IO2_7
 
 
 
@@ -124,8 +125,8 @@ static unsigned int button_codes[FREEPLAY_MAX_DIGITAL_BUTTONS] = {BTN_A, BTN_B, 
 
 #define INPUT2_IS_PRESSED_BTN_0(i0) ((i0 & INPUT2_BTN_0) != INPUT2_BTN_0)
 #define INPUT2_IS_PRESSED_BTN_1(i0) ((i0 & INPUT2_BTN_1) != INPUT2_BTN_1)
-#define INPUT2_IS_PRESSED_BTN_2(i0) ((i0 & INPUT2_BTN_2) != INPUT2_BTN_2)
-#define INPUT2_IS_PRESSED_BTN_3(i0) ((i0 & INPUT0_BTN_3) != INPUT0_BTN_3)
+#define INPUT2_IS_PRESSED_BTN_C(i0) ((i0 & INPUT2_BTN_C) != INPUT2_BTN_C)
+#define INPUT2_IS_PRESSED_BTN_Z(i0) ((i0 & INPUT0_BTN_Z) != INPUT0_BTN_Z)
 
 
 struct joystick_params_struct
@@ -220,10 +221,10 @@ void fpjoy_report_digital_inputs(struct input_dev *input, u8 num_digitalbuttons,
     //digital input2
     button_states[BTN_INDEX_THUMBL]  = INPUT2_IS_PRESSED_BTN_THUMBL(input2);
     button_states[BTN_INDEX_THUMBR]  = INPUT2_IS_PRESSED_BTN_THUMBR(input2);
+    button_states[BTN_INDEX_C]       = INPUT2_IS_PRESSED_BTN_C(input2);
+    button_states[BTN_INDEX_Z]       = INPUT2_IS_PRESSED_BTN_Z(input2);
     button_states[BTN_INDEX_0]       = INPUT2_IS_PRESSED_BTN_0(input2);
     button_states[BTN_INDEX_1]       = INPUT2_IS_PRESSED_BTN_1(input2);
-    button_states[BTN_INDEX_2]       = INPUT2_IS_PRESSED_BTN_2(input2);
-    button_states[BTN_INDEX_3]       = INPUT2_IS_PRESSED_BTN_3(input2);
 
     for(button_index = 0; button_index < num_digitalbuttons; button_index++)
     {
@@ -263,15 +264,34 @@ static irqreturn_t fpjoy_irq(int irq, void *irq_data)
     //	struct i2c_client *client = priv->client;
     struct input_dev *input = priv->dev;
     struct freeplay_i2c_register_struct regs;
+    u8 poll_size;
+
 
     int err;
     
-    err = i2c_smbus_read_i2c_block_data(priv->client, FREEPLAY_JOY_REGISTER_DIGITAL_INDEX,
-                                        FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL, (u8 *)&regs);       //only poll the FREEPLAY_JOY_REGISTER_POLL_SIZE
-    
-    if (err != FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL)      //don't use the registers past FREEPLAY_JOY_REGISTER_POLL_SIZE for polling
+    if(priv->num_digitalbuttons <= 8 && priv->num_dpads == 0)
     {
-        dev_err(&priv->client->dev, "Freeplay i2c Joystick, fpjoy_irq: i2c_smbus_read_i2c_block_data returned %d\n", err);
+        //if we're only using/reporting 8 buttons (or less) AND we're not using the dpad inputs, then we only grab input0
+        poll_size = FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL1;
+        regs.input1 = 0xFF;
+        regs.input2 = 0xFF;
+    }
+    if(priv->num_digitalbuttons <= 11)
+    {
+        //if we're only using/reporting 11 buttons (or less), then we only grab input0 and input1 (not input2)
+        poll_size = FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL2;
+        regs.input2 = 0xFF;
+    }
+    else
+    {
+        poll_size = FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL3;
+    }
+    
+    err = i2c_smbus_read_i2c_block_data(priv->client, FREEPLAY_JOY_REGISTER_DIGITAL_INDEX, poll_size, (u8 *)&regs);       //only poll the neded input0-2
+    
+    if (err != poll_size)      //don't use the registers past FREEPLAY_JOY_REGISTER_POLL_SIZE for polling
+    {
+        dev_err(&priv->client->dev, "Freeplay i2c Joystick, fpjoy_irq: i2c_smbus_read_i2c_block_data returned %d (requested %d)\n", err, poll_size);
         return IRQ_NONE;
     }
     
