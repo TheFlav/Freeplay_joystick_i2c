@@ -1,6 +1,7 @@
-rm main
-gcc -o main main.c -li2c
+rm diag
+gcc -o diag diag.c -li2c
 
-sudo ./main
+sudo ./diag
+#sudo ./diag -termreset
 
 
