@@ -26,7 +26,9 @@
 
 //#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
 //#define USE_PIGPIO_IRQ //or USE_PIGPIO
-//or comment out both of the above to poll
+#define USE_POLL_IRQ_PIN //use wiringPi for IRQ
+
+//or comment out all 3 of the above to poll i2c without an IRQ pin
 
 #if defined(USE_PIGPIO_IRQ) && defined(USE_WIRINGPI_IRQ)
  #error Cannot do both IRQ styles
@@ -37,6 +39,9 @@
 #warning PiGPIO seems not so good, becuase you cannot use pins higher than GPIO 31
  #include <pigpio.h>
  #define nINT_GPIO 10   //pigpio won't allow >31
+#elif defined(USE_POLL_IRQ_PIN)
+ #include <wiringPi.h>
+ #define nINT_GPIO 40
 #endif
 
 int fd;
@@ -58,79 +63,75 @@ int i2c_file = -1;
  *
  * input0
  *
- * PC0 = IO0_0 = BTN_X
- * PC1 = IO0_1 = BTN_Y
- * PC2 = IO0_2 = BTN_START
- * PC3 = IO0_3 = BTN_SELECT
- * PC4 = IO0_4 = BTN_L    (AKA BTN_TL in Linux)
- * PC5 = IO0_5 = BTN_R    (AKA BTN_TR in Linux)
+ * PC0 = IO0_0 = DPAD_UP
+ * PC1 = IO0_1 = DPAD_DOWN
+ * PC2 = IO0_2 = DPAD_LEFT
+ * PC3 = IO0_3 = DPAD_RIGHT
+ * PC4 = IO0_4 = BTN_START
+ * PC5 = IO0_5 = BTN_SELECT
  * PB6 = IO0_6 = BTN_A
  * PB7 = IO0_7 = BTN_B
  *
- * input1       A18 means analog pin 18 (A7 = analog 7 aka PB4)
+ * input1
  *
- * A18 = IO1_0 = UP
- * A18 = IO1_1 = DOWN
- * A18 = IO1_2 = LEFT
- * A18 = IO1_3 = RIGHT
- * PB3 = IO1_4 = BTN_L2    (AKA BTN_TL2 in Linux)
- * PB4 = IO1_5 = BTN_R2    (AKA BTN_TR2 in Linux)   //PB4 can be turned into A7 to do an analog resistor ladder if we need BTN_THUMBL and BTN_THUMBR buttons
- * PB5 = IO1_6 = BTN_POWER
- * --- = IO1_7 = always high
+ * PB5 = IO1_0 = BTN_POWER (AKA BTN_MODE)
+ * PC1 = IO1_1 = BTN_THUMBR
+ * PC2 = IO1_2 = BTN_TL2
+ * PC3 = IO1_3 = BTN_TR2
+ * PC4 = IO1_4 = BTN_X
+ * PC5 = IO1_5 = BTN_Y
+ * PB6 = IO1_6 = BTN_TL
+ * PB7 = IO1_7 = BTN_TR
  *
  * input2       EXTENDED DIGITAL INPUT REGISTER
  *
- * A7  = IO2_0 = BTN_THUMBL
- * A7  = IO2_1 = BTN_THUMBR
- * --- = IO2_2 = always high
- * --- = IO2_3 = always high
+ * PC0 = IO2_0 = BTN_THUMBL
+ * ??? = IO2_1 =
+ * PB2 = IO2_2 = BTN_C (when no Serial debugging)
+ * PB3 = IO2_3 = BTN_Z (when no Serial debugging)
  * PA4 = IO2_4 = BTN_0 (when ADC0 not used)
  * PA5 = IO2_5 = BTN_1 (when ADC1 not used)
  * PA6 = IO2_6 = BTN_2 (when ADC2 not used)
  * PA7 = IO2_7 = BTN_3 (when ADC3 not used)
  *
  *
- * POWER_BUTTON (Hotkey AKA poweroff_in) NEEDS TO BE IN HERE SOMEWHERE SOMEHOW
- *
- *
- *
  *
  * PA2 =         POWEROFF_OUT
- * PA3 =         nINT OUT
- * PB2 =         PWM Backlight OUT
+ * PB4 =         nINT OUT
+ * PA3 =         PWM Backlight OUT
  *
  */
 
 struct input0_bit_struct
 {
-    uint8_t btn_x : 1;
-    uint8_t btn_y : 1;
+    uint8_t dpad_u : 1;
+    uint8_t dpad_d : 1;
+    uint8_t dpad_l : 1;
+    uint8_t dpad_r : 1;
     uint8_t btn_start : 1;
     uint8_t btn_select : 1;
-    uint8_t btn_tl : 1;
-    uint8_t btn_tr : 1;
     uint8_t btn_a : 1;
     uint8_t btn_b : 1;
 };
 
 struct input1_bit_struct
 {
-    uint8_t dpad_u : 1;
-    uint8_t dpad_d : 1;
-    uint8_t dpad_l : 1;
-    uint8_t dpad_r : 1;
+    uint8_t btn_mode : 1;
+    uint8_t btn_thumbr : 1;
     uint8_t btn_tl2 : 1;
     uint8_t btn_tr2 : 1;
-    uint8_t btn_mode : 1;
-    uint8_t unused7 : 1;
+    uint8_t btn_x : 1;
+    uint8_t btn_y : 1;
+    uint8_t btn_tl : 1;
+    uint8_t btn_tr : 1;
 };
 
 struct input2_bit_struct
 {
     uint8_t btn_thumbl : 1;
-    uint8_t btn_thumbr : 1;
-    uint8_t unused2 : 1;
-    uint8_t unused3 : 1;
+    uint8_t unused1 : 1;
+    uint8_t btn_c : 1;
+    uint8_t btn_z : 1;
     uint8_t btn_0 : 1;
     uint8_t btn_1 : 1;
     uint8_t btn_2 : 1;
@@ -379,40 +380,25 @@ void i2c_poll_joystick()
     //printf("i2c_poll_joystick: u16=0x%02X input0=0x%02X input1=0x%02X btn_a=%d\n", digital_inputs.digital_inputs_word, digital_inputs.digital_inputs.input0, digital_inputs.digital_inputs.input1, digital_inputs.digital_inputs.input0.btn_a);
 
 
-    gamepad_report.buttons7to0 = (IS_PRESSED(digital_inputs.input0.btn_tr) << 7)
-                                | (IS_PRESSED(digital_inputs.input0.btn_tl) << 6)
-                                | (IS_PRESSED(digital_inputs.input2.btn_1) << 5)
-                                | (IS_PRESSED(digital_inputs.input0.btn_y) << 4)
-                                | (IS_PRESSED(digital_inputs.input0.btn_x) << 3)
-                                | (IS_PRESSED(digital_inputs.input2.btn_0) << 2)
+    gamepad_report.buttons7to0 = (IS_PRESSED(digital_inputs.input1.btn_tr) << 7)
+                                | (IS_PRESSED(digital_inputs.input1.btn_tl) << 6)
+                                | (IS_PRESSED(digital_inputs.input2.btn_z) << 5)
+                                | (IS_PRESSED(digital_inputs.input1.btn_y) << 4)
+                                | (IS_PRESSED(digital_inputs.input1.btn_x) << 3)
+                                | (IS_PRESSED(digital_inputs.input2.btn_c) << 2)
                                 | (IS_PRESSED(digital_inputs.input0.btn_b) << 1)
                                 | IS_PRESSED(digital_inputs.input0.btn_a);
     gamepad_report.buttons14to8 = 0
                                 | (IS_PRESSED(digital_inputs.input2.btn_thumbl) << 6)
-                                | (IS_PRESSED(digital_inputs.input2.btn_thumbr) << 5)
+                                | (IS_PRESSED(digital_inputs.input1.btn_thumbr) << 5)
                                 | (IS_PRESSED(digital_inputs.input1.btn_mode) << 4)
                                 | (IS_PRESSED(digital_inputs.input0.btn_start) << 3)
                                 | (IS_PRESSED(digital_inputs.input0.btn_select) << 2)
                                 | (IS_PRESSED(digital_inputs.input1.btn_tr2) << 1)
                                 | IS_PRESSED(digital_inputs.input1.btn_tl2);
 
-    gamepad_report.hat_x = IS_PRESSED(digital_inputs.input1.dpad_r) - IS_PRESSED(digital_inputs.input1.dpad_l);
-    gamepad_report.hat_y = IS_PRESSED(digital_inputs.input1.dpad_u) - IS_PRESSED(digital_inputs.input1.dpad_d);
-    
-    uint8_t adcbytes[3];
-    static uint16_t adcval_prev;
-    uint16_t adcval;
-    ret = i2c_smbus_read_i2c_block_data(i2c_file, 0x03, 3, adcbytes);
-    if(ret < 0)
-    {
-        printf("i2c_poll_joystick: error %d reading i2c block data (%d bytes requested)\n", ret, sizeof(digital_inputs));
-        exit(1);
-    }
-    adcval = (adcbytes[0] << 8) | ((adcbytes[2] & 0x0F) << 4);
-    
-    if(adcval != adcval_prev)
-        printf("adcval=0x%04X %9d         %9d\n", adcval,adcval,adcval>>6);
-    adcval_prev = adcval;
+    gamepad_report.hat_x = IS_PRESSED(digital_inputs.input0.dpad_r) - IS_PRESSED(digital_inputs.input0.dpad_l);
+    gamepad_report.hat_y = IS_PRESSED(digital_inputs.input0.dpad_u) - IS_PRESSED(digital_inputs.input0.dpad_d);
 }
 
 
@@ -434,7 +420,7 @@ void gpio_callback(int gpio, int level, uint32_t tick) {
 }
 #endif
 
-#ifdef USE_WIRINGPI_IRQ
+#if defined(USE_WIRINGPI_IRQ) || defined(USE_POLL_IRQ_PIN)
 void attiny_irq_handler(void)
 {
     i2c_poll_joystick();
@@ -486,12 +472,6 @@ int main(int argc, char **argv)
 	i2c_open();
     
     i2c_smbus_write_byte_data(i2c_file, 0x09, 0x00);        //turn off ADC3,2,1,0 in adc_on_bits (because this code is for digital only)
-    
-    if(NUM_DIGITAL_BUTTONS > 13)
-        i2c_smbus_write_byte_data(i2c_file, 0x0A, 0x80);        //make sure that use of the PB4 resistor ladder is ON (but you could turn it off by setting 0x00 and then get 2 less digital inputs)
-    else
-        i2c_smbus_write_byte_data(i2c_file, 0x0A, 0x00);        //make sure that use of the PB4 resistor ladder is OFF
-
 
     
     fprintf(stderr, "Press '^C' to quit...\n");
@@ -506,7 +486,10 @@ int main(int argc, char **argv)
     send_event(fd);
     while(1)
     {
+        sleep(0.1);
         
+        if(digitalRead(nINT_GPIO) == LOW)  //sometimes wiringPiISR seems to miss the interrupt
+            attiny_irq_handler();
     }
 #endif
     
@@ -542,8 +525,21 @@ int main(int argc, char **argv)
             time_sleep(0.1);
     }
 #endif
+
+#ifdef USE_POLL_IRQ_PIN
+    printf("Using WiringPi to read nINT in a tight loop on GPIO %d (and only read i2c when it's low)\n", nINT_GPIO);
+    wiringPiSetupGpio();        //use BCM numbering
+    pinMode(nINT_GPIO, INPUT) ;
+#endif
+    
     
 	while (1) {
+#ifdef USE_POLL_IRQ_PIN
+        //whenever the IRQ pin is low, we do the i2c reads
+        if(digitalRead(nINT_GPIO) == LOW)  //sometimes wiringPiISR seems to miss the interrupt
+            attiny_irq_handler();
+#else
+        //we read i2c as fast as possible, but we only update the events if something changed
 		i2c_poll_joystick();
 
 		if(memcmp(&gamepad_report, &gamepad_report_prev, sizeof(gamepad_report)) != 0)
@@ -551,6 +547,7 @@ int main(int argc, char **argv)
 			gamepad_report_prev = gamepad_report;
 			send_event(fd);
 		}
+#endif
 	}
 
 	fprintf(stderr, "Destroy uhid device\n");
