@@ -2,7 +2,7 @@
         Freeplay i2c joystick firmware, kernel-space driver, and user-space driver        
 
 ## Arduino code
-        ./arduino/megatinycore          Arduino sketch for use with megaTinyCore (attiny427, attiny817, attiny1627, etc.)
+        ./arduino/Freeplay_joystick_i2c_megatinycore/          Arduino sketch for use with megaTinyCore (attiny427, attiny817, attiny1627, etc.)
 
 ## kernel joystick driver to read i2c (polled and/or interrupts)
         ./kernel                        kernel module
