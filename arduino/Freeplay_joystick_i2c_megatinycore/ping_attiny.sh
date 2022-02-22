@@ -8,4 +8,4 @@ raspi-gpio set 15 a0 pu
 
 raspi-gpio set 11 op dh
 
-pymcuprog -d attiny817 -t uart -u /dev/ttyAMA0 ping
+pymcuprog -d attiny1627 -t uart -u /dev/ttyAMA0 ping
