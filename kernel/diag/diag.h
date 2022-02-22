@@ -96,8 +96,6 @@ bool *adc_axis_swap_backup[2] = {&driver_back.joy0_swapped_x_y, &driver_back.joy
 bool *js_enabled_backup[2] = {&driver_back.joy0_enabled, &driver_back.joy1_enabled};
 
 //Terminal related
-#define term_screen_count 255 //absolute limit of "screens". DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING, set 'debug' to true and check all available "screens" to update val
-#define term_selectible_count 255 //absolute limit of selectible elements. DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING, set 'debug' to true and check all available "screens" selectibles elements to update val
 const int term_esc_col_normal = 97; //normal color escape code
 const int term_esc_col_disabled = 90; //disabled color escape code
 const int term_esc_col_error = 91; //error color escape code
@@ -110,7 +108,7 @@ struct termios term_backup; //original terminal state backup
 const int term_adc_vertspacing = 9; //vertical spacing between each horizontal ADC elements
 int select_index_current = 0, select_index_last = -1, select_limit = 0; //current element selected, last selected
 
-int term_screen_current = 2, term_screen_last = -1; //start "screen", last screen
+int term_screen_current = 0, term_screen_last = -1; //start "screen", last screen
 bool term_screen_update = false; //"screen" require update
 
 char* term_hint_generic_str[]={
@@ -131,38 +129,6 @@ char* term_hint_i2c_failed_str[]={ //follow i2c_failed_bus, i2c_failed_dev, i2c_
     "I2C reading failed",
 };
 
-char* term_hint_main_str[]={
-    "", //"Bus to use, change with caution",
-    "Address of the device, bus used by default:1",
-    "GPIO pin used for interrupt, -1 to disable",
-    "Amount of reported digital buttons (excl Dpad)",
-    "Enable/disable Dpad report",
-    "Change enable ADCs, limits, fuzz, flat values",
-    "Discard current modifications (exclude Analog Configuration)",
-    "Reset values to default (exclude Analog Configuration)",
-};
-
-char* term_hint_adc_str[]={
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to enable or disable",
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to switch axis direction",
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to set as MIN limit value",
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to set as MAX limit value",
-    "Press \e[1m[ENTER]\e[0m or \e[1m(A)\e[0m to enable axis swap, apply only on driver",
-    "Discard current modifications (exclude Main Settings)",
-    "Reset values to default (exclude Main Settings)",
-};
-
-char* term_hint_save_str[]={
-"Save all parameters including unchanged default values.",
-"Warning, can be unsafe.",
-"Risk to mess a needed system file if something goes wrong.",
-"If you have direct/SSH access, go for following option.",
-"File will be saved in program folder:",
-"Regardless of selected option, previous file will backup as *FILE*.bak.fpjs",
-"Saved successfully",
-"Something went wrong, failed to save"
-};
-
 typedef struct term_select_struct { //selectible terminal elements data
     struct {int x, y, size;} position; //position pointers
     int type; //0:int, 1:bool, 2:bool(visual toogle), 3:hex
@@ -171,9 +137,10 @@ typedef struct term_select_struct { //selectible terminal elements data
     struct {int y; bool *ptrbool; int *ptrint;} defval; //default data
     bool disabled; //is disabled
 } term_select_t;
-term_select_t term_select[term_selectible_count] = {0};
+//term_select_t term_select[term_selectible_count] = {0};
+//term_select_t* term_select = NULL;
 
-typedef struct term_input_struct {bool up, down, left, right, plus, minus, tab, enter, escape;} term_input_t; //terminal key input structure
+typedef struct term_input_struct {bool up, down, left, right, plus, minus, tab, enter, enter_hold, escape;} term_input_t; //terminal key input structure
 term_input_t term_input = {0};
 
 typedef struct term_pos_generic_struct { //generic terminal position pointer structure
@@ -185,9 +152,10 @@ typedef struct term_pos_string_struct {
     char str[buffer_size]; //char array pointer
 } term_pos_string_t;
 
+#define term_pos_button_buffer_size 128
 typedef struct term_pos_button_struct {
     int x, y, w; //col, line, width
-    char str[buffer_size]; //char array pointer
+    char str[term_pos_button_buffer_size]; //char array pointer
     bool *ptrbool; //bool pointer to toogle
     char *ptrhint; //hint char array pointer
     bool disabled; //is disabled
@@ -196,41 +164,25 @@ typedef struct term_pos_button_struct {
 
 //functions prototypes
 static void debug_print_binary_int_term(int /*line*/, int /*col*/, int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format at given term position
-
 static double get_time_double(void); //get time in double (seconds)
-
 static void program_get_path(char** /*args*/, char* /*var*/); //get current program path
 
-
-static void str_trim_whitespace(char** /*ptr*/); //update pointer to skip leading pointer, set first trailing space to null char
-
 static int dtoverlay_parser_search_name(dtoverlay_parser_store_t* /*store*/, unsigned int /*store_size*/, char* /*value*/); //search name into dtoverlay parser store, return index on success, -1 on failure
-
 static int dtoverlay_parser(char* /*filename*/, char* /*dtoverlay_name*/, dtoverlay_parser_store_t* /*store*/, unsigned int /*store_size*/); //parse file that content dtoverlay declaration, e.g /boot/config.txt
-
 static void dtoverlay_generate(char* /*str*/, unsigned int /*strlen*/, char* /*dtoverlay_name*/, dtoverlay_parser_store_t* /*store*/, unsigned int /*store_size*/); //generate text line from given dtoverlay store
-
 static int dtoverlay_save(char* /*filename*/, char* /*dtoverlay_name*/, dtoverlay_parser_store_t* /*store*/, unsigned int /*store_size*/); //save current dtoverlay data to file. return 0 on success, -1 on failure
-
 static int dtoverlay_check(char* /*filename*/, char* /*dtoverlay_name*/); //check dtoverlay file. return detected line number on success, -1 on failure
 
 static int i2c_init(int* /*fd*/, int /*bus*/, int /*addr*/); //open fd for I2C device, check device signature, get device id/version, ADC resolution, current device ADC configuration
-
 static int adc_defuzz(int /*value*/, int /*old_val*/, int /*fuzz*/); //defuzz, based on input_defuzz_abs_event(): https://elixir.bootlin.com/linux/latest/source/drivers/input/input.c#L56
-
 static int adc_correct_offset_center(int /*adc_resolution*/, int /*adc_value*/, int /*adc_min*/, int /*adc_max*/, int /*adc_offset*/, int /*flat_in*/, int /*flat_out*/); //apply offset center, expand adc range, inside/ouside flat, flat_in/out are values relative to adc resolution (not percent), direct copy from uhid driver
 
-
 static void array_fill(char* /*arr*/, int /*size*/, char /*chr*/); //fill array with given character, works with '\0' for full reset, last char set to '\0'
-
 static int array_pad(char* /*arr*/, int /*arr_len*/, int /*size*/, char /*pad*/, int /*align*/); //pad a array with 'pad', 'align': 0:center 1:left 2:right, 'size':final array size, return padding length
-
-
+static void str_trim_whitespace(char** /*ptr*/); //update pointer to skip leading pointer, set first trailing space to null char
 static int strcpy_noescape(char* /*dest*/, char* /*src*/, int /*limit*/); //strcpy "clone" that ignore terminal escape code, set dest=src or dest=NULL to only return "noescape" char array length. Current limitations:defined limit of escape code (w/o "\e["). warnings: no size check, broken if badly formated escape, only check for h,l,j,m ending
 
-
 static void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
-
 static void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value
 
 static void term_user_input(term_input_t* /*input*/); //process terminal key inputs
@@ -239,10 +191,4 @@ static void term_select_update(term_select_t* /*store*/, int* /*index*/, int* /*
 static void term_screen_main(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //main screen:0
 static void term_screen_adc(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //display adc screen:1
 static void term_screen_save(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //save screen:2
-
-
-
-
-
-
 
