@@ -27,7 +27,7 @@
 #define USE_MUX_ON_PC0_TO_PC3       //The mux that connects (DPAD u/d/l/r) or (ThumbL, ThumbR, TL2, TR2) to PC0,PC1,PC2,PC3
 #define USE_MUX_ON_PC4_TO_PB7       //The mux that connects (Start, Select, A, B) or (X, Y, TL, TR) to PC4,PC5,PB6,PB7
 
-#define USE_SERIAL_DEBUG      //UART is on PB2/PB3 which shares pins with IO2_2/IO2_3
+//#define USE_SERIAL_DEBUG      //UART is on PB2/PB3 which shares pins with IO2_2/IO2_3
 
 
 #include <Wire.h>
@@ -223,8 +223,8 @@ volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. W
  * 
  * PC0 = IO2_0 = BTN_THUMBL
  * ??? = IO2_1 = 
- * PB2 = IO2_2 = BTN_4 (when no 
- * PB3 = IO2_3 = BTN_5
+ * PB2 = IO2_2 = BTN_C (when no Serial debugging)
+ * PB3 = IO2_3 = BTN_Z (when no Serial debugging)
  * PA4 = IO2_4 = BTN_0 (when ADC0 not used)
  * PA5 = IO2_5 = BTN_1 (when ADC1 not used)
  * PA6 = IO2_6 = BTN_2 (when ADC2 not used)
@@ -555,6 +555,8 @@ void read_digital_inputs(void)
  #else
   input1 = 0b11111111;
  #endif
+#else
+  input1 = 0b11111111;
 #endif
 
 #ifdef CONFIG_INVERT_POWER_BUTTON
