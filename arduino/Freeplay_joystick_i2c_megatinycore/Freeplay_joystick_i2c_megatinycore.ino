@@ -5,6 +5,8 @@
  * 
  * TODO:  Maybe Add poweroff control via SECONDARY i2c address
  * MAYBE: Add watchdog shutdown if no "petting" after so long
+ * TODO:  Maybe add an i2c register for the Pi to tell the attiny that the power is low (soon to shutdown).
+ *        And then flash the backlight periodically.
  * 
  */
 
