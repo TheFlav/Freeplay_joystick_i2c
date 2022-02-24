@@ -4,9 +4,9 @@
 /*
  * 
  * TODO:  Maybe Add poweroff control via SECONDARY i2c address
- * MAYBE: Add watchdog shutdown if no "petting" after so long
  * TODO:  Maybe add an i2c register for the Pi to tell the attiny that the power is low (soon to shutdown).
  *        And then flash the backlight periodically.
+ * MAYBE: Add watchdog shutdown if no "petting" after so long
  * 
  */
 
@@ -29,7 +29,7 @@
 #define USE_MUX_ON_PC0_TO_PC3       //The mux that connects (DPAD u/d/l/r) or (ThumbL, ThumbR, TL2, TR2) to PC0,PC1,PC2,PC3
 #define USE_MUX_ON_PC4_TO_PB7       //The mux that connects (Start, Select, A, B) or (X, Y, TL, TR) to PC4,PC5,PB6,PB7
 
-//#define USE_SERIAL_DEBUG      //UART is on PB2/PB3 which shares pins with IO2_2/IO2_3
+#define USE_SERIAL_DEBUG      //UART is on PB2/PB3 which shares pins with IO2_2/IO2_3
 
 
 #include <Wire.h>
@@ -40,7 +40,7 @@
 
 #define MANUF_ID         0xED
 #define DEVICE_ID        0x00
-#define VERSION_NUMBER   10
+#define VERSION_NUMBER   11
 
 
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
@@ -162,7 +162,8 @@ struct i2c_secondary_address_register_struct
   uint8_t rfu3;              // Reg: 0x07 - reserved for future use (or device-specific use)
   uint8_t rfu4;              // Reg: 0x08 - reserved for future use (or device-specific use)
   uint8_t rfu5;              // Reg: 0x09 - reserved for future use (or device-specific use)
-  uint8_t rfu6;              // Reg: 0x0A - reserved for future use (or device-specific use)
+#define REGISTER_SEC_POWER_CONTROL      0x0A   //this one is writeable
+  uint8_t power_control;     // Reg: 0x0A - host can tell us stuff about the state of the power (like low-batt or shutdown imminent)
 #define REGISTER_SEC_SEC_I2C_ADDR       0x0B   //this one is writeable
   uint8_t secondary_i2c_addr; // Reg: 0x0B - this holds the secondary i2c address (the address where this struct can be found)
 #define REGISTER_SEC_JOY_I2C_ADDR       0x0C   //this one is writeable
@@ -170,7 +171,6 @@ struct i2c_secondary_address_register_struct
   uint8_t manuf_ID;          // Reg: 0x0D - manuf_ID:device_ID:version_ID needs to be a unique ID that defines a specific device and how it will use above registers
   uint8_t device_ID;         // Reg: 0x0E -
   uint8_t version_ID;        // Reg: 0x0F - 
-
 } i2c_secondary_registers;
 
 struct eeprom_data_struct
@@ -313,6 +313,9 @@ void resetViaSWR() {
   _PROTECTED_WRITE(RSTCTRL.SWRR,1);
 }
 
+#define BACKLIGHT_FLASH_MILLIS 150
+uint8_t g_backlight_is_flashing = 0;    //set this to the number of flashes (off/on cycles) to perform
+
 #ifdef USE_EEPROM
 bool g_eeprom_needs_saving = false;
 #endif
@@ -404,6 +407,74 @@ void eeprom_restore_data()
   eeprom_save_now();
 }
 
+enum backlight_flash_state_enum {
+    NOT_FLASHING,
+    FLASHING_BACKLIGHT_OFF,
+    FLASHING_BACKLIGHT_ON    
+};
+
+void backlight_start_flashing(uint8_t num_flashes)
+{
+#ifdef PIN_BACKLIGHT_PWM  
+  g_backlight_is_flashing = num_flashes;
+#endif
+}
+
+void backlight_process_flashing()
+{
+#ifdef PIN_BACKLIGHT_PWM  
+  static unsigned long last_millis = 0;
+  static enum backlight_flash_state_enum backlight_flash_state = NOT_FLASHING;
+  
+  if(g_backlight_is_flashing == 0)
+    return;
+    
+  unsigned long curr_millis = millis();
+
+  if(backlight_flash_state == NOT_FLASHING)
+  {
+    last_millis = curr_millis;
+    digitalWrite(PIN_BACKLIGHT_PWM, LOW);   //turn backlight off
+    backlight_flash_state = FLASHING_BACKLIGHT_OFF;
+    return;
+  }
+  
+  if((curr_millis - last_millis) >= BACKLIGHT_FLASH_MILLIS)
+  {
+    if(backlight_flash_state == FLASHING_BACKLIGHT_OFF)
+    {
+      digitalWrite(PIN_BACKLIGHT_PWM, HIGH);   //turn backlight on
+      backlight_flash_state = FLASHING_BACKLIGHT_ON;
+    }
+    else if(backlight_flash_state == FLASHING_BACKLIGHT_ON)
+    {
+      g_backlight_is_flashing--;
+      if(g_backlight_is_flashing == 0)
+      {
+        backlight_flash_state = NOT_FLASHING;
+#ifdef USE_PWM_BACKLIGHT
+        analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
+#else
+        digitalWrite(PIN_BACKLIGHT_PWM, HIGH);
+#endif
+      }
+      else
+      {
+        digitalWrite(PIN_BACKLIGHT_PWM, LOW);   //turn backlight off
+        backlight_flash_state = FLASHING_BACKLIGHT_OFF;
+      }
+    }
+    else
+    {
+      //Serial.println("backlight_process_flashing: ERROR!");
+      //ERROR
+    }    
+    last_millis = curr_millis;
+  }
+
+#endif
+}
+
 void setup_adc0_to_adc3()
 {
   if(i2c_joystick_registers.adc_conf_bits & (1 << 0))
@@ -483,7 +554,6 @@ void setup_gpio(void)
   setup_adc0_to_adc3();
   setup_config0();
 
-  
   //PORTB_PIN0CTRL = PORT_PULLUPEN_bm;    //i2c
   //PORTB_PIN1CTRL = PORT_PULLUPEN_bm;    //i2c
 #ifndef USE_SERIAL_DEBUG
@@ -494,16 +564,23 @@ void setup_gpio(void)
 #if !defined(CONFIG_INVERT_POWER_BUTTON)    //don't use a pullup on the power button
   PORTB_PIN5CTRL = PORT_PULLUPEN_bm;    //PB5 = BTN_POWER
 #endif
+
+#ifndef USE_MUX_ON_PC4_TO_PB7    //we don't need pull-ups on these, if we're using the MUX, as it will always drive high or low
   PORTB_PIN6CTRL = PORT_PULLUPEN_bm;
   PORTB_PIN7CTRL = PORT_PULLUPEN_bm;
+#endif
 
 //#define PINC_MASK (0b00111111)
+#ifndef USE_MUX_ON_PC0_TO_PC3  //we don't need pull-ups on these, if we're using the MUX, as it will always drive high or low
   PORTC_PIN0CTRL = PORT_PULLUPEN_bm;
   PORTC_PIN1CTRL = PORT_PULLUPEN_bm;
   PORTC_PIN2CTRL = PORT_PULLUPEN_bm;
   PORTC_PIN3CTRL = PORT_PULLUPEN_bm;
+#endif
+#ifndef USE_MUX_ON_PC4_TO_PB7    //we don't need pull-ups on these, if we're using the MUX, as it will always drive high or low
   PORTC_PIN4CTRL = PORT_PULLUPEN_bm;
   PORTC_PIN5CTRL = PORT_PULLUPEN_bm;
+#endif
   //PORTC_PIN6CTRL = PORT_PULLUPEN_bm;    //there is no PC6
   //PORTC_PIN7CTRL = PORT_PULLUPEN_bm;    //there is no PC7
 }
@@ -665,17 +742,31 @@ void process_special_inputs()
 
 #ifdef PIN_POWEROFF_OUT
   static unsigned long power_btn_start_millis = 0;
+  static bool prev_pressed_btn_power = false;
   if(IS_PRESSED_BTN_POWER())
   {
-    unsigned long current_millis = millis();
-    if((current_millis - power_btn_start_millis) >= (POWEROFF_HOLD_SECONDS * 1000))
+    if(prev_pressed_btn_power)
     {
-      digitalWrite(PIN_POWEROFF_OUT,HIGH);
+      unsigned long current_millis = millis();
+
+      if((current_millis - power_btn_start_millis) >= (POWEROFF_HOLD_SECONDS * 1000))         //shutdown!
+      {
+        digitalWrite(PIN_POWEROFF_OUT,HIGH);
+      }
+      else if((current_millis - power_btn_start_millis) >= (POWEROFF_HOLD_SECONDS * 900))    //90% of the way to shutdown
+      {
+        backlight_start_flashing(1);    //this will keep flashing until the power button is released
+      }
+    }
+    else
+    {
+      power_btn_start_millis = millis();
+      prev_pressed_btn_power = true;
     }
   }
-  else
+  else if(prev_pressed_btn_power)
   {
-    power_btn_start_millis = millis();
+    prev_pressed_btn_power = false;
   }
 #endif  
 }
@@ -732,6 +823,13 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
     {
       i2c_secondary_registers.secondary_i2c_addr = temp;      
     }    
+    else if(x == REGISTER_SEC_POWER_CONTROL)
+    {
+      backlight_start_flashing(temp);     //change this at some point!
+      
+      //we would use this as a way for the i2c master (host system) to tell us about power related stuff (like if the battery is getting low)
+      i2c_secondary_registers.power_control = temp;      
+    }
 #ifdef USE_PWM_BACKLIGHT
     else if(x == REGISTER_SEC_CONFIG_BACKLIGHT)   //this is a writeable register
     {
@@ -969,6 +1067,8 @@ void loop()
 
   read_digital_inputs();
   process_special_inputs();     //make sure special inputs are digital (input0 and input1) only
+  if(g_backlight_is_flashing)
+    backlight_process_flashing();
 
 #if defined(USE_ADC0) || defined(USE_ADC1) || defined(USE_ADC2) || defined(USE_ADC3)
   read_analog_inputs();
