@@ -149,7 +149,7 @@ typedef struct term_pos_generic_struct { //generic terminal position pointer str
 
 typedef struct term_pos_string_struct {
     int x, y, w; //col, line, width
-    char str[buffer_size]; //char array pointer
+    char str[buffer_size]; //char array
 } term_pos_string_t;
 
 #define term_pos_button_buffer_size 128
@@ -191,4 +191,4 @@ static void term_select_update(term_select_t* /*store*/, int* /*index*/, int* /*
 static void term_screen_main(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //main screen:0
 static void term_screen_adc(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //display adc screen:1
 static void term_screen_save(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //save screen:2
-
+static void term_screen_digitaldebug(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //digital input debug:3
