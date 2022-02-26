@@ -30,13 +30,14 @@
 
 /*
 * TODO NOTES FOR TESTING:
-* update "dtoverlay_filename", "struct dtoverlay_driver_struct", "button_names[input_values_count]"
+* update "dtoverlay_filename", "dtoverlay_install_cmd_path", "struct dtoverlay_driver_struct", "button_names[input_values_count]"
 */
 
 //vendor defined settings
 bool debug = true; //enable debug outputs
 char* dtoverlay_name = "freeplay-joystick"; //dtoverlay module name
 char* dtoverlay_filename = "/dev/shm/config.txt"/*"/boot/config.txt"*/; //file that contain dtoverlays, e.g. "/boot/config.txt" for Raspberry Pi
+char* dtoverlay_install_cmd_path = "/dev/shm/fpjs_install.sh"; //file that contain install command for dtoverlay, leave blank to disable
 const uint8_t i2c_dev_manuf = 0xED; //I2C MCU manufacturer signature, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 const int button_count_limit = 19; //max amount of digital buttons (excl. Dpad)
 
@@ -111,6 +112,7 @@ struct i2c_joystick_register_struct { //mcu main registers, direct copy from mcu
 #define input_registers_count 3 //amount of digital input registers
 #define input_values_count 8*input_registers_count //size of all digital input registers
 
+const int dpad_start_index = 0; //where dpad report start (all input registers included), can go from 0 to 19 with 3 input registers
 char* button_names[input_values_count] = { //event report key code, follow input0-3 order, based on 'button_codes', 'input0_bit_struct', 'input2_bit_struct' var from freeplay-joystick.c
     "Dpad UP", "Dpad DOWN", "Dpad LEFT", "Dpad RIGHT", "BTN_START", "BTN_SELECT", "BTN_A", "BTN_B",
     "BTN_MODE", "BTN_THUMBR", "BTN_TL2", "BTN_TR2", "BTN_X", "BTN_Y", "BTN_TL", "BTN_TR", 
@@ -128,13 +130,10 @@ bool *adc_axis_swap_default[2] = {&driver_default.joy0_swapped_x_y, &driver_defa
 bool *js_enabled_default[2] = {&driver_default.joy0_enabled, &driver_default.joy1_enabled};
 
 
-
-
 //debug functs
 static void debug_print_binary_int_term(int line, int col, int val, int bits, char* var){ //print given var in binary format at given term position
 	printf("\e[%d;%dH\e[1;100m%s : ", line, col, var); for(int i = bits-1; i > -1; i--){printf("%d", (val >> i) & 0b1);} printf("\e[0m");
 }
-
 
 //time functs
 static double get_time_double(void){ //get time in double (seconds)
@@ -225,18 +224,17 @@ static int dtoverlay_parser(char* filename, char* dtoverlay_name, dtoverlay_pars
     return found;
 }
 
-static void dtoverlay_generate(char* str, unsigned int len, char* dtoverlay_name, dtoverlay_parser_store_t* store, unsigned int store_size){ //generate text line from given dtoverlay store
+static void dtoverlay_generate(char* str, unsigned int len, char* dtoverlay_name, char dtoverlay_separator, dtoverlay_parser_store_t* store, unsigned int store_size){ //generate text line from given dtoverlay store
     array_fill(str, len, '\0'); //fully reset array
-    sprintf(str, "dtoverlay=%s", dtoverlay_name);
+    strcat(str, dtoverlay_name);
     for (int i=0; i<store_size; i++){
-        char buffer[4096]={'\0'}, buffer1[4096]={'\0'};
+        char buffer[4096]={'\0'}, buffer1[4095]={'\0'};
         if (store[i].type==1){sprintf(buffer1, "0x%X", *(int*)store[i].ptr); //hex
         } else if (store[i].type==2){sprintf(buffer1, "%d", (*(bool*)store[i].ptr)?1:0); //bool
         } else {sprintf(buffer1, "%d", *(int*)store[i].ptr);} //int
-        sprintf(buffer, ",%s=%s", store[i].name, buffer1);
+        sprintf(buffer, "%c%s=%s", dtoverlay_separator, store[i].name, buffer1);
         strcat(str, buffer);
     }
-    strcat(str, "\n");
 }
 
 static int dtoverlay_save(char* filename, char* dtoverlay_name, dtoverlay_parser_store_t* store, unsigned int store_size){ //save current dtoverlay data to file. return 0 on success, -1 on failure
@@ -274,15 +272,15 @@ static int dtoverlay_save(char* filename, char* dtoverlay_name, dtoverlay_parser
             }
 
             skip:;
-            if (valid){dtoverlay_generate(strBuffer, 4096, dtoverlay_name, store, store_size);} //generate proper dt line
-            fputs(strBuffer, filehandle_tmp); //copy line to temporary file
+            if (valid){dtoverlay_generate(strBuffer, 4096, dtoverlay_name, ',', store, store_size);} //generate proper dt line
+            fputs("dtoverlay=", filehandle_tmp); fputs(strBuffer, filehandle_tmp); fputs("\n", filehandle_tmp); //copy line to temporary file
         }
         fclose(filehandle);
     }
 
     if (!found){
-        dtoverlay_generate(strBuffer, 4096, dtoverlay_name, store, store_size);
-        fputs(strBuffer, filehandle_tmp); //copy line to temporary file
+        dtoverlay_generate(strBuffer, 4096, dtoverlay_name, ',', store, store_size);
+        fputs("dtoverlay=", filehandle_tmp); fputs(strBuffer, filehandle_tmp); fputs("\n", filehandle_tmp); //copy line to temporary file
     }
 
     //set file owner and rights
@@ -376,7 +374,7 @@ static int i2c_init(int* fd, int bus, int addr){ //open fd for I2C device, check
                 int_constrain(adc_settings_back[i].max, 0, adc_res_limit);
                 int_constrain(adc_settings_default[i].max, 0, adc_res_limit);
                 adc_data[i].raw_min = adc_res_limit; adc_data[i].raw_max = 0;
-                adc_reg_enable[i] = (bool)((mcu_conf_current.bits >> i+4) & 0b1);
+                adc_reg_enable[i] = (bool)((mcu_conf_current.bits >> (i+4)) & 0b1);
                 if (adc_reg_enable[i]){adc_reg_used_backup[i] = adc_reg_used[i] = adc_reg_used_prev[i] = (bool)((mcu_conf_current.bits >> i) & 0b1);}
             }
             if (!(adc_reg_used[0] && adc_reg_used[1])){*js_enabled[0] = false;} if (!(adc_reg_used[2] && adc_reg_used[3])){*js_enabled[1] = false;}
@@ -517,7 +515,7 @@ static void term_select_update(term_select_t* store, int* index, int* index_last
                 
                 if (store[*index].defval.ptrbool && (type == 1 || type == 2)){ //bool
                     if (type == 1){strcpy(buffer1, *(store[*index].defval.ptrbool)?"Enabled":"Disabled"); //bool
-                    } else if (type == 2){strcpy(buffer1, *(store[*index].defval.ptrbool)?"X":" ");} //toogle
+                    } else if (type == 2){strcpy(buffer1, *(store[*index].defval.ptrbool)?"X":"_");} //toogle
                 } else if (store[*index].defval.ptrint && (type == 0 || type == 3)){ //int
                     if (type == 0){sprintf(buffer1, "%d", *store[*index].defval.ptrint); //int
                     } else if (type == 3){sprintf(buffer1, "0x%X", *store[*index].defval.ptrint);} //hex
@@ -551,7 +549,7 @@ static void term_select_update(term_select_t* store, int* index, int* index_last
     }
     *index_last = *index;
 
-    bool selected, valid;
+    bool selected;
     for (int i=0; i<index_limit; i++){
         selected = (i==*index);
         if (store[i].position.size){
@@ -581,18 +579,36 @@ static void term_select_update(term_select_t* store, int* index, int* index_last
                         sprintf(fmtbuffer, "%%%ds", store[i].position.size); sprintf(buffer, fmtbuffer, buffer1);
                     } else {sprintf(fmtbuffer, "%%%dd", store[i].position.size); sprintf(buffer, fmtbuffer, *store[i].value.ptrint);}
                     tmpptr = buffer;
-                } else if (store[i].type == 2 && store[i].value.ptrbool){sprintf(buffer, "%s", *(store[i].value.ptrbool)?"X":" "); tmpptr = buffer;} //toogle bool
+                } else if (store[i].type == 2 && store[i].value.ptrbool){sprintf(buffer, "%s", *(store[i].value.ptrbool)?"X":"_"); tmpptr = buffer;} //toogle bool
                 if (tmpptr){fprintf(stdout, "\e[%d;%dH\e[%d;%d;%d;4m%s\e[0m", store[i].position.y, store[i].position.x, tmpcol_style, tmpcol_bg, tmpcol_txt, tmpptr);}
             }
         }
     }
 }
 
+static int term_print_path_multiline(char* str, int line, int col, int width_limit, int esc_color){ //print a multiple line if needed, return no of lines
+    int lines = 0; char buffer[buffer_size];
+    array_fill(buffer, buffer_size, '\0');
+    char str_back[strlen(str)+1]; strcpy(str_back, str);
+    char *tmpPtr = strtok(str_back, "/");
+	while (tmpPtr != NULL){
+        if(strlen(buffer) + strlen(tmpPtr) + col + 2 > width_limit){
+            fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[1m\xE2\x86\x93\e[21m\e[0m", line + lines++, col, esc_color, buffer);
+            array_fill(buffer, buffer_size, '\0');
+        }
+        strcat(buffer, "/"); strcat(buffer, tmpPtr);
+		tmpPtr = strtok (NULL, "/");
+	}
+    fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", line + lines++, col, esc_color, buffer);
+    return lines;
+}
+
+
 //term screen functs
 static void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_screen_adc, term_screen_save, term_screen_digitaldebug}; //pointer to screen functions
 
 static void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){ //main screen:0
-    char buffer[buffer_size], buffer1[buffer_size];
+    char buffer[buffer_size];
     bool default_resquested = false, reset_resquested = false;
     int hint_line = tty_last_height - 6, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal; 
 
@@ -603,9 +619,10 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
         "Address of the device, bus used by default:1",
         "GPIO pin used for interrupt, -1 to disable",
         "Amount of reported digital buttons (excl Dpad)",
+        "Please refer to \e[4m[Digital Input Debug]\e[24m menu to for visual representation.",
         "Enable/disable Dpad report",
         "Change enable ADCs, limits, fuzz, flat values",
-        "Display digital inputs report",
+        "Display digital inputs state",
         "Discard current modifications (exclude Analog Configuration)",
         "Reset values to default (exclude Analog Configuration)",
     };
@@ -657,23 +674,24 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
     //buttons no
     fprintf(stdout, "\e[%d;%dH\e[%dmButtons:___ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, term_hint_main_str[5]);
     term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+8, .y=tty_line, .size=3}, .type=0, .value={.min=0, .max=button_count_limit, .ptrint=&driver_user.digitalbuttons}, .defval={.ptrint=&driver_default.digitalbuttons, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_generic_str[1]}};
-    tty_line+=2;
+    fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line+1, tmp_col, 0/*tmp_esc_col*/, term_hint_main_str[6]);
+    tty_line+=3;
 
     //dpad enabled
-    fprintf(stdout, "\e[%d;%dH\e[%dmDpad:_ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, term_hint_main_str[6]);
+    fprintf(stdout, "\e[%d;%dH\e[%dmDpad:_ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, term_hint_main_str[7]);
     term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+5, .y=tty_line, .size=3}, .type=2, .value={.ptrbool=&driver_user.dpads}, .defval={.ptrbool=&driver_default.dpads, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_generic_str[1]}};
     tty_line+=2;
 
     //adc configuration
     bool term_go_adcconf = false;
     char* term_buttons_adc_config = " Analog Configuration ";
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=strlen(term_buttons_adc_config)}, .type=1, .value={.ptrchar=term_buttons_adc_config, .ptrbool=&term_go_adcconf}, .hint={.y=hint_line, .str=term_hint_main_str[7]}};
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=strlen(term_buttons_adc_config)}, .type=1, .value={.ptrchar=term_buttons_adc_config, .ptrbool=&term_go_adcconf}, .hint={.y=hint_line, .str=term_hint_main_str[8]}};
     tty_line+=2;
 
     //digital debug
     bool term_go_digitaldebug = false;
     char* term_buttons_digitaldebug_config = " Digital Input Debug ";
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=strlen(term_buttons_digitaldebug_config)}, .type=1, .value={.ptrchar=term_buttons_digitaldebug_config, .ptrbool=&term_go_digitaldebug}, .hint={.y=hint_line, .str=term_hint_main_str[8]}};
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=strlen(term_buttons_digitaldebug_config)}, .type=1, .value={.ptrchar=term_buttons_digitaldebug_config, .ptrbool=&term_go_digitaldebug}, .hint={.y=hint_line, .str=term_hint_main_str[9]}};
 
     i2c_failed_jump:; //jump point for i2c failure
 
@@ -877,6 +895,8 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
         if (!i2c_failed){
+            fprintf(stdout, "\e[%d;0H\e[2K", tty_last_height-6); //reset i2c error line
+
             adc_data[0].raw = adc_data[1].raw = adc_data[2].raw = adc_data[3].raw = adc_res_limit / 2; //reset raw to midpoint
 
             if (adc_reg_enable[0] || adc_reg_enable[1]){ //read adc0-1
@@ -917,7 +937,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
         term_user_input(&term_input); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
 
-        if (term_input.escape){select_index_current = select_limit-1;} //escape key pressed, move cursor to last selectible element
+        if (term_input.escape){term_go_mainscreen = true; /*select_index_current = select_limit-1;*/} //escape key pressed, move cursor to last selectible element
         if (term_go_mainscreen){term_screen_current = 0; goto funct_end;} //return to main screen requested
 
         if (reset_raw_limits_resquested){
@@ -988,7 +1008,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
         }
 
         fprintf(stdout, "\e[%d;0H\n", tty_last_height-1); //force tty update
-        usleep (1000000/30);
+        usleep (1000000/30); //limit to 30hz max to limit risk of i2c colision if driver is running
     }
 
     funct_end:; //jump point for fast exit
@@ -996,22 +1016,22 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
 }
 
 static void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){ //save screen:2
-    char buffer[buffer_size], buffer1[buffer_size], buffer2[buffer_size];
-    int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2/*, tmp_esc_col = term_esc_col_normal*/; 
+    //char buffer[buffer_size];
+    int hint_line = tty_last_height - 4, tmp_col = 2; 
     bool term_go_mainscreen = false;
 
     char* term_hint_save_str[]={
-    "", //"Save all parameters including unchanged default values.",
+    "Saved successfully",
+    "Something went wrong, failed to save",
     "Warning, can be unsafe.",
     "Risk to mess a needed system file if something goes wrong.",
     "If you have direct/SSH access, go for following option.",
     "File will be saved in program folder:",
+    "File will be saved to:",
     "Regardless of selected option, previous file will backup as *FILE*.bak.fpjs",
-    "Saved successfully",
-    "Something went wrong, failed to save"
     };
 
-    const int select_max = 4;
+    const int select_max = 5;
     term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
 
     char* screen_name = "Save current settings";
@@ -1021,32 +1041,29 @@ static void term_screen_save(int tty_line, int tty_last_width, int tty_last_heig
     //save to /boot/config.txt
     bool save_boot_resquested = false; int save_boot_btn_index = select_limit;
     char term_buttons_save_configtxt[12+strlen(dtoverlay_filename)]; sprintf(term_buttons_save_configtxt, " Save to %s ", dtoverlay_filename);
-    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_save_configtxt)) / 2, .y=tty_line++, .size=strlen(term_buttons_save_configtxt)}, .type=1, .value={.ptrchar=term_buttons_save_configtxt, .ptrbool=&save_boot_resquested}, .hint={.y=hint_line, .str=term_hint_generic_str[2]}};
-    //fprintf(stdout, "\e[%d;%dH\e[%dm%s \e[%dm(%s)\e[0m", tty_line, tmp_col, term_esc_col_normal, term_buttons_save_configtxt, term_esc_col_error, term_hint_save_str[1]);
-    fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[1], 20)) / 2, term_esc_col_error, term_hint_save_str[1]);
+    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_save_configtxt)) / 2, .y=tty_line++, .size=strlen(term_buttons_save_configtxt)}, .type=1, .value={.ptrchar=term_buttons_save_configtxt, .ptrbool=&save_boot_resquested}, .hint={.y=hint_line, .str=term_hint_save_str[7]}};
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[2], 20)) / 2, term_esc_col_error, term_hint_save_str[2]);
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[3], 20)) / 2, term_esc_col_error, term_hint_save_str[3]);
+    fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[4], 20)) / 2, term_esc_col_error, term_hint_save_str[4]);
     tty_line++;
 
     //save to dtoverlay.txt
     bool save_text_resquested = false; int save_text_btn_index = select_limit;
-    char term_buttons_save_dtoverlaytxt[12+strlen(dtoverlay_text_filename)]; sprintf(term_buttons_save_dtoverlaytxt, " Save to %s ", dtoverlay_text_filename);
-    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_save_dtoverlaytxt)) / 2, .y=tty_line++, .size=strlen(term_buttons_save_dtoverlaytxt)}, .type=1, .value={.ptrchar=term_buttons_save_dtoverlaytxt, .ptrbool=&save_text_resquested}, .hint={.y=hint_line, .str=term_hint_generic_str[2]}};
-    fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[4], 20)) / 2, term_esc_col_normal, term_hint_save_str[4]);
-    
-    //multiline program path
-    array_fill(buffer, buffer_size, '\0');
-    char program_path_back[strlen(program_path)+1]; strcpy(program_path_back, program_path); char *tmpPtr = strtok(program_path_back, "/");
-	while (tmpPtr != NULL){
-        if(strlen(buffer) + strlen(tmpPtr) + tmp_col + 2 > tty_last_width){
-            fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[1m\xE2\x86\x93\e[21m\e[0m", tty_line++, tmp_col, term_esc_col_normal, buffer);
-            array_fill(buffer, buffer_size, '\0');
-        }
-        strcat(buffer, "/"); strcat(buffer, tmpPtr);
-		tmpPtr = strtok (NULL, "/");
-	}
-    fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, tmp_col, term_esc_col_normal, buffer);
-    tty_line++;
+    char term_buttons_save_dtoverlay_txt[12+strlen(dtoverlay_text_filename)]; sprintf(term_buttons_save_dtoverlay_txt, " Save to %s ", dtoverlay_text_filename);
+    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_save_dtoverlay_txt)) / 2, .y=tty_line++, .size=strlen(term_buttons_save_dtoverlay_txt)}, .type=1, .value={.ptrchar=term_buttons_save_dtoverlay_txt, .ptrbool=&save_text_resquested}, .hint={.y=hint_line, .str=term_hint_save_str[7]}};
+    fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[6], 20)) / 2, term_esc_col_normal, term_hint_save_str[6]);
+    char tmp_path[strlen(program_path) + strlen(dtoverlay_text_filename) + 5]; sprintf(tmp_path, "%s/%s", program_path, dtoverlay_text_filename); //full path to dtoverlay.txt
+    tty_line += term_print_path_multiline(tmp_path, tty_line, tmp_col, tty_last_width, term_esc_col_normal) + 1; //multiline program path
+
+    //save install command
+    bool save_command_resquested = false; int save_command_btn_index = select_limit;
+    char* term_buttons_save_dtoverlay_cmd = " Save dtoverlay load script ";
+    if (strlen(dtoverlay_install_cmd_path)){
+        term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_save_dtoverlay_cmd)) / 2, .y=tty_line++, .size=strlen(term_buttons_save_dtoverlay_cmd)}, .type=1, .value={.ptrchar=term_buttons_save_dtoverlay_cmd, .ptrbool=&save_command_resquested}, .hint={.y=hint_line, .str=term_hint_save_str[7]}};
+        fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[2], 20)) / 2, term_esc_col_error, term_hint_save_str[2]);
+        fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[6], 20)) / 2, term_esc_col_normal, term_hint_save_str[6]);
+        tty_line += term_print_path_multiline(dtoverlay_install_cmd_path, tty_line, tmp_col, tty_last_width, term_esc_col_normal) + 1; //multiline command path
+    }
 
     //footer
     fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_generic_str[0], 20)) / 2, term_hint_generic_str[0]); //nav hint
@@ -1073,26 +1090,48 @@ static void term_screen_save(int tty_line, int tty_last_width, int tty_last_heig
         term_user_input(&term_input); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
 
-        if (term_input.escape){select_index_current = select_limit-1;} //escape key pressed, move cursor to last selectible element
+        if (term_input.escape){term_go_mainscreen = true; /*select_index_current = select_limit-1;*/} //escape key pressed, move cursor to last selectible element
         if (term_go_mainscreen){term_screen_current = 0; goto funct_end;} //return to main screen requested
 
-        if (save_boot_resquested){
-            bool debug_back = debug; debug = false;
-            int ret = dtoverlay_save(dtoverlay_filename, dtoverlay_name, dtoverlay_store, dtoverlay_store_size);
-            char* save_hint_ptr = term_hint_save_str[6]; int tmp_esc_col = term_esc_col_success;
-            if (ret != 0){save_hint_ptr = term_hint_save_str[7]; tmp_esc_col = term_esc_col_error;} //failed
-            fprintf(stdout, "\e[%d;%dH\e[2K\e[%dm%s\e[0m", hint_line-2, (tty_last_width - strcpy_noescape(NULL, save_hint_ptr, 20)) / 2, tmp_esc_col, save_hint_ptr);
-            term_select[save_boot_btn_index].disabled = true; save_boot_resquested = false; debug = debug_back; select_index_current++;
-        }
+        if (save_boot_resquested || save_text_resquested || save_command_resquested){
+            bool debug_back = debug; debug = false; int ret = -1, button_index = 0;
 
-        if (save_text_resquested){
-            bool debug_back = debug; debug = false;
-            char tmppath[strlen(program_path)+strlen(dtoverlay_text_filename)+3]; sprintf(tmppath, "%s/%s", program_path, dtoverlay_text_filename);
-            int ret = dtoverlay_save(tmppath, dtoverlay_name, dtoverlay_store, dtoverlay_store_size);
-            char* save_hint_ptr = term_hint_save_str[6]; int tmp_esc_col = term_esc_col_success;
-            if (ret != 0){save_hint_ptr = term_hint_save_str[7]; tmp_esc_col = term_esc_col_error;} //failed
+            if (save_boot_resquested){
+                ret = dtoverlay_save(dtoverlay_filename, dtoverlay_name, dtoverlay_store, dtoverlay_store_size);
+                button_index = save_boot_btn_index; save_boot_resquested = false;
+            } else if (save_text_resquested){
+                char tmppath[strlen(program_path)+strlen(dtoverlay_text_filename)+3]; sprintf(tmppath, "%s/%s", program_path, dtoverlay_text_filename);
+                ret = dtoverlay_save(tmppath, dtoverlay_name, dtoverlay_store, dtoverlay_store_size);
+                button_index = save_text_btn_index; save_text_resquested = false;
+            } else { //save_command_resquested, save load command script
+                unsigned int uid = getuid(), gid = getgid(), mode = 0744;
+                struct stat file_stat = {0}, file_back_stat = {0};
+                if (stat(dtoverlay_install_cmd_path, &file_stat) == 0){ //get original file rights and owner, rename existing file
+                    uid = file_stat.st_uid; gid = file_stat.st_gid; mode = file_stat.st_mode; 
+                    char filename_backup[strlen(dtoverlay_install_cmd_path)+10]; sprintf(filename_backup, "%s.bak.fpjs", dtoverlay_install_cmd_path); //backup filename
+                    if (stat(filename_backup, &file_back_stat) == 0){remove(filename_backup);} //backup file already exist, delete it
+                    if (rename(dtoverlay_install_cmd_path, filename_backup) != 0){ret = -2;} //rename original file to backup failed
+                } else {uid = getuid(); gid = getgid();} //get program file rights and owner if original file not exist
+
+                if (ret != -2){
+                    FILE *filehandle_tmp = fopen(dtoverlay_install_cmd_path, "w");
+                    if (filehandle_tmp){
+                        char strBuffer[4096]={'\0'}; dtoverlay_generate(strBuffer, 4096, dtoverlay_name, ' ', dtoverlay_store, dtoverlay_store_size);
+                        fputs("sudo dtoverlay -v ", filehandle_tmp); fputs(strBuffer, filehandle_tmp); fputs("\n", filehandle_tmp); //copy line to temporary file
+                        ret = fchown(fileno(filehandle_tmp), uid, gid);
+                        ret += fchmod(fileno(filehandle_tmp), mode);
+                        ret += fclose(filehandle_tmp);
+                    }
+                    if (ret > 0){ret=0;} //valid
+                }
+
+                button_index = save_command_btn_index; save_command_resquested = false;
+            }
+
+            char* save_hint_ptr = term_hint_save_str[0]; int tmp_esc_col = term_esc_col_success;
+            if (ret != 0){save_hint_ptr = term_hint_save_str[1]; tmp_esc_col = term_esc_col_error;} //failed
             fprintf(stdout, "\e[%d;%dH\e[2K\e[%dm%s\e[0m", hint_line-2, (tty_last_width - strcpy_noescape(NULL, save_hint_ptr, 20)) / 2, tmp_esc_col, save_hint_ptr);
-            term_select[save_text_btn_index].disabled = true; save_text_resquested = false; debug = debug_back; select_index_current++;
+            term_select[button_index].disabled = true; save_boot_resquested = false; debug = debug_back; select_index_current++;
         }
 
         fprintf(stdout, "\e[%d;0H\n", tty_last_height-1); //force tty update
@@ -1109,9 +1148,14 @@ static void term_screen_digitaldebug(int tty_line, int tty_last_width, int tty_l
     int hint_line = tty_last_height - 4, /*hint_def_line = hint_line - 1, */tmp_col = 2/*, tmp_esc_col = term_esc_col_normal*/; 
     bool term_go_mainscreen = false;
 
-    const int select_max = 255;
+    const int select_max = 1;
     term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
     term_pos_string_t term_input_pos[input_values_count] = {0};
+
+    char* term_hint_digitaldebug_str[]={
+    "Please note that reported/enabled order may defer depending on driver itself.",
+    "Enabling more/less digital inputs may not result wanted result.",
+    };
 
     char* input_name[input_registers_count] = {"input0", "input1", "input2"};
 
@@ -1120,30 +1164,34 @@ static void term_screen_digitaldebug(int tty_line, int tty_last_width, int tty_l
     tty_line += 2;
 
     if (!i2c_failed){
-        for (int line = 0; line < input_registers_count; line++){
+        for (int line = 0, input_index = 0, input_usable = 0; line < input_registers_count; line++){
             fprintf(stdout, "\e[%d;%dH\e[1;4m%s:\e[0m", tty_line++, tmp_col, input_name[line]); array_fill(buffer, buffer_size, '\0'); //inputX:
             
-            for (int i = 0; i < 8; i++){
-                int input_index = i+line*8;
+            for (int i = 0; i < 8; i++, input_index++){
+                int input_name_len = strlen(button_names[input_index]);
 
                 //input button name
                 sprintf(buffer1, " %d", i);
-                if(strlen(button_names[input_index])){sprintf(buffer2, ":%s", button_names[input_index]); strcat(buffer1, buffer2);}
+                if ((input_index < dpad_start_index || input_index > dpad_start_index + 3) && input_name_len){sprintf(buffer2, "(%d)", ++input_usable); strcat(buffer1, buffer2);} //not dpad, and valid button
+
+                if(input_name_len){sprintf(buffer2, ":%s", button_names[input_index]); strcat(buffer1, buffer2);}
+
                 strcat(buffer1, " ");
                 strcpy(term_input_pos[input_index].str, buffer1);
 
                 int tmpx = strcpy_noescape(NULL, buffer, 20); //current button x position
-                if(tmpx + strcpy_noescape(NULL, buffer1, 20) + tmp_col > tty_last_width){tty_line+=2; tmpx = 0; array_fill(buffer, buffer_size, '\0');} //new line
-                strcat(buffer, buffer1); strcat(buffer, " ");
+                if(tmpx + strcpy_noescape(NULL, buffer1, 20) + tmp_col + 1 > tty_last_width){tty_line+=2; tmpx = 0; array_fill(buffer, buffer_size, '\0');} //new line
+                strcat(buffer, buffer1); strcat(buffer, "  ");
 
                 term_input_pos[input_index].x = tmp_col + tmpx; term_input_pos[input_index].y = tty_line; //button position
-                fprintf(stdout, "\e[%d;%dH\e[4m%s\e[0m", term_input_pos[input_index].y, term_input_pos[input_index].x, term_input_pos[input_index].str);
+                fprintf(stdout, "\e[%d;%dHX\e[4m%s\e[0m ", term_input_pos[input_index].y, term_input_pos[input_index].x, term_input_pos[input_index].str);
             }
             tty_line+=2;
         }
     }
 
     //footer
+    for (int i=0; i<2; i++){fprintf(stdout, "\e[%d;%dH\e[2K\e[93m%s\e[0m", tty_last_height-8+i, (tty_last_width - strcpy_noescape(NULL, term_hint_digitaldebug_str[i], 20)) / 2, term_hint_digitaldebug_str[i]);} //warning
     fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_generic_str[0], 20)) / 2, term_hint_generic_str[0]); //nav hint
 
     //buttons
@@ -1167,20 +1215,25 @@ static void term_screen_digitaldebug(int tty_line, int tty_last_width, int tty_l
         term_user_input(&term_input); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
 
-        if (term_input.escape){select_index_current = select_limit-1;} //escape key pressed, move cursor to last selectible element
+        if (term_input.escape){term_go_mainscreen = true; /*select_index_current = select_limit-1;*/} //escape key pressed, move cursor to last selectible element
         if (term_go_mainscreen){term_screen_current = 0; goto funct_end;} //return to main screen requested
 
         if (!i2c_failed){
+            fprintf(stdout, "\e[%d;0H\e[2K", tty_last_height-6); //reset i2c error line
             int ret = i2c_smbus_read_i2c_block_data(i2c_fd, 0, input_registers_count, (uint8_t *)&i2c_joystick_registers);
             if (ret >= 0){
                 uint32_t inputs = (i2c_joystick_registers.input2 << 16) + (i2c_joystick_registers.input1 << 8) + i2c_joystick_registers.input0;
 
-                for (int i=0; i < input_values_count; i++){
-                    int tmpcol_bg = 100, tmpcol_txt = 97, tmpcol_style = 0;
-                    if (~(inputs >> i) & 0b1){tmpcol_bg = 47; tmpcol_txt = 30; tmpcol_style = 1;}
-                    fprintf(stdout, "\e[%d;%dH\e[%d;%d;%dm%s\e[0m", term_input_pos[i].y, term_input_pos[i].x, tmpcol_style, tmpcol_txt, tmpcol_bg, term_input_pos[i].str);
-                }
+                for (int i=0, input_usable = 0; i < input_values_count; i++){
+                    int tmpcol_bg = 100, tmpcol_txt = 97, tmpcol_style = 0, tmpcol_enable = 49;
 
+                    if ((i < dpad_start_index || i > dpad_start_index + 3)){ //not dpad
+                        if (strlen(button_names[i]) && ++input_usable <= driver_user.digitalbuttons){tmpcol_enable = 42;} //valid button is used in driver report
+                    } else if (driver_user.dpads){tmpcol_enable = 42;} //dpad is enabled
+
+                    if (~(inputs >> i) & 0b1){tmpcol_bg = 47; tmpcol_txt = 30; tmpcol_style = 1 ;} //current input "high"
+                    fprintf(stdout, "\e[%d;%dH\e[%dm \e[0m\e[%d;%d;%dm%s\e[0m", term_input_pos[i].y, term_input_pos[i].x, tmpcol_enable, tmpcol_style, tmpcol_txt, tmpcol_bg, term_input_pos[i].str);
+                }
             }
         } else { //i2c failed
             bool i2c_valid_bool[4] = {i2c_failed_bus, i2c_failed_dev, i2c_failed_sig, i2c_failed};
@@ -1194,7 +1247,7 @@ static void term_screen_digitaldebug(int tty_line, int tty_last_width, int tty_l
         }
 
         fprintf(stdout, "\e[%d;0H\n", tty_last_height-1); //force tty update
-        usleep (10000);
+        usleep (1000000/30); //limit to 60hz max to limit risk of i2c colision if driver is running
     }
 
     funct_end:; //jump point for fast exit
@@ -1204,7 +1257,7 @@ static void term_screen_digitaldebug(int tty_line, int tty_last_width, int tty_l
 //main functs
 static void tty_signal_handler(int sig){ //signal handle func
 	if (debug){print_stderr("DEBUG: signal received: %d\n", sig);}
-    if (&term_backup){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
+    if (sizeof(term_backup)){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
 	kill_resquested = true;
 }
 
@@ -1228,7 +1281,7 @@ static void term_reset_default(void){ //run when terminal reset requested
 }
 
 static void program_close(void){ //run when program closes
-    if (&term_backup){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
+    if (sizeof(term_backup)){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
     close(i2c_fd);
 }
 

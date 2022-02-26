@@ -7,7 +7,7 @@
 
 //program related
 const char programname[] = "Freeplay I2C Joystick"; //program name
-const char programversion[] = "0.1c"; //program version
+const char programversion[] = "0.1d"; //program version
 char program_path[PATH_MAX] = {'\0'}; //full path to this program
 bool kill_resquested = false; //program kill requested, stop main loop in a smooth way
 #define buffer_size 1024 //char array buffer size
@@ -41,8 +41,7 @@ typedef struct dtoverlay_parser_store_struct { //dtoverlay argument to program "
 	const void* ptr; //notype pointer to stored value, "type" used for proper cast
 } dtoverlay_parser_store_t;
 
-char* dtoverlay_text_filename = "dtoverlay.txt";
-//bool dtoverlay_incl_defaults = true;
+char* dtoverlay_text_filename = "dtoverlay.txt"; //name of text version of dtoverlay saved into diag program path
 
 //I2C/ADC related
 uint8_t i2c_dev_sig = 0, i2c_dev_id = 0, i2c_dev_minor = 0; //device device signature, id, version
@@ -162,14 +161,14 @@ typedef struct term_pos_button_struct {
 } term_pos_button_t;
 
 
-//functions prototypes
+//prototypes
 static void debug_print_binary_int_term(int /*line*/, int /*col*/, int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format at given term position
 static double get_time_double(void); //get time in double (seconds)
 static void program_get_path(char** /*args*/, char* /*var*/); //get current program path
 
 static int dtoverlay_parser_search_name(dtoverlay_parser_store_t* /*store*/, unsigned int /*store_size*/, char* /*value*/); //search name into dtoverlay parser store, return index on success, -1 on failure
 static int dtoverlay_parser(char* /*filename*/, char* /*dtoverlay_name*/, dtoverlay_parser_store_t* /*store*/, unsigned int /*store_size*/); //parse file that content dtoverlay declaration, e.g /boot/config.txt
-static void dtoverlay_generate(char* /*str*/, unsigned int /*strlen*/, char* /*dtoverlay_name*/, dtoverlay_parser_store_t* /*store*/, unsigned int /*store_size*/); //generate text line from given dtoverlay store
+static void dtoverlay_generate(char* /*str*/, unsigned int /*strlen*/, char* /*dtoverlay_name*/, char /*dtoverlay_separator*/, dtoverlay_parser_store_t* /*store*/, unsigned int /*store_size*/); //generate text line from given dtoverlay store
 static int dtoverlay_save(char* /*filename*/, char* /*dtoverlay_name*/, dtoverlay_parser_store_t* /*store*/, unsigned int /*store_size*/); //save current dtoverlay data to file. return 0 on success, -1 on failure
 static int dtoverlay_check(char* /*filename*/, char* /*dtoverlay_name*/); //check dtoverlay file. return detected line number on success, -1 on failure
 
@@ -187,6 +186,8 @@ static void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int v
 
 static void term_user_input(term_input_t* /*input*/); //process terminal key inputs
 static void term_select_update(term_select_t* /*store*/, int* /*index*/, int* /*index_last*/, int /*index_limit*/, term_input_t* /*input*/, int /*tty_width*/, int /*tty_height*/); //update selectible elements
+
+static int term_print_path_multiline(char* /*str*/, int /*line*/, int /*col*/, int /*width_limit*/, int /*esc_color*/); //print a multiple line if needed, return no of lines
 
 static void term_screen_main(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //main screen:0
 static void term_screen_adc(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //display adc screen:1
