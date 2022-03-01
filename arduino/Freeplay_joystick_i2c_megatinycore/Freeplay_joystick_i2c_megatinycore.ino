@@ -605,16 +605,16 @@ void setup_gpio(void)
 
 #ifdef USE_DIGITAL_BUTTON_DEBOUNCING
 
-#define DEBOUNCE_MASK           0b11000111
-#define DEBOUNCE_JUST_PRESSED   0b11000000
-#define DEBOUNCE_JUST_RELEASED  0b00000111
-#define DEBOUNCE_PRESSED        0b00000000
-#define DEBOUNCE_RELEASED       0b11111111
+#define DEBOUNCE_JUST_PRESSED   0b1111111000000000
+#define DEBOUNCE_JUST_RELEASED  0b0000000001111111
+#define DEBOUNCE_MASK           (DEBOUNCE_JUST_PRESSED | DEBOUNCE_JUST_RELEASED)
+#define DEBOUNCE_PRESSED        0b0000000000000000
+#define DEBOUNCE_RELEASED       0b1111111111111111
 
 
-uint8_t g_debounce_input0[8];
-uint8_t g_debounce_input1[8];
-uint8_t g_debounce_input2[8];
+uint16_t g_history_input0[8];
+uint16_t g_history_input1[8];
+uint16_t g_history_input2[8];
 
 void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
 {
@@ -633,35 +633,35 @@ void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
 
   for(i=0; i<8; i++)
   {
-    g_debounce_input0[i] <<= 1;
-    g_debounce_input1[i] <<= 1;
-    g_debounce_input2[i] <<= 1;
+    g_history_input0[i] <<= 1;
+    g_history_input1[i] <<= 1;
+    g_history_input2[i] <<= 1;
 
-    g_debounce_input0[i] |= (*input0 >> i) & 0x01;
-    g_debounce_input1[i] |= (*input1 >> i) & 0x01;
-    g_debounce_input2[i] |= (*input2 >> i) & 0x01;
+    g_history_input0[i] |= (*input0 >> i) & 0x01;
+    g_history_input1[i] |= (*input1 >> i) & 0x01;
+    g_history_input2[i] |= (*input2 >> i) & 0x01;
 
 
 
 
     //using the almost ultimate from https://hackaday.com/2015/12/10/embed-with-elliot-debounce-your-noisy-buttons-part-ii/ for now
 
-    /*
-    if((g_debounce_input0[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_PRESSED)
+    
+    if((g_history_input0[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_PRESSED)
     { 
-        g_debounce_input0[i] = 0b11111111;
+        g_history_input0[i] = DEBOUNCE_PRESSED;
     }
-    else if((g_debounce_input0[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_RELEASED)
+    else if((g_history_input0[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_RELEASED)
     { 
-        g_debounce_input0[i] = 0b11111111;
+        g_history_input0[i] = DEBOUNCE_RELEASED;
     }
-    */
+    
 
-    if(g_debounce_input0[i] == DEBOUNCE_RELEASED)   //is button UP?
+    if(g_history_input0[i] == DEBOUNCE_RELEASED)   //is button UP?
     {
       *input0 = *input0 | (1 << i);
     }
-    else if(g_debounce_input0[i] == DEBOUNCE_PRESSED)   //is button DOWN?
+    else if(g_history_input0[i] == DEBOUNCE_PRESSED)   //is button DOWN?
     {
       *input0 = *input0 & ~(1 << i);
     }
@@ -672,22 +672,22 @@ void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
     }
 
 
-    /*
-    if((g_debounce_input1[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_PRESSED)
+    
+    if((g_history_input1[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_PRESSED)
     { 
-        g_debounce_input1[i] = 0b11111111;
+        g_history_input1[i] = DEBOUNCE_PRESSED;
     }
-    else if((g_debounce_input1[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_RELEASED)
+    else if((g_history_input1[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_RELEASED)
     { 
-        g_debounce_input1[i] = 0b11111111;
+        g_history_input1[i] = DEBOUNCE_RELEASED;
     }
-    */
+    
 
-    if(g_debounce_input1[i] == DEBOUNCE_RELEASED)   //is button UP?
+    if(g_history_input1[i] == DEBOUNCE_RELEASED)   //is button UP?
     {
       *input1 = *input1 | (1 << i);
     }
-    else if(g_debounce_input1[i] == DEBOUNCE_PRESSED)   //is button DOWN?
+    else if(g_history_input1[i] == DEBOUNCE_PRESSED)   //is button DOWN?
     {
       *input1 = *input1 & ~(1 << i);
     }
@@ -698,22 +698,22 @@ void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
     }
 
 
-    /*
-    if((g_debounce_input2[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_PRESSED)
+    
+    if((g_history_input2[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_PRESSED)
     { 
-        g_debounce_input2[i] = 0b11111111;
+        g_history_input2[i] = DEBOUNCE_PRESSED;
     }
-    else if((g_debounce_input2[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_RELEASED)
+    else if((g_history_input2[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_RELEASED)
     { 
-        g_debounce_input2[i] = 0b11111111;
+        g_history_input2[i] = DEBOUNCE_RELEASED;
     }
-    */
+    
 
-    if(g_debounce_input2[i] == DEBOUNCE_RELEASED)   //is button UP?
+    if(g_history_input2[i] == DEBOUNCE_RELEASED)   //is button UP?
     {
       *input2 = *input2 | (1 << i);
     }
-    else if(g_debounce_input2[i] == DEBOUNCE_PRESSED)   //is button DOWN?
+    else if(g_history_input2[i] == DEBOUNCE_PRESSED)   //is button DOWN?
     {
       *input2 = *input2 & ~(1 << i);
     }
