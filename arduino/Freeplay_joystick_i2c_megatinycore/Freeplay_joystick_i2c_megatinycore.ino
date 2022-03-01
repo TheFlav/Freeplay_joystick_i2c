@@ -31,6 +31,8 @@
 
 #define USE_SERIAL_DEBUG      //UART is on PB2/PB3 which shares pins with IO2_2/IO2_3
 
+#define USE_DIGITAL_BUTTON_DEBOUNCING
+
 
 #include <Wire.h>
 
@@ -40,7 +42,7 @@
 
 #define MANUF_ID         0xED
 #define DEVICE_ID        0x00
-#define VERSION_NUMBER   11
+#define VERSION_NUMBER   12
 
 
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
@@ -121,7 +123,17 @@
 #define FEATURES_AVAILABLE (FEATURES_ADC0 | FEATURES_ADC1 | FEATURES_ADC2 | FEATURES_ADC3 | FEATURES_IRQ)
 #define ADCS_AVAILABLE ((FEATURES_ADC0 | FEATURES_ADC1 | FEATURES_ADC2 | FEATURES_ADC3) << 4)
 
-#define DEFAULT_CONFIG0     (0)
+struct joy_config0_bit_struct
+{
+    uint8_t debounce_on : 1;
+    uint8_t unused1 : 1;
+    uint8_t unused2 : 1;
+    uint8_t unused3 : 1;
+    uint8_t unused4 : 1;
+    uint8_t unused5 : 1;
+    uint8_t unused6 : 1;
+    uint8_t unused7 : 1;
+};
 
 struct i2c_joystick_register_struct 
 {
@@ -153,8 +165,8 @@ struct i2c_secondary_address_register_struct
 #define REGISTER_SEC_CONFIG_BACKLIGHT   0x00    //this one is writeable
   uint8_t config_backlight;  // Reg: 0x00
   uint8_t backlight_max;     // Reg: 0x01 
-#define REGISTER_SEC_POWEROFF_CTRL      0x02    //this one is writeable
-  uint8_t poweroff_control;  // Reg: 0x02 - write a magic number here to turn off the system
+#define REGISTER_SEC_POWER_CONTROL      0x02    //this one is writeable
+  uint8_t power_control;     // Reg: 0x02 - host can tell us stuff about the state of the power (like low-batt or shutdown imminent) or even tell us to force a shutdown
   uint8_t features_available;// Reg: 0x03 - bit define if ADCs are available or interrups are in use, etc.
   uint8_t rfu0;              // Reg: 0x04 - reserved for future use (or device-specific use)
   uint8_t rfu1;              // Reg: 0x05 - reserved for future use (or device-specific use)
@@ -162,8 +174,7 @@ struct i2c_secondary_address_register_struct
   uint8_t rfu3;              // Reg: 0x07 - reserved for future use (or device-specific use)
   uint8_t rfu4;              // Reg: 0x08 - reserved for future use (or device-specific use)
   uint8_t rfu5;              // Reg: 0x09 - reserved for future use (or device-specific use)
-#define REGISTER_SEC_POWER_CONTROL      0x0A   //this one is writeable
-  uint8_t power_control;     // Reg: 0x0A - host can tell us stuff about the state of the power (like low-batt or shutdown imminent)
+  uint8_t rfu6;              // Reg: 0x0A - reserved for future use (or device-specific use)
 #define REGISTER_SEC_SEC_I2C_ADDR       0x0B   //this one is writeable
   uint8_t secondary_i2c_addr; // Reg: 0x0B - this holds the secondary i2c address (the address where this struct can be found)
 #define REGISTER_SEC_JOY_I2C_ADDR       0x0C   //this one is writeable
@@ -379,7 +390,16 @@ void eeprom_restore_data()
     eeprom_data.sec_secondary_i2c_addr = CONFIG_I2C_2NDADDR;
 
     eeprom_data.joy_adc_conf_bits = ADCS_AVAILABLE;
-    eeprom_data.joy_config0 = DEFAULT_CONFIG0;
+
+
+
+    struct joy_config0_bit_struct *config0_ptr = (struct joy_config0_bit_struct *) &(eeprom_data.joy_config0);
+
+#ifdef USE_DIGITAL_BUTTON_DEBOUNCING    
+    config0_ptr->debounce_on = 1;
+#else
+    config0_ptr->debounce_on = 0;
+#endif
   }
 
 
@@ -525,13 +545,11 @@ void setup_adc0_to_adc3()
 
 void setup_config0(void)
 {
-  /*
-   * 
-  if(i2c_joystick_registers.config0 & CONFIG0_USE_PB4_RESISTOR_LADDER)  //example
-  {
-    //there's really nothing to do here, at the moment 
-  }
-  */
+#ifndef USE_DIGITAL_BUTTON_DEBOUNCING    
+  struct joy_config0_bit_struct *config0_ptr = (struct joy_config0_bit_struct *) &i2c_joystick_registers.config0;
+
+  config0_ptr->debounce_on = 0;
+#endif
 }
 
 void setup_gpio(void)
@@ -585,6 +603,132 @@ void setup_gpio(void)
   //PORTC_PIN7CTRL = PORT_PULLUPEN_bm;    //there is no PC7
 }
 
+#ifdef USE_DIGITAL_BUTTON_DEBOUNCING
+
+#define DEBOUNCE_MASK           0b11000111
+#define DEBOUNCE_JUST_PRESSED   0b11000000
+#define DEBOUNCE_JUST_RELEASED  0b00000111
+#define DEBOUNCE_PRESSED        0b00000000
+#define DEBOUNCE_RELEASED       0b11111111
+
+
+uint8_t g_debounce_input0[8];
+uint8_t g_debounce_input1[8];
+uint8_t g_debounce_input2[8];
+
+void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
+{
+  struct joy_config0_bit_struct *config0_ptr;
+  static uint8_t prev_input0 = 0xFF;
+  static uint8_t prev_input1 = 0xFF;
+  static uint8_t prev_input2 = 0xFF;
+  uint8_t i;
+
+  config0_ptr = (struct joy_config0_bit_struct *) &i2c_joystick_registers.config0;
+  
+  if(!config0_ptr->debounce_on)
+  {
+    return;
+  }
+
+  for(i=0; i<8; i++)
+  {
+    g_debounce_input0[i] <<= 1;
+    g_debounce_input1[i] <<= 1;
+    g_debounce_input2[i] <<= 1;
+
+    g_debounce_input0[i] |= (*input0 >> i) & 0x01;
+    g_debounce_input1[i] |= (*input1 >> i) & 0x01;
+    g_debounce_input2[i] |= (*input2 >> i) & 0x01;
+
+
+
+
+    //using the almost ultimate from https://hackaday.com/2015/12/10/embed-with-elliot-debounce-your-noisy-buttons-part-ii/ for now
+
+    /*
+    if((g_debounce_input0[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_PRESSED)
+    { 
+        g_debounce_input0[i] = 0b11111111;
+    }
+    else if((g_debounce_input0[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_RELEASED)
+    { 
+        g_debounce_input0[i] = 0b11111111;
+    }
+    */
+
+    if(g_debounce_input0[i] == DEBOUNCE_RELEASED)   //is button UP?
+    {
+      *input0 = *input0 | (1 << i);
+    }
+    else if(g_debounce_input0[i] == DEBOUNCE_PRESSED)   //is button DOWN?
+    {
+      *input0 = *input0 & ~(1 << i);
+    }
+    else
+    {
+      //set it to whatever it was last time
+      *input0 = (*input0 & ~(1 << i)) | (prev_input0 & (1 << i));
+    }
+
+
+    /*
+    if((g_debounce_input1[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_PRESSED)
+    { 
+        g_debounce_input1[i] = 0b11111111;
+    }
+    else if((g_debounce_input1[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_RELEASED)
+    { 
+        g_debounce_input1[i] = 0b11111111;
+    }
+    */
+
+    if(g_debounce_input1[i] == DEBOUNCE_RELEASED)   //is button UP?
+    {
+      *input1 = *input1 | (1 << i);
+    }
+    else if(g_debounce_input1[i] == DEBOUNCE_PRESSED)   //is button DOWN?
+    {
+      *input1 = *input1 & ~(1 << i);
+    }
+    else
+    {
+      //set it to whatever it was last time
+      *input1 = (*input1 & ~(1 << i)) | (prev_input1 & (1 << i));
+    }
+
+
+    /*
+    if((g_debounce_input2[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_PRESSED)
+    { 
+        g_debounce_input2[i] = 0b11111111;
+    }
+    else if((g_debounce_input2[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_RELEASED)
+    { 
+        g_debounce_input2[i] = 0b11111111;
+    }
+    */
+
+    if(g_debounce_input2[i] == DEBOUNCE_RELEASED)   //is button UP?
+    {
+      *input2 = *input2 | (1 << i);
+    }
+    else if(g_debounce_input2[i] == DEBOUNCE_PRESSED)   //is button DOWN?
+    {
+      *input2 = *input2 & ~(1 << i);
+    }
+    else
+    {
+      //set it to whatever it was last time
+      *input2 = (*input2 & ~(1 << i)) | (prev_input2 & (1 << i));
+    }    
+  }
+
+  prev_input0 = *input0;
+  prev_input1 = *input1;
+  prev_input2 = *input2;  
+}
+#endif
 
 /*
  * This function sets up digital input registers input0, input1, input2
@@ -653,6 +797,10 @@ void read_digital_inputs(void)
   input2 = (pa_in & PINA_IN2_MASK) | (pb_mux0_in & PINB_IN2_MASK) | (1 << 1) | (pc_mux1_in & PINC_IN2_MASK);
 #else
   input2 = (pa_in & PINA_IN2_MASK) | (pb_mux0_in & PINB_IN2_MASK) | (1 << 1) | (1 << 0);
+#endif
+
+#ifdef USE_DIGITAL_BUTTON_DEBOUNCING
+  debounce_inputs(&input0, &input1, &input2);
 #endif
 
   i2c_joystick_registers.input0 = input0;
@@ -981,7 +1129,7 @@ void setup()
   i2c_secondary_registers.device_ID = DEVICE_ID;
   i2c_secondary_registers.version_ID = VERSION_NUMBER;
 
-  i2c_secondary_registers.poweroff_control = 0;
+  i2c_secondary_registers.power_control = 0;
 
   i2c_secondary_registers.features_available = FEATURES_AVAILABLE;
   
