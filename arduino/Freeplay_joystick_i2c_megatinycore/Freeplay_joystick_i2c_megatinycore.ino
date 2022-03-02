@@ -41,20 +41,34 @@
 
 #define MANUF_ID         0xED
 #define DEVICE_ID        0x00
-#define VERSION_NUMBER   13
+#define VERSION_NUMBER   14
 
+#define CONFIG_PERIODIC_TASK_TIMER_MILLIS 5000
+#define CONFIG_INPUT_READ_TIMER_MILLIS 1        //set to 0 for NO delay reading inputs, otherwise try to read inputs at least every CONFIG_INPUT_READ_TIMER_MILLIS ms
+
+/*
+ * note that CONFIG_INPUT_READ_TIMER_MILLIS and CONFIG_DEFAULT_DEBOUCE_LEVEL both create potential input lag (multiplicative when using both)
+ * if CONFIG_INPUT_READ_TIMER_MILLIS=2 and CONFIG_DEFAULT_DEBOUCE_LEVEL=3, that would likely be 8ms (or more) of input lag
+ * CONFIG_INPUT_READ_TIMER_MILLIS * (CONFIG_DEFAULT_DEBOUCE_LEVEL + 1) = ms of input lag
+ */
 
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
 //currently testing on Adafruit 817
 
 #ifdef USE_DIGITAL_BUTTON_DEBOUNCING
- #define CONFIG_DEFAULT_DEBOUNCE_HISTORY_BITS 7      //must be 1 to 8
+ #define CONFIG_DEFAULT_DEBOUCE_LEVEL 3      //must be 0 to 7   //0 means no debouncing
+ #define DEBOUNCE_LEVEL_MAX 7
 #else
- #define CONFIG_DEFAULT_DEBOUNCE_HISTORY_BITS 0      //0 means unused/off (no debouncing)
+ #define CONFIG_DEFAULT_DEBOUCE_LEVEL 0      //0 means unused/off (no debouncing)
+ #define DEBOUNCE_LEVEL_MAX 0
 #endif
 
-#define DEFAULT_CONFIG0 (0xF0 | CONFIG_DEFAULT_DEBOUNCE_HISTORY_BITS)
+#if DEBOUNCE_LEVEL_MAX > 7
+#error Debounce Level is stored as a 3-bit integer
+#endif
 
+
+#define DEFAULT_CONFIG0 (0xF0 | CONFIG_DEFAULT_DEBOUCE_LEVEL)
 
 #define CONFIG_I2C_DEFAULT_ADDR     0x30
 #ifdef USE_SECONDARY_I2C_ADDR
@@ -132,7 +146,8 @@
 
 struct joy_config0_bit_struct
 {
-    uint8_t debounce_history_bits : 4;
+    uint8_t debounce_level : 3;
+    uint8_t unused3 : 1;
     uint8_t unused4 : 1;
     uint8_t unused5 : 1;
     uint8_t unused6 : 1;
@@ -405,7 +420,7 @@ void eeprom_restore_data()
     struct joy_config0_bit_struct *config0_ptr = (struct joy_config0_bit_struct *) &(eeprom_data.joy_config0);
     eeprom_data.joy_config0 = DEFAULT_CONFIG0;
 
-    config0_ptr->debounce_history_bits = CONFIG_DEFAULT_DEBOUNCE_HISTORY_BITS;
+    config0_ptr->debounce_level = CONFIG_DEFAULT_DEBOUCE_LEVEL;
   }
 
 
@@ -551,10 +566,6 @@ void setup_adc0_to_adc3()
 
 void setup_config0(void)
 {
-  struct joy_config0_bit_struct *config0_ptr = (struct joy_config0_bit_struct *) &i2c_joystick_registers.config0;
-
-  config0_ptr->debounce_history_bits = CONFIG_DEFAULT_DEBOUNCE_HISTORY_BITS;
-
 #ifdef USE_DIGITAL_BUTTON_DEBOUNCING
   debounce_setup();
 #endif
@@ -629,10 +640,13 @@ void debounce_setup()
   
   config0_ptr = (struct joy_config0_bit_struct *) &i2c_joystick_registers.config0;
 
-  if(config0_ptr->debounce_history_bits > 8)
-    config0_ptr->debounce_history_bits = CONFIG_DEFAULT_DEBOUNCE_HISTORY_BITS;
+  if(config0_ptr->debounce_level > DEBOUNCE_LEVEL_MAX)
+    config0_ptr->debounce_level = DEBOUNCE_LEVEL_MAX;
 
-  g_debounce_mask = (0b11111111 >> (8-config0_ptr->debounce_history_bits));   //turn on CONFIG_DEBOUNCING_HISTORY_BITS number of bits
+  g_debounce_mask = (0b11111111 >> (DEBOUNCE_LEVEL_MAX-config0_ptr->debounce_level));   //turn on CONFIG_DEBOUNCING_HISTORY_BITS number of bits
+
+
+  i2c_secondary_registers.rfu0 = g_debounce_mask;   //testing!
 }
 
 
@@ -646,7 +660,7 @@ void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
 
   config0_ptr = (struct joy_config0_bit_struct *) &i2c_joystick_registers.config0;
   
-  if(config0_ptr->debounce_history_bits == 0)
+  if(config0_ptr->debounce_level == 0)
   {
     return;
   }
@@ -1196,19 +1210,28 @@ void setup()
 
 void loop() 
 {
+  static unsigned long timer_input_read_start_millis = millis();
   static unsigned long timer_start_millis = millis();
   unsigned long current_millis;
   
+  current_millis = millis();
 
-
-  read_digital_inputs();
-  process_special_inputs();     //make sure special inputs are digital (input0 and input1) only
   if(g_backlight_is_flashing)
     backlight_process_flashing();
 
+#if CONFIG_INPUT_READ_TIMER_MILLIS > 0
+  if(current_millis - timer_input_read_start_millis >= CONFIG_INPUT_READ_TIMER_MILLIS)
+#endif
+  {
+    read_digital_inputs();
+    process_special_inputs();     //make sure special inputs are digital (input0 and input1) only
+
 #if defined(USE_ADC0) || defined(USE_ADC1) || defined(USE_ADC2) || defined(USE_ADC3)
-  read_analog_inputs();
+    read_analog_inputs();
 #endif  
+    
+    timer_input_read_start_millis = current_millis;
+  }
 
 #ifdef PIN_BACKLIGHT_PWM
 
@@ -1262,8 +1285,7 @@ void loop()
 #endif
 
   //run a 5-second timer to do certain periodic tasks
-  current_millis = millis();
-  if(current_millis - timer_start_millis >= 5000)
+  if(current_millis - timer_start_millis >= CONFIG_PERIODIC_TASK_TIMER_MILLIS)
   {
     eeprom_save_if_needed();      //if any deferred eeprom saves occurred, write to eeprom
     
