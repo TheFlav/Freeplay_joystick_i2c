@@ -49,7 +49,8 @@
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
 //currently testing on Adafruit 817
 
-#define CONFIG_DEBOUNCING_HISTORY_BITS 16             //if you want to use 16-bit or 8-bit debouncing history (16 may be "better" but it takes more memory and operations)
+//CONFIG_DEBOUNCING_HISTORY_BITS basically sets how "long" the button must be stable before it gets reported as PRESSED or RELEASED 
+#define CONFIG_DEBOUNCING_HISTORY_BITS 16             //can be 1-16 (lower is faster/responsive, higher is more accurate debouncing)
 
 #define CONFIG_I2C_DEFAULT_ADDR     0x30
 #ifdef USE_SECONDARY_I2C_ADDR
@@ -127,14 +128,11 @@
 
 struct joy_config0_bit_struct
 {
-    uint8_t debounce_on : 1;
-    uint8_t unused1 : 1;
-    uint8_t unused2 : 1;
-    uint8_t unused3 : 1;
+    uint8_t debounce_history_bits : 4;
     uint8_t unused4 : 1;
     uint8_t unused5 : 1;
     uint8_t unused6 : 1;
-    uint8_t unused7 : 1;
+    uint8_t debounce_on : 1;
 };
 
 struct i2c_joystick_register_struct 
@@ -613,22 +611,18 @@ void setup_gpio(void)
 
 #ifdef USE_DIGITAL_BUTTON_DEBOUNCING
 
-#if CONFIG_DEBOUNCING_HISTORY_BITS == 16
- #define DEBOUNCE_JUST_PRESSED   0b1111000000000000
- #define DEBOUNCE_JUST_RELEASED  0b0000000001111111
- #define DEBOUNCE_MASK           (DEBOUNCE_JUST_PRESSED | DEBOUNCE_JUST_RELEASED)
+#if (CONFIG_DEBOUNCING_HISTORY_BITS > 8) && (CONFIG_DEBOUNCING_HISTORY_BITS <= 16)
+ #define DEBOUNCE_MASK(bits)           (0b1111111111111111 >> (16-bits))
  #define DEBOUNCE_PRESSED        0b0000000000000000
- #define DEBOUNCE_RELEASED       0b1111111111111111
+ #define DEBOUNCE_RELEASED       DEBOUNCE_MASK
 
  uint16_t g_history_input0[8];
  uint16_t g_history_input1[8];
  uint16_t g_history_input2[8];
-#elif CONFIG_DEBOUNCING_HISTORY_BITS == 8
- #define DEBOUNCE_JUST_PRESSED   0b11000000
- #define DEBOUNCE_JUST_RELEASED  0b11000111
- #define DEBOUNCE_MASK           (DEBOUNCE_JUST_PRESSED | DEBOUNCE_JUST_RELEASED)
+#elif CONFIG_DEBOUNCING_HISTORY_BITS <= 8
+ #define DEBOUNCE_MASK           (0b11111111 >> (8-CONFIG_DEBOUNCING_HISTORY_BITS))   //turn on CONFIG_DEBOUNCING_HISTORY_BITS number of bits
  #define DEBOUNCE_PRESSED        0b00000000
- #define DEBOUNCE_RELEASED       0b11111111
+ #define DEBOUNCE_RELEASED       DEBOUNCE_MASK
 
  uint8_t g_history_input0[8];
  uint8_t g_history_input1[8];
@@ -652,6 +646,7 @@ void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
   {
     return;
   }
+ 
 
   for(i=0; i<8; i++)
   {
@@ -666,24 +661,13 @@ void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
 
 
 
-    //using the almost ultimate from https://hackaday.com/2015/12/10/embed-with-elliot-debounce-your-noisy-buttons-part-ii/ for now
+    //using concepts from https://hackaday.com/2015/12/10/embed-with-elliot-debounce-your-noisy-buttons-part-ii/ for now
 
-    
-    if((g_history_input0[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_PRESSED)
-    { 
-        g_history_input0[i] = DEBOUNCE_PRESSED;
-    }
-    else if((g_history_input0[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_RELEASED)
-    { 
-        g_history_input0[i] = DEBOUNCE_RELEASED;
-    }
-    
-
-    if(g_history_input0[i] == DEBOUNCE_RELEASED)   //is button UP?
+    if((g_history_input0[i] & DEBOUNCE_MASK(config0_ptr->debounce_history_bits+1)) == DEBOUNCE_RELEASED(config0_ptr->debounce_history_bits+1))   //is button UP?
     {
       *input0 = *input0 | (1 << i);
     }
-    else if(g_history_input0[i] == DEBOUNCE_PRESSED)   //is button DOWN?
+    else if((g_history_input0[i] & DEBOUNCE_MASK(config0_ptr->debounce_history_bits+1)) == DEBOUNCE_PRESSED)   //is button DOWN?
     {
       *input0 = *input0 & ~(1 << i);
     }
@@ -692,24 +676,13 @@ void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
       //set it to whatever it was last time
       *input0 = (*input0 & ~(1 << i)) | (prev_input0 & (1 << i));
     }
-
-
-    
-    if((g_history_input1[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_PRESSED)
-    { 
-        g_history_input1[i] = DEBOUNCE_PRESSED;
-    }
-    else if((g_history_input1[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_RELEASED)
-    { 
-        g_history_input1[i] = DEBOUNCE_RELEASED;
-    }
     
 
-    if(g_history_input1[i] == DEBOUNCE_RELEASED)   //is button UP?
+    if((g_history_input1[i] & DEBOUNCE_MASK(config0_ptr->debounce_history_bits+1)) == DEBOUNCE_RELEASED(config0_ptr->debounce_history_bits+1))   //is button UP?
     {
       *input1 = *input1 | (1 << i);
     }
-    else if(g_history_input1[i] == DEBOUNCE_PRESSED)   //is button DOWN?
+    else if((g_history_input1[i] & DEBOUNCE_MASK(config0_ptr->debounce_history_bits+1)) == DEBOUNCE_PRESSED)   //is button DOWN?
     {
       *input1 = *input1 & ~(1 << i);
     }
@@ -720,22 +693,11 @@ void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
     }
 
 
-    
-    if((g_history_input2[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_PRESSED)
-    { 
-        g_history_input2[i] = DEBOUNCE_PRESSED;
-    }
-    else if((g_history_input2[i] & DEBOUNCE_MASK) == DEBOUNCE_JUST_RELEASED)
-    { 
-        g_history_input2[i] = DEBOUNCE_RELEASED;
-    }
-    
-
-    if(g_history_input2[i] == DEBOUNCE_RELEASED)   //is button UP?
+    if((g_history_input2[i] & DEBOUNCE_MASK(config0_ptr->debounce_history_bits+1)) == DEBOUNCE_RELEASED(config0_ptr->debounce_history_bits+1))   //is button UP?
     {
       *input2 = *input2 | (1 << i);
     }
-    else if(g_history_input2[i] == DEBOUNCE_PRESSED)   //is button DOWN?
+    else if((g_history_input2[i] & DEBOUNCE_MASK(config0_ptr->debounce_history_bits+1)) == DEBOUNCE_PRESSED)   //is button DOWN?
     {
       *input2 = *input2 & ~(1 << i);
     }
