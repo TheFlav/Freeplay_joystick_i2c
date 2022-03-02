@@ -33,6 +33,7 @@
 
 #define USE_DIGITAL_BUTTON_DEBOUNCING
 
+#define DEFAULT_CONFIG0 0xFF      //everything turned "on"
 
 #include <Wire.h>
 
@@ -48,6 +49,7 @@
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
 //currently testing on Adafruit 817
 
+#define CONFIG_DEBOUNCING_HISTORY_BITS 16             //if you want to use 16-bit or 8-bit debouncing history (16 may be "better" but it takes more memory and operations)
 
 #define CONFIG_I2C_DEFAULT_ADDR     0x30
 #ifdef USE_SECONDARY_I2C_ADDR
@@ -387,13 +389,19 @@ void eeprom_restore_data()
     eeprom_data.sec_config_backlight = 0;
 #endif
     eeprom_data.sec_joystick_i2c_addr = CONFIG_I2C_DEFAULT_ADDR;
+
+#ifdef CONFIG_I2C_2NDADDR    
     eeprom_data.sec_secondary_i2c_addr = CONFIG_I2C_2NDADDR;
+#else
+    eeprom_data.sec_secondary_i2c_addr = 0x00;
+#endif
 
     eeprom_data.joy_adc_conf_bits = ADCS_AVAILABLE;
 
 
 
     struct joy_config0_bit_struct *config0_ptr = (struct joy_config0_bit_struct *) &(eeprom_data.joy_config0);
+    eeprom_data.joy_config0 = DEFAULT_CONFIG0;
 
 #ifdef USE_DIGITAL_BUTTON_DEBOUNCING    
     config0_ptr->debounce_on = 1;
@@ -605,16 +613,30 @@ void setup_gpio(void)
 
 #ifdef USE_DIGITAL_BUTTON_DEBOUNCING
 
-#define DEBOUNCE_JUST_PRESSED   0b1111111000000000
-#define DEBOUNCE_JUST_RELEASED  0b0000000001111111
-#define DEBOUNCE_MASK           (DEBOUNCE_JUST_PRESSED | DEBOUNCE_JUST_RELEASED)
-#define DEBOUNCE_PRESSED        0b0000000000000000
-#define DEBOUNCE_RELEASED       0b1111111111111111
+#if CONFIG_DEBOUNCING_HISTORY_BITS == 16
+ #define DEBOUNCE_JUST_PRESSED   0b1111000000000000
+ #define DEBOUNCE_JUST_RELEASED  0b0000000001111111
+ #define DEBOUNCE_MASK           (DEBOUNCE_JUST_PRESSED | DEBOUNCE_JUST_RELEASED)
+ #define DEBOUNCE_PRESSED        0b0000000000000000
+ #define DEBOUNCE_RELEASED       0b1111111111111111
 
+ uint16_t g_history_input0[8];
+ uint16_t g_history_input1[8];
+ uint16_t g_history_input2[8];
+#elif CONFIG_DEBOUNCING_HISTORY_BITS == 8
+ #define DEBOUNCE_JUST_PRESSED   0b11000000
+ #define DEBOUNCE_JUST_RELEASED  0b11000111
+ #define DEBOUNCE_MASK           (DEBOUNCE_JUST_PRESSED | DEBOUNCE_JUST_RELEASED)
+ #define DEBOUNCE_PRESSED        0b00000000
+ #define DEBOUNCE_RELEASED       0b11111111
 
-uint16_t g_history_input0[8];
-uint16_t g_history_input1[8];
-uint16_t g_history_input2[8];
+ uint8_t g_history_input0[8];
+ uint8_t g_history_input1[8];
+ uint8_t g_history_input2[8];
+#else
+ #error CONFIG_DEBOUNCING_HISTORY_BITS must be 16 or 8
+#endif
+
 
 void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
 {
