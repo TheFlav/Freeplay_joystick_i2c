@@ -44,19 +44,19 @@
 #define VERSION_NUMBER   14
 
 #define CONFIG_PERIODIC_TASK_TIMER_MILLIS 5000
-#define CONFIG_INPUT_READ_TIMER_MILLIS 1        //set to 0 for NO delay reading inputs, otherwise try to read inputs at least every CONFIG_INPUT_READ_TIMER_MILLIS ms
+#define CONFIG_INPUT_READ_TIMER_MICROS 500        //set to 0 for NO delay reading inputs, otherwise try to read inputs at least every CONFIG_INPUT_READ_TIMER_MICROS microseconds
 
 /*
- * note that CONFIG_INPUT_READ_TIMER_MILLIS and CONFIG_DEFAULT_DEBOUCE_LEVEL both create potential input lag (multiplicative when using both)
- * if CONFIG_INPUT_READ_TIMER_MILLIS=2 and CONFIG_DEFAULT_DEBOUCE_LEVEL=3, that would likely be 8ms (or more) of input lag
- * CONFIG_INPUT_READ_TIMER_MILLIS * (CONFIG_DEFAULT_DEBOUCE_LEVEL + 1) = ms of input lag
+ * note that CONFIG_INPUT_READ_TIMER_MICROS and CONFIG_DEFAULT_DEBOUCE_LEVEL both create potential input lag (multiplicative when using both)
+ * if CONFIG_INPUT_READ_TIMER_MICROS=500 and CONFIG_DEFAULT_DEBOUCE_LEVEL=3, that would likely be 2ms=2000us (or more) of input lag
+ * CONFIG_INPUT_READ_TIMER_MICROS * (CONFIG_DEFAULT_DEBOUCE_LEVEL + 1) = us of input lag
  */
 
 // Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
 //currently testing on Adafruit 817
 
 #ifdef USE_DIGITAL_BUTTON_DEBOUNCING
- #define CONFIG_DEFAULT_DEBOUCE_LEVEL 3      //must be 0 to 7   //0 means no debouncing
+ #define CONFIG_DEFAULT_DEBOUCE_LEVEL 5      //must be 0 to 7   //0 means no debouncing
  #define DEBOUNCE_LEVEL_MAX 7
 #else
  #define CONFIG_DEFAULT_DEBOUCE_LEVEL 0      //0 means unused/off (no debouncing)
@@ -646,7 +646,7 @@ void debounce_setup()
   g_debounce_mask = (0b11111111 >> (DEBOUNCE_LEVEL_MAX-config0_ptr->debounce_level));   //turn on CONFIG_DEBOUNCING_HISTORY_BITS number of bits
 
 
-  i2c_secondary_registers.rfu0 = g_debounce_mask;   //testing!
+  //i2c_secondary_registers.rfu0 = g_debounce_mask;   //testing!
 }
 
 
@@ -679,7 +679,7 @@ void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
 
 
 
-    //using concepts from https://hackaday.com/2015/12/10/embed-with-elliot-debounce-your-noisy-buttons-part-ii/ for now
+    //using concepts from https://hackaday.com/2015/12/10/embed-with-elliot-debounce-your-noisy-buttons-part-ii/ 
 
     if((g_history_input0[i] & g_debounce_mask) == DEBOUNCE_RELEASED)   //is button UP?
     {
@@ -1210,7 +1210,6 @@ void setup()
 
 void loop() 
 {
-  static unsigned long timer_input_read_start_millis = millis();
   static unsigned long timer_start_millis = millis();
   unsigned long current_millis;
   
@@ -1219,8 +1218,10 @@ void loop()
   if(g_backlight_is_flashing)
     backlight_process_flashing();
 
-#if CONFIG_INPUT_READ_TIMER_MILLIS > 0
-  if(current_millis - timer_input_read_start_millis >= CONFIG_INPUT_READ_TIMER_MILLIS)
+#if CONFIG_INPUT_READ_TIMER_MICROS > 0
+  static unsigned long timer_input_read_start_micros = micros();
+  unsigned long current_micros = micros();
+  if(current_micros - timer_input_read_start_micros >= CONFIG_INPUT_READ_TIMER_MICROS)
 #endif
   {
     read_digital_inputs();
@@ -1230,7 +1231,7 @@ void loop()
     read_analog_inputs();
 #endif  
     
-    timer_input_read_start_millis = current_millis;
+    timer_input_read_start_micros = current_micros;
   }
 
 #ifdef PIN_BACKLIGHT_PWM
