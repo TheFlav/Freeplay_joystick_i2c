@@ -270,7 +270,7 @@ void fpjoy_report_digital_inputs(struct input_dev *input, u8 num_digitalbuttons,
     button_states[BTN_INDEX_X] 		= IS_PRESSED(input1.btn_x);
     button_states[BTN_INDEX_Y] 		= IS_PRESSED(input1.btn_y);
     button_states[BTN_INDEX_TL] 	= IS_PRESSED(input1.btn_tl);
-    button_states[BTN_INDEX_TR] 	= IS_PRESSED(input1.btn_tl);
+    button_states[BTN_INDEX_TR] 	= IS_PRESSED(input1.btn_tr);
 
     //digital input2
     button_states[BTN_INDEX_THUMBL] = IS_PRESSED(input2.btn_thumbl);
