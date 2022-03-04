@@ -55,13 +55,8 @@ typedef union { //config0 regiter bitfield structure
 } mcu_config0_t;
 mcu_config0_t mcu_config0_current = {0}, mcu_config0_backup = {0};
 
-typedef union { //adc configuration bitfield structure
-    struct {uint8_t use0:1, use1:1, use2:1, use3:1, en0:1, en1:1, en2:1, en3:1;} vals;
-    uint8_t bits;
-} mcu_adc_conf_t;
-mcu_adc_conf_t mcu_conf_current = {0}, mcu_conf_backup = {0};
-bool adc_reg_enable[4]={0};
-bool adc_reg_used[4]={0}, adc_reg_used_prev[4]={0}, adc_reg_used_backup[4]={0};
+uint8_t adc_reg_current = 0;
+bool adc_reg_enable[4]={0}, adc_reg_used[4]={0}, adc_reg_used_prev[4]={0}, adc_reg_used_backup[4]={0};
 
 typedef struct adc_data_struct_t { //adc readed data structure
     char name[32]; //name of current axis

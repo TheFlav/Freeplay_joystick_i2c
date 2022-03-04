@@ -373,14 +373,14 @@ static int i2c_init(int* fd, int bus, int addr){ //open fd for I2C device, check
     //current analog config
     ret = i2c_smbus_read_byte_data(*fd, i2c_mcu_register_adc_conf);
     if (ret < 0){close(*fd); return -1;}
-    mcu_conf_current.bits = (uint8_t)ret;
+    adc_reg_current = (uint8_t)ret;
     for (uint8_t i=0; i<4; i++){
         int_constrain(adc_settings[i].max, 0, adc_res_limit);
         int_constrain(adc_settings_back[i].max, 0, adc_res_limit);
         int_constrain(adc_settings_default[i].max, 0, adc_res_limit);
         adc_data[i].raw_min = adc_res_limit; adc_data[i].raw_max = 0;
-        adc_reg_enable[i] = (bool)((mcu_conf_current.bits >> (i+4)) & 0b1);
-        if (adc_reg_enable[i]){adc_reg_used_backup[i] = adc_reg_used[i] = adc_reg_used_prev[i] = (bool)((mcu_conf_current.bits >> i) & 0b1);}
+        adc_reg_enable[i] = (bool)((adc_reg_current >> (i+4)) & 0b1);
+        if (adc_reg_enable[i]){adc_reg_used_backup[i] = adc_reg_used[i] = adc_reg_used_prev[i] = (bool)((adc_reg_current >> i) & 0b1);}
     }
     if (!(adc_reg_used[0] && adc_reg_used[1])){*js_enabled[0] = false;}
     if (!(adc_reg_used[2] && adc_reg_used[3])){*js_enabled[1] = false;}
@@ -1001,7 +1001,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
             for(int i=0; i<4; i++){ //adc loop
                 if (adc_reg_enable[i]){ //enabled
                     if (adc_reg_used[i] != adc_reg_used_prev[i]){ //adc configuration update
-                        mcu_conf_current.bits ^= 1U << i; //toggle needed bit
+                        adc_reg_current ^= 1U << i; //toggle needed bit
                         adc_reg_used_prev[i] = adc_reg_used[i]; mcu_conf_changed = true;
                     }
                     if (adc_use_raw_min[i]){*adc_settings[i].min = adc_data[i].raw_min; adc_use_raw_min[i] = false;} //set raw min as min limit
@@ -1016,7 +1016,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
 
             if (*js_enabled[0] != js_enabled_prev[0] || *js_enabled[1] != js_enabled_prev[1] || mcu_conf_changed){ //enabled joystick or adc changed
                 js_enabled_prev[0] = *js_enabled[0]; js_enabled_prev[1] = *js_enabled[1];
-                i2c_smbus_write_byte_data(i2c_fd, i2c_mcu_register_adc_conf, mcu_conf_current.bits); //update i2c config
+                i2c_smbus_write_byte_data(i2c_fd, i2c_mcu_register_adc_conf, adc_reg_current); //update i2c config
                 term_screen_update = true; goto funct_end; //force full redraw
             }
         } else { //i2c failed
