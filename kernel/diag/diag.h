@@ -20,6 +20,7 @@ typedef struct dtoverlay_driver_struct { //FPJS dtoverlay file structure, conver
     //int analogsticks; //TODO UPDATE DTOVERLAY STRUCT, analog stricks count, 0:none, 1:left, 2:left-right
     int digitalbuttons; //digital buttons count
     bool dpads; //dpad enabled
+    int debounce; //digital buttons debounce level, 0 to disable, <= debounce_limit var
 
     //char joy0_x_params[buffer_size], joy0_y_params[buffer_size]; //joystick0 config: min,max,fuzz,flat,inverted. default:"0 0xFFF 32 300 0"
     int joy0_x_min, joy0_x_max, joy0_x_fuzz, joy0_x_flat; bool joy0_x_inverted/*, joy0_x_enabled*/; //TODO UPDATE DTOVERLAY STRUCT: enable
@@ -48,12 +49,18 @@ uint8_t i2c_dev_sig = 0, i2c_dev_id = 0, i2c_dev_minor = 0; //device device sign
 int i2c_fd = -1, i2c_bus_prev = 0, i2c_addr_prev = 0; //file definition, previous bus/address
 int adc_res = 10, adc_res_limit = 1023; //default adc resolution, computed during runtime
 
+typedef union { //config0 regiter bitfield structure
+    struct {uint8_t debounce_level:3, unused3:1, unused4:1, unused5:1, unused6:1, unused7:1;} vals;
+    uint8_t bits;
+} mcu_config0_t;
+mcu_config0_t mcu_config0_current = {0}, mcu_config0_backup = {0};
+
 typedef union { //adc configuration bitfield structure
     struct {uint8_t use0:1, use1:1, use2:1, use3:1, en0:1, en1:1, en2:1, en3:1;} vals;
     uint8_t bits;
 } mcu_adc_conf_t;
-mcu_adc_conf_t mcu_conf_current = {0};
-bool adc_reg_enable[4]={0}; 
+mcu_adc_conf_t mcu_conf_current = {0}, mcu_conf_backup = {0};
+bool adc_reg_enable[4]={0};
 bool adc_reg_used[4]={0}, adc_reg_used_prev[4]={0}, adc_reg_used_backup[4]={0};
 
 typedef struct adc_data_struct_t { //adc readed data structure
@@ -105,7 +112,7 @@ const int term_footer_buttons_width = 15; //footer button width
 struct winsize ws; //terminal size
 struct termios term_backup; //original terminal state backup
 const int term_adc_vertspacing = 9; //vertical spacing between each horizontal ADC elements
-int select_index_current = 0, select_index_last = -1, select_limit = 0; //current element selected, last selected
+int select_index_current = 0, select_index_last = -1; //current element selected, last selected
 
 int term_screen_current = 0, term_screen_last = -1; //start "screen", last screen
 bool term_screen_update = false; //"screen" require update

@@ -40,9 +40,10 @@ char* dtoverlay_filename = "/dev/shm/config.txt"/*"/boot/config.txt"*/; //file t
 char* dtoverlay_install_cmd_path = "/dev/shm/fpjs_install.sh"; //file that contain install command for dtoverlay, leave blank to disable
 const uint8_t i2c_dev_manuf = 0xED; //I2C MCU manufacturer signature, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 const int button_count_limit = 19; //max amount of digital buttons (excl. Dpad)
+const int debounce_default = 5, debounce_limit = 7; //default/limit value of digital debouncing
 
 dtoverlay_driver_t driver_default = { //driver default settings, 'driver_user' and 'driver_back' set during runtime
-    .bus=1, .addr=0x30, .interrupt=40, /*.analogsticks=0,*/ .digitalbuttons=11, .dpads=false,
+    .bus=1, .addr=0x30, .interrupt=40, /*.analogsticks=0,*/ .digitalbuttons=11, .dpads=false, .debounce=debounce_default,
     .joy0_x_min=0, .joy0_x_max=0xFFF, .joy0_x_fuzz=32, .joy0_x_flat=300, .joy0_x_inverted=false,/* .joy0_x_enabled=false,*/
     .joy0_y_min=0, .joy0_y_max=0xFFF, .joy0_y_fuzz=32, .joy0_y_flat=300, .joy0_y_inverted=false,/* .joy0_y_enabled=false,*/
     .joy0_swapped_x_y=false, .joy0_enabled=false,
@@ -51,11 +52,14 @@ dtoverlay_driver_t driver_default = { //driver default settings, 'driver_user' a
     .joy1_swapped_x_y=false, .joy1_enabled=false,
 };
 
+mcu_config0_t mcu_config0_default = {.vals.debounce_level = debounce_default}; //default config register value
+
 dtoverlay_parser_store_t dtoverlay_store[] = { //store dtoverlay argument to program "transaction". format:argument,type,pointer. Type: 0:int, 1:hex, 2:bool
     {"interrupt", 0, &driver_user.interrupt},
     {"addr", 1, &driver_user.addr},
     {"digitalbuttons", 0, &driver_user.digitalbuttons},
     {"dpads", 2, &driver_user.dpads},
+    {"debounce", 0, &driver_user.debounce},
 
     {"joy0-x-min", 0, &driver_user.joy0_x_min},
     {"joy0-x-max", 0, &driver_user.joy0_x_max},
@@ -341,6 +345,7 @@ int i2c_mcu_register_js0 = offsetof(struct i2c_joystick_register_struct, a0_msb)
 int i2c_mcu_register_js1 = offsetof(struct i2c_joystick_register_struct, a2_msb) / sizeof(uint8_t); //adc2 start register index
 int i2c_mcu_register_adc_conf = offsetof(struct i2c_joystick_register_struct, adc_conf_bits) / sizeof(uint8_t); //adc configuration register index
 int i2c_mcu_register_adc_res = offsetof(struct i2c_joystick_register_struct, adc_res) / sizeof(uint8_t); //adc resolution register index
+int i2c_mcu_register_config0 = offsetof(struct i2c_joystick_register_struct, config0) / sizeof(uint8_t); //adc resolution register index
 bool i2c_failed_bus = true, i2c_failed_dev = true, i2c_failed_sig = true, i2c_failed = true; //used to check I2C specific failure
 
 static int i2c_init(int* fd, int bus, int addr){ //open fd for I2C device, check device signature, get device id/version, ADC resolution, current device ADC configuration
@@ -360,30 +365,34 @@ static int i2c_init(int* fd, int bus, int addr){ //open fd for I2C device, check
     ret = i2c_smbus_read_word_data(*fd, offsetof(struct i2c_joystick_register_struct, device_ID) / sizeof(i2c_joystick_registers.device_ID)); //get version
     if (ret < 0){close(*fd); return -1;} else {i2c_dev_id = ret & 0xFF; i2c_dev_minor = (ret >> 8) & 0xFF;} //device id, version
 
-    ret = i2c_smbus_read_byte_data(*fd, i2c_mcu_register_adc_res); //current ADC resolution
-    if (ret < 0){close(*fd); return -1;
-    } else {
-        adc_res = ret; adc_res_limit = 0xFFFFFFFF >> (32 - adc_res);
+    //current ADC resolution
+    ret = i2c_smbus_read_byte_data(*fd, i2c_mcu_register_adc_res);
+    if (ret < 0){close(*fd); return -1;}
+    adc_res = ret; adc_res_limit = 0xFFFFFFFF >> (32 - adc_res); //compute adc limit value
 
-        ret = i2c_smbus_read_byte_data(*fd, i2c_mcu_register_adc_conf); //current analog config
-        if (ret < 0){close(*fd); return -1;
-        } else {
-            mcu_conf_current.bits = (uint8_t)ret;
-            for (uint8_t i=0; i<4; i++){
-                int_constrain(adc_settings[i].max, 0, adc_res_limit);
-                int_constrain(adc_settings_back[i].max, 0, adc_res_limit);
-                int_constrain(adc_settings_default[i].max, 0, adc_res_limit);
-                adc_data[i].raw_min = adc_res_limit; adc_data[i].raw_max = 0;
-                adc_reg_enable[i] = (bool)((mcu_conf_current.bits >> (i+4)) & 0b1);
-                if (adc_reg_enable[i]){adc_reg_used_backup[i] = adc_reg_used[i] = adc_reg_used_prev[i] = (bool)((mcu_conf_current.bits >> i) & 0b1);}
-            }
-            if (!(adc_reg_used[0] && adc_reg_used[1])){*js_enabled[0] = false;} if (!(adc_reg_used[2] && adc_reg_used[3])){*js_enabled[1] = false;}
-            js_enabled_prev[0] = *js_enabled[0]; js_enabled_prev[1] = *js_enabled[1];
-            i2c_failed = false;
-            return 0;
-        }
+    //current analog config
+    ret = i2c_smbus_read_byte_data(*fd, i2c_mcu_register_adc_conf);
+    if (ret < 0){close(*fd); return -1;}
+    mcu_conf_current.bits = (uint8_t)ret;
+    for (uint8_t i=0; i<4; i++){
+        int_constrain(adc_settings[i].max, 0, adc_res_limit);
+        int_constrain(adc_settings_back[i].max, 0, adc_res_limit);
+        int_constrain(adc_settings_default[i].max, 0, adc_res_limit);
+        adc_data[i].raw_min = adc_res_limit; adc_data[i].raw_max = 0;
+        adc_reg_enable[i] = (bool)((mcu_conf_current.bits >> (i+4)) & 0b1);
+        if (adc_reg_enable[i]){adc_reg_used_backup[i] = adc_reg_used[i] = adc_reg_used_prev[i] = (bool)((mcu_conf_current.bits >> i) & 0b1);}
     }
-    return -1;
+    if (!(adc_reg_used[0] && adc_reg_used[1])){*js_enabled[0] = false;}
+    if (!(adc_reg_used[2] && adc_reg_used[3])){*js_enabled[1] = false;}
+    js_enabled_prev[0] = *js_enabled[0]; js_enabled_prev[1] = *js_enabled[1];
+
+    //current mcu config0
+    ret = i2c_smbus_read_byte_data(*fd, i2c_mcu_register_config0);
+    if (ret < 0){close(*fd); return -1;}
+    mcu_config0_current.bits = mcu_config0_backup.bits = (uint8_t)ret;
+
+    i2c_failed = false;
+    return 0;
 }
 
 static int adc_defuzz(int value, int old_val, int fuzz){ //ADC defuzz, based on input_defuzz_abs_event(): https://elixir.bootlin.com/linux/latest/source/drivers/input/input.c#L56
@@ -610,7 +619,7 @@ static void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_
 static void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){ //main screen:0
     char buffer[buffer_size];
     bool default_resquested = false, reset_resquested = false;
-    int hint_line = tty_last_height - 6, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal; 
+    int hint_line = tty_last_height - 6, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal;
 
     char* term_hint_main_str[]={
         "Discard current modifications (exclude Analog Configuration)",
@@ -619,16 +628,18 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
         "Address of the device, bus used by default:1",
         "GPIO pin used for interrupt, -1 to disable",
         "Amount of reported digital buttons (excl Dpad)",
-        "Please refer to \e[4m[Digital Input Debug]\e[24m menu to for visual representation.",
         "Enable/disable Dpad report",
+        "Filter to limit impact of pads false contacts, 0 to disable",
+        "Please refer to \e[4m[Digital Input Debug]\e[24m menu to for visual representation.",
         "Change enable ADCs, limits, fuzz, flat values",
         "Display digital inputs state",
         "Discard current modifications (exclude Analog Configuration)",
         "Reset values to default (exclude Analog Configuration)",
     };
 
-    const int select_max = 10;
+    const int select_max = 11;
     term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
+    int select_limit = 0;
 
     char* screen_name = "Kernel driver setup/diagnostic tool";
     fprintf(stdout, "\e[%d;%dH\e[1;%dm%s\e[0m", tty_line++, (tty_last_width - strlen(programname))/2, term_esc_col_normal, programname);
@@ -673,25 +684,27 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
 
     //buttons no
     fprintf(stdout, "\e[%d;%dH\e[%dmButtons:___ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, term_hint_main_str[5]);
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+8, .y=tty_line, .size=3}, .type=0, .value={.min=0, .max=button_count_limit, .ptrint=&driver_user.digitalbuttons}, .defval={.ptrint=&driver_default.digitalbuttons, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_generic_str[1]}};
-    fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line+1, tmp_col, 0/*tmp_esc_col*/, term_hint_main_str[6]);
-    tty_line+=3;
-
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+8, .y=tty_line++, .size=3}, .type=0, .value={.min=0, .max=button_count_limit, .ptrint=&driver_user.digitalbuttons}, .defval={.ptrint=&driver_default.digitalbuttons, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_generic_str[1]}};
     //dpad enabled
-    fprintf(stdout, "\e[%d;%dH\e[%dmDpad:_ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, term_hint_main_str[7]);
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+5, .y=tty_line, .size=3}, .type=2, .value={.ptrbool=&driver_user.dpads}, .defval={.ptrbool=&driver_default.dpads, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_generic_str[1]}};
+    fprintf(stdout, "\e[%d;%dH\e[%dmDpad:_ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, term_hint_main_str[6]);
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+5, .y=tty_line++, .size=3}, .type=2, .value={.ptrbool=&driver_user.dpads}, .defval={.ptrbool=&driver_default.dpads, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_generic_str[1]}};
+    //debounce
+    fprintf(stdout, "\e[%d;%dH\e[%dmDebounce:___ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, term_hint_main_str[7]);
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+9, .y=tty_line++, .size=3}, .type=0, .value={.min=0, .max=debounce_limit, .ptrint=&driver_user.debounce}, .defval={.ptrint=&driver_default.debounce, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_generic_str[1]}};
+
+    fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line, tmp_col, 0/*tmp_esc_col*/, term_hint_main_str[8]);
     tty_line+=2;
 
     //adc configuration
     bool term_go_adcconf = false;
     char* term_buttons_adc_config = " Analog Configuration ";
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=strlen(term_buttons_adc_config)}, .type=1, .value={.ptrchar=term_buttons_adc_config, .ptrbool=&term_go_adcconf}, .hint={.y=hint_line, .str=term_hint_main_str[8]}};
+    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_adc_config))/2, .y=tty_line, .size=strlen(term_buttons_adc_config)}, .type=1, .value={.ptrchar=term_buttons_adc_config, .ptrbool=&term_go_adcconf}, .hint={.y=hint_line, .str=term_hint_main_str[9]}};
     tty_line+=2;
 
     //digital debug
     bool term_go_digitaldebug = false;
     char* term_buttons_digitaldebug_config = " Digital Input Debug ";
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=strlen(term_buttons_digitaldebug_config)}, .type=1, .value={.ptrchar=term_buttons_digitaldebug_config, .ptrbool=&term_go_digitaldebug}, .hint={.y=hint_line, .str=term_hint_main_str[9]}};
+    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_digitaldebug_config))/2, .y=tty_line, .size=strlen(term_buttons_digitaldebug_config)}, .type=1, .value={.ptrchar=term_buttons_digitaldebug_config, .ptrbool=&term_go_digitaldebug}, .hint={.y=hint_line, .str=term_hint_main_str[10]}};
 
     i2c_failed_jump:; //jump point for i2c failure
 
@@ -745,11 +758,13 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
         if (reset_resquested){ //restore backup requested
             driver_user.bus = driver_back.bus; driver_user.addr = driver_back.addr;
             driver_user.interrupt = driver_back.interrupt; driver_user.digitalbuttons = driver_back.digitalbuttons; driver_user.dpads = driver_back.dpads;
+            driver_user.debounce = driver_back.debounce;
         }
 
         if (default_resquested){ //restore defaults requested
             driver_user.bus = driver_default.bus; driver_user.addr = driver_default.addr;
             driver_user.interrupt = driver_default.interrupt; driver_user.digitalbuttons = driver_default.digitalbuttons; driver_user.dpads = driver_default.dpads;
+            driver_user.debounce = driver_default.debounce;
         }
 
         if (driver_user.bus != i2c_bus_prev || driver_user.addr != i2c_addr_prev || reset_resquested || default_resquested){ //i2c bus or address changed
@@ -757,6 +772,14 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
             i2c_init(&i2c_fd, driver_user.bus, driver_user.addr);
             if (reset_resquested || default_resquested){select_index_current = 0;}
             term_screen_update = true; goto funct_end; //force full redraw
+        }
+
+        //mcu config0 update
+        if (driver_user.debounce != mcu_config0_current.vals.debounce_level){mcu_config0_current.vals.debounce_level = driver_user.debounce;}
+
+        if (mcu_config0_current.bits != mcu_config0_backup.bits){ //done that way for possible config0 struct update
+            i2c_smbus_write_byte_data(i2c_fd, i2c_mcu_register_config0, mcu_config0_current.bits); //update i2c config
+            mcu_config0_backup.bits = mcu_config0_current.bits;
         }
 
         fprintf(stdout, "\e[%d;0H\n", tty_last_height-1); //force tty update
@@ -777,7 +800,6 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
     int term_adc_pad = (tty_last_width - term_adc_width * 2) / 3; //padding between each ADC sections
     int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1;
 
-
     char* term_hint_adc_str[]={
         "Discard current modifications (exclude Main Settings)",
         "Reset values to default (exclude Main Settings)",
@@ -791,6 +813,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
 
     const int select_max = 40;
     term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
+    int select_limit = 0;
 
     char* screen_name = "Analog Configuration";
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line, (tty_last_width - strlen(screen_name))/2, term_esc_col_normal, screen_name);
@@ -805,8 +828,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
         sprintf(buffer, "Joystick %d enabled:-", x_loop);
         x = 1 + term_left + (term_adc_width - strlen(buffer)) / 2;
         fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tmp_line, x, js_used?term_esc_col_normal:term_esc_col_disabled, buffer);
-        if (js_used){term_select[select_limit] = (term_select_t){.position={.x=x+strlen(buffer)-1, .y=tmp_line, .size=1}, .type=2, .value={.ptrbool=js_enabled[x_loop]}, .defval={.y=hint_def_line, .ptrbool=js_enabled_default[x_loop]}, .hint={.y=hint_line, .str=term_hint_adc_str[3]}};}
-        select_limit++; tmp_line++;
+        term_select[select_limit++] = (term_select_t){.position={.x=x+strlen(buffer)-1, .y=tmp_line++, .size=1}, .type=2, .disabled=!js_used, .value={.ptrbool=js_enabled[x_loop]}, .defval={.y=hint_def_line, .ptrbool=js_enabled_default[x_loop]}, .hint={.y=hint_line, .str=term_hint_adc_str[3]}};
 
         for(int y_loop=0; y_loop<2; y_loop++){
             int term_esc_col = term_esc_col_disabled;
@@ -866,7 +888,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
         sprintf(buffer, "Swap %s/%s axis:-", adc_data[adc_loop-2].name, adc_data[adc_loop-1].name);
         x = term_left + (term_adc_width - strlen(buffer)) / 2;
         fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tmp_line_last, x, js_used?term_esc_col_normal:term_esc_col_disabled, buffer);
-        if (js_used){term_select[select_limit++] = (term_select_t){.position={.x=x+strlen(buffer)-1, .y=tmp_line, .size=1}, .type=2, .value={.ptrbool=adc_axis_swap[x_loop]}, .defval={.y=hint_def_line, .ptrbool=adc_axis_swap_default[x_loop]}, .hint={.y=hint_line, .str=term_hint_adc_str[7]}};}
+        term_select[select_limit++] = (term_select_t){.position={.x=x+strlen(buffer)-1, .y=tmp_line, .size=1}, .type=2, .disabled=!js_used, .value={.ptrbool=adc_axis_swap[x_loop]}, .defval={.y=hint_def_line, .ptrbool=adc_axis_swap_default[x_loop]}, .hint={.y=hint_line, .str=term_hint_adc_str[7]}};
     }
 
     //footer
@@ -994,6 +1016,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
 
             if (*js_enabled[0] != js_enabled_prev[0] || *js_enabled[1] != js_enabled_prev[1] || mcu_conf_changed){ //enabled joystick or adc changed
                 js_enabled_prev[0] = *js_enabled[0]; js_enabled_prev[1] = *js_enabled[1];
+                i2c_smbus_write_byte_data(i2c_fd, i2c_mcu_register_adc_conf, mcu_conf_current.bits); //update i2c config
                 term_screen_update = true; goto funct_end; //force full redraw
             }
         } else { //i2c failed
@@ -1033,6 +1056,7 @@ static void term_screen_save(int tty_line, int tty_last_width, int tty_last_heig
 
     const int select_max = 5;
     term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
+    int select_limit = 0;
 
     char* screen_name = "Save current settings";
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line, (tty_last_width - strlen(screen_name))/2, term_esc_col_normal, screen_name);
@@ -1150,6 +1174,7 @@ static void term_screen_digitaldebug(int tty_line, int tty_last_width, int tty_l
 
     const int select_max = 1;
     term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
+    int select_limit = 0;
     term_pos_string_t term_input_pos[input_values_count] = {0};
 
     char* term_hint_digitaldebug_str[]={
@@ -1285,7 +1310,7 @@ static void program_close(void){ //run when program closes
     close(i2c_fd);
 }
 
-int main (int argc, char** argv){
+int main(int argc, char** argv){
     program_start_time = get_time_double();
 	if (getuid() != 0) {print_stderr("FATAL: this program needs to run as root, current user:%d\n", getuid()); program_usage(argv[0]); return EXIT_FAILURE;} //not running as root
     program_get_path(argv, program_path); //get current program path
@@ -1299,6 +1324,7 @@ int main (int argc, char** argv){
     //dtoverlay
     memcpy(&driver_user, &driver_default, sizeof(driver_default));
     dtoverlay_parser(dtoverlay_filename, dtoverlay_name, dtoverlay_store, dtoverlay_store_size);
+    int_constrain(&driver_user.debounce, 0, debounce_limit);
     memcpy(&driver_back, &driver_user, sizeof(driver_user)); //backup detected dtoverlay settings
 
     //i2c
@@ -1326,7 +1352,7 @@ int main (int argc, char** argv){
     if (debug){fprintf(stdout, "\e[1;1H\e[100mtty:%dx%d, screen:%d\e[0m", tty_last_width, tty_last_height, term_screen_current);} //print tty size, 640x480 is 80cols by 30rows
 
     //reset selectible
-    select_index_last = -1; select_limit = 0;
+    select_index_last = -1;
     //memset(term_select, 0, sizeof(term_select));
     if (term_screen_current != term_screen_last){select_index_current = 0; term_screen_last = term_screen_current;} //screen changed, reset select index
 
