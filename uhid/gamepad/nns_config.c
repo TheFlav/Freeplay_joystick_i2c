@@ -24,7 +24,7 @@ int config_save (cfg_vars_t* cfg, unsigned int cfg_size, char* filename, int uid
     if (reset) {if(remove(filename) != 0) {print_stderr("failed to delete '%s'\n", filename);}}
     FILE *filehandle = fopen(filename, "wb");
     if (filehandle != NULL) {
-        char strBuffer [4096], strBuffer1 [33]; int strBufferSize;
+        char strBuffer [4096], strBuffer1 [33];
         for (unsigned int i = 0; i < cfg_size; i++) {
             int tmpType = cfg[i].type;
             if (tmpType == 0) {fprintf (filehandle, "%s=%d;", cfg[i].name, *(int*)cfg[i].ptr); //int
@@ -58,7 +58,7 @@ int config_save (cfg_vars_t* cfg, unsigned int cfg_size, char* filename, int uid
 		if (uid !=-1 && gid != -1){ //config file owner
 			struct stat file_stat = {0}; bool failed = false;
 			if (stat(filename, &file_stat) == 0){
-				if (uid !=-1 && file_stat.st_uid != uid || gid !=-1 && file_stat.st_gid != gid) {
+				if (uid !=-1 && (file_stat.st_uid != uid || gid !=-1) && file_stat.st_gid != gid) {
 					if (chown(filename, (uid_t) uid, (gid_t) gid) < 0){failed = true;
 					} else {print_stdout("%s owner changed successfully (uid:%d, gid:%d)\n", filename, uid, gid);}
 				}

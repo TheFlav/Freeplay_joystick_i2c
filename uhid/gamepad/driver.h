@@ -33,11 +33,6 @@ static void program_get_path (char** /*args*/, char* /*var*/); //get current pro
 static void tty_signal_handler (int /*sig*/); //handle signal func
 static int in_array_int16 (int16_t* /*arr*/, int16_t /*value*/, int /*arr_size*/); //search in value in int16 array, return index or -1 on failure
 static void debug_print_binary_int (int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format
-static void debug_print_binary_int_term (int /*line*/, int /*col*/, int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format at given term position
-
-static bool diag_button_pressed (int /*hid_base*/, int /*hid_button*/, uint32_t /*inputvar*/, double /*pressed_duration*/, double* /*pressed_start*/); //check if button pressed for given duration
-static int diag_print (int /*tty_width*/, int /*tty_line*/, int /*cols*/, int /*used_col*/, const char* /*format_noescape*/, const char* /*format*/, ...); //print diag tty things, 'used_col' set to negative value to use it as "real" tty column, 'format' and following args behave like printf, return column position
-static void program_diag_mode (int /*hid_save_base*/, int /*hid_save_button*/, int /*hid_close_base*/, int /*hid_close_button*/); //program in diagnostic mode
 
 
 #ifdef USE_PIGPIO_IRQ
@@ -52,7 +47,7 @@ bool irq_enable = false; //is set during runtime, do not edit
 
 
 //debug
-bool diag_mode = false, diag_mode_init = false, i2c_disabled = false, uhid_disabled = false; //running in diagnostic/adc limits detection mode
+bool i2c_disabled = false, uhid_disabled = false;
 
 
 //Program related
@@ -92,6 +87,15 @@ unsigned long i2c_allerrors_count = 0;
 uint8_t i2c_dev_id=0, i2c_dev_minor=0;
 uint8_t i2c_mcu_register_adc_conf = 0; //defined at runtime, based on i2c_joystick_registers, adc_conf_bits
 uint8_t i2c_mcu_register_adc_res = 0; //defined at runtime, based on i2c_joystick_registers, adc_res
+uint8_t i2c_mcu_register_config0 = 0; //defined at runtime, based on i2c_joystick_registers, config0
+
+
+//MCU config
+typedef union { //config0 regiter bitfield structure
+    struct {uint8_t debounce_level:3, unused3:1, unused4:1, unused5:1, unused6:1, unused7:1;} vals;
+    uint8_t bits;
+} mcu_config0_t;
+mcu_config0_t mcu_config0 = {0};
 
 
 //ADC related
@@ -150,14 +154,14 @@ double shm_clock_start = -1., shm_update_interval = 0.25; //sec
 #endif
 
 //Config related vars
-bool cfg_save = false; //save config after adc limits detection
-
 const char debug_desc[] = "Enable debug outputs (0:disable, 1:enable).";
 const char debug_adv_desc[] = "Enable debug outputs (0:disable, 1:enable).";
 const char i2c_poll_rate_disable_desc[] = "Disable pollrate limitation (0:disable, 1:enable).";
 
 const char pollrate_desc[] = "Driver pollrate (in hz), avoid going over 1000, default:125.";
 const char adc_pollrate_desc[] = "ADC pollrate (every given poll loop), default:1.";
+
+const char debounce_desc[] = "Debounce filtering to mitigate possible pad false contact, default:5, max:7 (0 to disable)";
 
 const char js0_enable_desc[] = "Enable MCU joystick 0 ADC0-1 (i2c_address_adc0-1 will be ignored), please check the documentation, does require specific MCU configuration.";
 const char js1_enable_desc[] = "Enable MCU joystick 1 ADC2-3 (i2c_address_adc2-3 will be ignored), please check the documentation, does require specific MCU configuration.";
@@ -196,6 +200,8 @@ cfg_vars_t cfg_vars[] = {
 	{"i2c_address_adc2", i2c_addr_adc2_desc, 6, &i2c_addr_adc[2]},
 	{"i2c_address_adc3", i2c_addr_adc3_desc, 6, &i2c_addr_adc[3]},
 	{"i2c_irq", nINT_GPIO_desc, 0, &nINT_GPIO},
+
+	{"\ndigital_debounce", debounce_desc, 0, &digital_debounce},
 
 	{"\nmcu_js0_enable", js0_enable_desc, 4, &mcu_js_enable[0]},
 	{"mcu_js1_enable", js1_enable_desc, 4, &mcu_js_enable[1]},
