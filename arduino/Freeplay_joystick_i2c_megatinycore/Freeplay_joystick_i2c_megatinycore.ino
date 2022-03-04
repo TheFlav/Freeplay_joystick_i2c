@@ -1,4 +1,6 @@
 //Freeplay_joystick_i2c_attiny
+// Firmware for the ATtiny1627/ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
+//currently testing on Adafruit 1627
 
 
 /*
@@ -51,9 +53,6 @@
  * if CONFIG_INPUT_READ_TIMER_MICROS=500 and CONFIG_DEFAULT_DEBOUCE_LEVEL=3, that would likely be 2ms=2000us (or more) of input lag
  * CONFIG_INPUT_READ_TIMER_MICROS * (CONFIG_DEFAULT_DEBOUCE_LEVEL + 1) = us of input lag
  */
-
-// Firmware for the ATtiny817/ATtiny427/etc. to emulate the behavior of the PCA9555 i2c GPIO Expander
-//currently testing on Adafruit 817
 
 #ifdef USE_DIGITAL_BUTTON_DEBOUNCING
  #define CONFIG_DEFAULT_DEBOUCE_LEVEL 5      //must be 0 to 7   //0 means no debouncing
@@ -144,17 +143,7 @@
 #define FEATURES_AVAILABLE (FEATURES_ADC0 | FEATURES_ADC1 | FEATURES_ADC2 | FEATURES_ADC3 | FEATURES_IRQ)
 #define ADCS_AVAILABLE ((FEATURES_ADC0 | FEATURES_ADC1 | FEATURES_ADC2 | FEATURES_ADC3) << 4)
 
-struct joy_config0_bit_struct
-{
-    uint8_t debounce_level : 3;
-    uint8_t unused3 : 1;
-    uint8_t unused4 : 1;
-    uint8_t unused5 : 1;
-    uint8_t unused6 : 1;
-    uint8_t unused7 : 1;
-};
-
-struct i2c_joystick_register_struct 
+struct /*i2c_joystick_register_struct */
 {
   uint8_t input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
   uint8_t input1;          // Reg: 0x01 - INPUT port 1 (digital buttons/dpad)
@@ -179,7 +168,17 @@ struct i2c_joystick_register_struct
   
 } volatile i2c_joystick_registers;
 
-struct i2c_secondary_address_register_struct 
+struct joy_config0_bit_struct
+{
+    uint8_t debounce_level : 3;
+    uint8_t unused3 : 1;
+    uint8_t unused4 : 1;
+    uint8_t unused5 : 1;
+    uint8_t unused6 : 1;
+    uint8_t unused7 : 1;
+}  * const joy_config0_ptr = (struct joy_config0_bit_struct*)&i2c_joystick_registers.config0;
+
+struct /*i2c_secondary_address_register_struct */
 {
 #define REGISTER_SEC_CONFIG_BACKLIGHT   0x00    //this one is writeable
   uint8_t config_backlight;  // Reg: 0x00
@@ -417,10 +416,9 @@ void eeprom_restore_data()
 
 
 
-    struct joy_config0_bit_struct *config0_ptr = (struct joy_config0_bit_struct *) &(eeprom_data.joy_config0);
+    struct joy_config0_bit_struct *config0_eeprom_ptr = (struct joy_config0_bit_struct *) &(eeprom_data.joy_config0);  //EEPROM version
     eeprom_data.joy_config0 = DEFAULT_CONFIG0;
-
-    config0_ptr->debounce_level = CONFIG_DEFAULT_DEBOUCE_LEVEL;
+    config0_eeprom_ptr->debounce_level = CONFIG_DEFAULT_DEBOUCE_LEVEL;
   }
 
 
@@ -636,14 +634,11 @@ uint8_t g_debounce_mask = 0b11111111;
 
 void debounce_setup()
 {
-  struct joy_config0_bit_struct *config0_ptr;
-  
-  config0_ptr = (struct joy_config0_bit_struct *) &i2c_joystick_registers.config0;
 
-  if(config0_ptr->debounce_level > DEBOUNCE_LEVEL_MAX)
-    config0_ptr->debounce_level = DEBOUNCE_LEVEL_MAX;
+  if(joy_config0_ptr->debounce_level > DEBOUNCE_LEVEL_MAX)
+    joy_config0_ptr->debounce_level = DEBOUNCE_LEVEL_MAX;
 
-  g_debounce_mask = (0b11111111 >> (DEBOUNCE_LEVEL_MAX-config0_ptr->debounce_level));   //turn on CONFIG_DEBOUNCING_HISTORY_BITS number of bits
+  g_debounce_mask = (0b11111111 >> (DEBOUNCE_LEVEL_MAX - joy_config0_ptr->debounce_level));   //turn on CONFIG_DEBOUNCING_HISTORY_BITS number of bits
 
 
   //i2c_secondary_registers.rfu0 = g_debounce_mask;   //testing!
@@ -652,15 +647,13 @@ void debounce_setup()
 
 void debounce_inputs(uint8_t *input0, uint8_t *input1, uint8_t *input2)
 {
-  struct joy_config0_bit_struct *config0_ptr;
   static uint8_t prev_input0 = 0xFF;
   static uint8_t prev_input1 = 0xFF;
   static uint8_t prev_input2 = 0xFF;
   uint8_t i;
 
-  config0_ptr = (struct joy_config0_bit_struct *) &i2c_joystick_registers.config0;
   
-  if(config0_ptr->debounce_level == 0)
+  if(joy_config0_ptr->debounce_level == 0)
   {
     return;
   }
@@ -1093,21 +1086,6 @@ void startI2C()
   Wire.onRequest(request_i2c_callback);
 }
 
-
-unsigned int Period=0xFFFF;
-
-void setFrequency(unsigned long freqInHz) {
-  unsigned long tempperiod = (F_CPU / freqInHz);
-  byte presc = 0;
-  while (tempperiod > 65536 && presc < 7) {
-    presc++;
-    tempperiod      = tempperiod >> (presc > 4 ? 2 : 1);
-  }
-  Period            = tempperiod;
-  TCA0.SINGLE.CTRLA = (presc << 1) | TCA_SINGLE_ENABLE_bm;
-  TCA0.SINGLE.PER   = Period;
-}
-
 void setup() 
 {
   //memset(&i2c_joystick_registers, 0, sizeof(i2c_joystick_registers));
@@ -1218,7 +1196,7 @@ void loop()
   if(g_backlight_is_flashing)
     backlight_process_flashing();
 
-#if CONFIG_INPUT_READ_TIMER_MICROS > 0
+#if defined(CONFIG_INPUT_READ_TIMER_MICROS) && (CONFIG_INPUT_READ_TIMER_MICROS > 0)
   static unsigned long timer_input_read_start_micros = micros();
   unsigned long current_micros = micros();
   if(current_micros - timer_input_read_start_micros >= CONFIG_INPUT_READ_TIMER_MICROS)
@@ -1231,8 +1209,10 @@ void loop()
     read_analog_inputs();
 #endif  
     
+#if defined(CONFIG_INPUT_READ_TIMER_MICROS) && (CONFIG_INPUT_READ_TIMER_MICROS > 0)
     timer_input_read_start_micros = current_micros;
-  }
+#endif
+}
 
 #ifdef PIN_BACKLIGHT_PWM
 
