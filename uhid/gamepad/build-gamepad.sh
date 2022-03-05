@@ -6,8 +6,6 @@ gcc -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c -lwiringPi -lm #co
 #sudo ./uhid-i2c-gamepad #normal usage
 #sudo ./uhid-i2c-gamepad -h #display help, -help work as well
 
-#sudo ./uhid-i2c-gamepad -diag #diagnostic mode
-
 #sudo ./uhid-i2c-gamepad -configset js0_enable=1 #set config var value
 #sudo ./uhid-i2c-gamepad -configlist #list config vars
 

@@ -115,6 +115,7 @@ struct adc_t {
 	{-1,-1,INT_MAX,INT_MIN, 16,0xFF, 0x7FFF,0,0xFFFF,0, 24,10,10, 0,0, false,false,},
 };
 
+int adc_map[4] = {0,1,2,3}; //used to swap axis/joystick
 
 //Pollrate related
 double i2c_poll_rate_time = 1.; //poll interval in sec
@@ -165,6 +166,9 @@ const char debounce_desc[] = "Debounce filtering to mitigate possible pad false 
 
 const char js0_enable_desc[] = "Enable MCU joystick 0 ADC0-1 (i2c_address_adc0-1 will be ignored), please check the documentation, does require specific MCU configuration.";
 const char js1_enable_desc[] = "Enable MCU joystick 1 ADC2-3 (i2c_address_adc2-3 will be ignored), please check the documentation, does require specific MCU configuration.";
+const char js_swap_desc[] = "Swap joystick 0/1 reports (0:disable, 1:enable)";
+const char js0_swap_axis_desc[] = "Swap joystick 0 XY axis reports (0:disable, 1:enable)";
+const char js1_swap_axis_desc[] = "Swap joystick 1 XY axis reports (0:disable, 1:enable)";
 
 const char i2c_bus_desc[] = "I2C bus to use, default:1.";
 const char i2c_addr_desc[] = "Main I2C address, default:0x30.";
@@ -205,6 +209,7 @@ cfg_vars_t cfg_vars[] = {
 
 	{"\nmcu_js0_enable", js0_enable_desc, 4, &mcu_js_enable[0]},
 	{"mcu_js1_enable", js1_enable_desc, 4, &mcu_js_enable[1]},
+	{"joystick_swap", js_swap_desc, 4, &uhid_js_swap},
 
 	{"\nadc0_res", adc_res_desc, 0, &adc_data[0].res},
 	{"adc0_min", adc_min_desc, 0, &adc_data[0].min},
@@ -224,6 +229,8 @@ cfg_vars_t cfg_vars[] = {
 	{"adc1_reversed", adc_reversed_desc, 4,  &adc_data[1].reversed},
 	{"adc1_autocenter", adc_autocenter_desc, 4, &adc_data[1].autocenter},
 
+	{"\njs0_axis_swap", js0_swap_axis_desc, 4, &uhid_js0_swap_axis},
+
 	{"\nadc2_res", adc_res_desc, 0, &adc_data[2].res},
 	{"adc2_min", adc_min_desc, 0, &adc_data[2].min},
 	{"adc2_max", adc_max_desc, 0, &adc_data[2].max},
@@ -241,8 +248,12 @@ cfg_vars_t cfg_vars[] = {
 	{"adc3_flat_outside", adc_flat_outside_desc, 0, &adc_data[3].flat_out},
 	{"adc3_reversed", adc_reversed_desc, 4,  &adc_data[3].reversed},
 	{"adc3_autocenter", adc_autocenter_desc, 4, &adc_data[3].autocenter},
+
+	{"\njs1_axis_swap", js1_swap_axis_desc, 4, &uhid_js1_swap_axis},
 };
 
 const unsigned int cfg_vars_arr_size = sizeof(cfg_vars) / sizeof(cfg_vars[0]); //config array size
+
+
 
 

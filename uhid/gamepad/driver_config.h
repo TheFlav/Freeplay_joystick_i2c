@@ -28,7 +28,7 @@ int i2c_poll_rate = 125; //Driver pollrate in hz
 int i2c_adc_poll = 1; //poll adc every given poll loops. <=1 for every loop, 2 to poll every 2 poll loop and so on
 const char* uhid_device_name = "Freeplay Gamepad"; //HID driver reported name
 
-const uint8_t i2c_dev_manuf = 0xED; //MCU manufacturer signature, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
+const uint8_t i2c_dev_sig = 0xED; //MCU manufacturer signature, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 const int input_regs_count = 3; //amount of registers dedicated to digital inputs
 
 int mcu_input_dpad_start_index = 0; //index position in merged input, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
@@ -44,3 +44,9 @@ char* tty_buttons_names[uhid_buttons_count] = {"A","B","C","X","Y","Z","TL","TR"
 char* tty_buttons_misc_names[uhid_buttons_misc_count] = {"BTN_0","BTN_1","BTN_2","BTN_3"}; //button naming for diag mode, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 
 int digital_debounce = 5; //debounce filtering to mitigate possible pad false contact, default:5, max:7, 0 to disable
+
+bool uhid_js_swap = false; //swap left and right joystick
+bool uhid_js0_swap_axis = false; //swap left joystick XY axis
+bool uhid_js1_swap_axis = false; //swap right joystick XY axis
+
+

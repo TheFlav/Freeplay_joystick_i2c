@@ -275,7 +275,7 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 				adc_data[i].value <<= 16 - adc_data[i].res; //convert to 16bits for report
 				if (adc_data[i].value < 1){adc_data[i].value = 1;} else if (adc_data[i].value > 0xFFFF-1){adc_data[i].value = 0xFFFF-1;} //Reicast overflow fix
 
-				*js_values[i] = (uint16_t)adc_data[i].value;
+				*js_values[adc_map[i]] = (uint16_t)adc_data[i].value;
 			}
 		}
 		
@@ -577,7 +577,7 @@ int main (int argc, char** argv){
 	i2c_fd = i2c_open(i2c_bus, i2c_addr);
 	i2c_fd_sec = i2c_open(i2c_bus, i2c_addr_sec);
 	ret = i2c_smbus_read_byte_data(i2c_fd, offsetof(struct i2c_joystick_register_struct, manuf_ID) / sizeof(uint8_t)); //check signature
-	if (ret != i2c_dev_manuf){
+	if (ret != i2c_dev_sig){
 		if (ret < 0){i2c_allerrors_count++; print_stderr("FATAL: reading I2C device signature failed, errno:%d (%m)\n", -ret);
 		} else {print_stderr("FATAL: invalid I2C device signature: 0x%02X\n", ret);}
 		program_close();
@@ -593,8 +593,8 @@ int main (int argc, char** argv){
 	}
 	i2c_dev_id = ret & 0xFF;
 	i2c_dev_minor = (ret >> 8) & 0xFF;
-	print_stdout("I2C device detected, signature:0x%02X, id:%d, version:%d\n", i2c_dev_manuf, i2c_dev_id, i2c_dev_minor);
-	logs_write("I2C device: signature:0x%02X, id:%d, version:%d\n\n", i2c_dev_manuf, i2c_dev_id, i2c_dev_minor);
+	print_stdout("I2C device detected, signature:0x%02X, id:%d, version:%d\n", i2c_dev_sig, i2c_dev_id, i2c_dev_minor);
+	logs_write("I2C device: signature:0x%02X, id:%d, version:%d\n\n", i2c_dev_sig, i2c_dev_id, i2c_dev_minor);
 
 	//external adc
 	if (mcu_js_enable[0]){i2c_addr_adc[0] = 0xFF; i2c_addr_adc[1] = 0xFF;} //disable external adc0-1 if mcu js0 explicitly enabled
@@ -700,6 +700,26 @@ int main (int argc, char** argv){
 
 			if (uhid_js_left_enable || uhid_js_right_enable){print_stdout("detected MCU ADC configuration: %s %s\n", uhid_js_left_enable ? "JS0:left" : "", uhid_js_right_enable ? "JS1:right" : "");}
 		}
+	}
+
+	//joystick/axis swap
+	if(uhid_js0_swap_axis){
+		int adc_map_backup[4]; memcpy(adc_map_backup, adc_map, sizeof(adc_map));
+		adc_map[0] = adc_map_backup[1]; adc_map[1] = adc_map_backup[0];
+		print_stdout("Joystick 0 XY axis swapped\n");
+	}
+
+	if(uhid_js1_swap_axis){
+		int adc_map_backup[4]; memcpy(adc_map_backup, adc_map, sizeof(adc_map));
+		adc_map[2] = adc_map_backup[3]; adc_map[3] = adc_map_backup[2];
+		print_stdout("Joystick 1 XY axis swapped\n");
+	}
+
+	if(uhid_js_swap){
+		int adc_map_backup[4]; memcpy(adc_map_backup, adc_map, sizeof(adc_map));
+		adc_map[0] = adc_map_backup[2]; adc_map[1] = adc_map_backup[3];
+		adc_map[2] = adc_map_backup[0]; adc_map[3] = adc_map_backup[1];
+		print_stdout("Joystick 0-1 swapped\n");
 	}
 
 	if (i2c_disabled){ //i2c disable , enable js0 and js1
