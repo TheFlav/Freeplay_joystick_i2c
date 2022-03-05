@@ -6,8 +6,8 @@
 */
 
 //program related
-const char programname[] = "Freeplay I2C Joystick"; //program name
-const char programversion[] = "0.1d"; //program version
+const char diagprogramname[] = "Freeplay I2C Joystick"; //program name
+const char diagprogramversion[] = "0.1d"; //program version
 char program_path[PATH_MAX] = {'\0'}; //full path to this program
 bool kill_resquested = false; //program kill requested, stop main loop in a smooth way
 #define buffer_size 1024 //char array buffer size

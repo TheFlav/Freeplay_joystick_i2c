@@ -642,7 +642,7 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
     int select_limit = 0;
 
     char* screen_name = "Kernel driver setup/diagnostic tool";
-    fprintf(stdout, "\e[%d;%dH\e[1;%dm%s\e[0m", tty_line++, (tty_last_width - strlen(programname))/2, term_esc_col_normal, programname);
+    fprintf(stdout, "\e[%d;%dH\e[1;%dm%s\e[0m", tty_line++, (tty_last_width - strlen(diagprogramname))/2, term_esc_col_normal, diagprogramname);
 
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strlen(screen_name))/2, term_esc_col_normal, screen_name);
 
@@ -1282,12 +1282,12 @@ static void term_screen_digitaldebug(int tty_line, int tty_last_width, int tty_l
 //main functs
 static void tty_signal_handler(int sig){ //signal handle func
 	if (debug){print_stderr("DEBUG: signal received: %d\n", sig);}
-    if (sizeof(term_backup)){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
+    if (term_backup.c_cflag){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
 	kill_resquested = true;
 }
 
 static void program_usage(char* program){ //program usage, obviously
-	fprintf(stdout, "Version: %s\n", programversion);
+	fprintf(stdout, "Version: %s\n", diagprogramversion);
 	//fprintf(stdout, "Example : %s ...\n", program);
 	fprintf(stdout, "Need to run as root.\n"
 	"Arguments:\n"
@@ -1306,7 +1306,7 @@ static void term_reset_default(void){ //run when terminal reset requested
 }
 
 static void program_close(void){ //run when program closes
-    if (sizeof(term_backup)){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
+    if (term_backup.c_cflag){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
     close(i2c_fd);
 }
 
