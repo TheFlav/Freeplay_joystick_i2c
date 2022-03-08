@@ -31,7 +31,7 @@
 #define USE_MUX_ON_PC0_TO_PC3       //The mux that connects (DPAD u/d/l/r) or (ThumbL, ThumbR, TL2, TR2) to PC0,PC1,PC2,PC3
 #define USE_MUX_ON_PC4_TO_PB7       //The mux that connects (Start, Select, A, B) or (X, Y, TL, TR) to PC4,PC5,PB6,PB7
 
-#define USE_SERIAL_DEBUG      //UART is on PB2/PB3 which shares pins with IO2_2/IO2_3
+//#define USE_SERIAL_DEBUG      //UART is on PB2/PB3 which shares pins with IO2_2/IO2_3
 
 #define USE_DIGITAL_BUTTON_DEBOUNCING
 
@@ -103,9 +103,9 @@
 #ifdef USE_PWM_BACKLIGHT
  #define PIN_BACKLIGHT_PWM       20     //AKA PA3
 
- #define NUM_BACKLIGHT_PWM_STEPS 11
- uint8_t backlight_pwm_steps[NUM_BACKLIGHT_PWM_STEPS] = {0x00, 0x10, 0x20, 0x30, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xD0, 0xFF};
- #define CONFIG_BACKLIGHT_STEP_DEFAULT  4
+ #define NUM_BACKLIGHT_PWM_STEPS 13
+ uint8_t backlight_pwm_steps[NUM_BACKLIGHT_PWM_STEPS] = {0x00, 0x08, 0x10, 0x18, 0x20, 0x30, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xD0, 0xFF};
+ #define CONFIG_BACKLIGHT_STEP_DEFAULT  6
 
  byte g_pwm_step = 0x00;  //100% on
 #endif
