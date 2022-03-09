@@ -35,10 +35,18 @@
 
 #define USE_DIGITAL_BUTTON_DEBOUNCING
 
+//#define USE_SLEEP_MODE  //doesn't seem to work properly, yet
+
+//#define USE_SOFTI2CMASTER
+
 #include <Wire.h>
 
 #ifdef USE_EEPROM
 #include <EEPROM.h>
+#endif
+
+#ifdef USE_SLEEP_MODE
+#include <avr/sleep.h> //Needed for sleep_mode
 #endif
 
 #define MANUF_ID         0xED
@@ -75,6 +83,36 @@
 #endif
 
 
+#ifdef USE_SOFTI2CMASTER
+#if defined(USE_ADC0) || defined(USE_ADC1)
+ #error Can not use ADC0 and ADC1 pins for both ADC and SoftI2CMaster
+#endif
+#define I2C_TIMEOUT 1000
+#define I2C_PULLUP 1
+
+// Set up PA5 for SDA and PA4 for SCL
+
+#define SDA_DDR         0x00 //VPORTA_DIR = 0x00, VPORTB_DIR = 0x04, VPORTC_DIR = 0x08
+#define SCL_DDR         0x00 //VPORTA_DIR = 0x00, VPORTB_DIR = 0x04, VPORTC_DIR = 0x08
+#define SDA_OUT         0x01 //VPORTA_OUT = 0x01, VPORTB_OUT = 0x05, VPORTC_OUT = 0x09
+#define SCL_OUT         0x01 //VPORTA_OUT = 0x01, VPORTB_OUT = 0x05, VPORTC_OUT = 0x09
+#define SDA_IN          0x02 //VPORTA_IN  = 0x02, VPORTB_IN  = 0x06, VPORTC_IN  = 0x0A
+#define SCL_IN          0x02 //VPORTA_IN  = 0x02, VPORTB_IN  = 0x06, VPORTC_IN  = 0x0A
+
+#define SDA_PIN 5       //PA5
+#define SCL_PIN 4       //PA4
+#define I2C_FASTMODE 1
+
+#include <SoftI2CMaster.h>
+
+#define USE_QWIIC_JOYSTICK_VIA_SOFTI2CMASTER_AS_ADC0_AND_ADC1
+
+#ifdef USE_QWIIC_JOYSTICK_VIA_SOFTI2CMASTER_AS_ADC0_AND_ADC1
+#define SOFTI2C_SLAVE_7BITADDR 0x20
+#endif
+#endif
+
+
 
 //#define ADC_RESOLUTION 10
 //#define ADC_RESOLUTION 12  //can do analogReadResolution(12) on 2-series 427/827 chips
@@ -88,7 +126,7 @@
 
 
 #ifdef USE_INTERRUPTS
- #define PIN_nINT 7                  //AKA PA3
+ #define PIN_nINT 7                  //AKA PB4
  bool g_nINT_state = false;
 #endif
 
@@ -224,7 +262,7 @@ volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. W
 #ifdef CONFIG_I2C_2NDADDR
  volatile byte g_i2c_address = 0;  //if we're using multiple i2c addresses, we need to know which one is in use
 #endif
-
+volatile bool g_read_analog_inputs_asap = true;
 
 /*
  * digital inputs
@@ -812,7 +850,7 @@ void read_digital_inputs(void)
 void read_analog_inputs()
 {
   word adc;
-
+  
 #ifdef USE_ADC0
   if(i2c_joystick_registers.adc_conf_bits & (1 << 0))
   {
@@ -928,7 +966,7 @@ inline void receive_i2c_callback_main_address(int i2c_bytes_received)
 
   for (byte x = g_i2c_command_index ; x < (g_i2c_command_index + i2c_bytes_received - 1) ; x++)
   {
-    byte temp = Wire.read(); //We might record it, we might throw it away
+    byte temp = Wire.read(); //We might use it, we might throw it away
 
     if(x == REGISTER_ADC_CONF_BITS)   //this is a writeable register
     {
@@ -940,8 +978,7 @@ inline void receive_i2c_callback_main_address(int i2c_bytes_received)
       setup_adc0_to_adc3();   //turn on/off ADC pullups
       eeprom_save_deferred();
     }
-
-    if(x == REGISTER_CONFIG_BITS)   //this is a writeable register
+    else if(x == REGISTER_CONFIG_BITS)   //this is a writeable register
     {
       i2c_joystick_registers.config0 = temp;
       eeprom_data.joy_config0 = i2c_joystick_registers.config0;
@@ -1001,6 +1038,10 @@ void receive_i2c_callback(int i2c_bytes_received)
   Wire.getBytesRead(); // reset count of bytes read. We don't do anything with it here, but a write is going to reset it to a new value.
 
   g_i2c_command_index = Wire.read(); //Get the memory map offset from the user
+
+  //This is where we could schedule the system to update all the analog registers (sample ADCs), since they don't generate interrupts
+  if(i2c_joystick_registers.adc_conf_bits & 0x0F)     //if any ADCs are turned on
+    g_read_analog_inputs_asap = true;                 //schedule a read ASAP
   
 #ifdef CONFIG_I2C_2NDADDR  
   g_i2c_address = Wire.getIncomingAddress() >> 1;
@@ -1029,7 +1070,7 @@ inline void request_i2c_callback_primary_address()
   //TODO: fixme?
   if(g_i2c_index_to_read == 0)
   {
-    //if the index was 0, just assume we sent at least 2 bytes.  I don't know how to tell
+    //if the index was 0, just assume the host read at least 3 bytes.  I don't know how to tell
     //could use getBytesRead combined with g_i2c_command_index
     g_last_sent_input0 = i2c_joystick_registers.input0;
     g_last_sent_input1 = i2c_joystick_registers.input1;
@@ -1037,11 +1078,13 @@ inline void request_i2c_callback_primary_address()
   }
   else if(g_i2c_index_to_read == 1)
   {
+    //if the index was 1, just assume the host read at least 2 bytes.  I don't know how to tell
     g_last_sent_input1 = i2c_joystick_registers.input1;
     g_last_sent_input2 = i2c_joystick_registers.input2;
   }
   else if(g_i2c_index_to_read == 2)
   {
+    //if the index was 2, just assume the host read at least 1 bytes.  I don't know how to tell
     g_last_sent_input2 = i2c_joystick_registers.input2;
   }
 }
@@ -1193,6 +1236,11 @@ void setup()
  *    we want our PWM to be at 19.61kHz (instead of the default 612.7Hz), so it's in the inaudible range
  */
   TCA0.SINGLE.CTRLA = TCA_SINGLE_CLKSEL_DIV2_gc | TCA_SINGLE_ENABLE_bm;
+
+#ifdef USE_SLEEP_MODE
+  set_sleep_mode(SLEEP_MODE_STANDBY);
+  sleep_enable();
+#endif
 }
 
 
@@ -1214,15 +1262,21 @@ void loop()
   {
     read_digital_inputs();
     process_special_inputs();     //make sure special inputs are digital (input0 and input1) only
-
-#if defined(USE_ADC0) || defined(USE_ADC1) || defined(USE_ADC2) || defined(USE_ADC3)
-    read_analog_inputs();
-#endif  
     
 #if defined(CONFIG_INPUT_READ_TIMER_MICROS) && (CONFIG_INPUT_READ_TIMER_MICROS > 0)
     timer_input_read_start_micros = current_micros;
 #endif
-}
+  }
+
+#if defined(USE_ADC0) || defined(USE_ADC1) || defined(USE_ADC2) || defined(USE_ADC3)
+  //ADCs are now read only when there's a pending i2c read
+  if(g_read_analog_inputs_asap)
+  {
+    read_analog_inputs();
+    g_read_analog_inputs_asap = false;
+  }
+#endif  
+  
 
 #ifdef PIN_BACKLIGHT_PWM
 
@@ -1295,4 +1349,50 @@ void loop()
   Serial.println();*/
 #endif    
   }
+
+#if defined(USE_SOFTI2CMASTER) && defined(USE_QWIIC_JOYSTICK_VIA_SOFTI2CMASTER_AS_ADC0_AND_ADC1)
+
+#warning This is all just for testing, at the moment.  Reading analog values from https://learn.sparkfun.com/tutorials/qwiic-joystick-hookup-guide/all works!
+
+  static unsigned long timer_qwiic_softi2c_read_start_micros = micros();
+  unsigned long current_softi2c_micros = micros();
+  if(current_micros - timer_qwiic_softi2c_read_start_micros >= CONFIG_INPUT_READ_TIMER_MICROS)
+  {
+    if (i2c_start_wait((SOFTI2C_SLAVE_7BITADDR << 1) | I2C_WRITE)) 
+    {
+      i2c_write(0x03);    //start of ADC data
+      i2c_rep_start((SOFTI2C_SLAVE_7BITADDR << 1) | I2C_READ);
+      
+      word adc = ((i2c_read(false) << 8) | i2c_read(false)) >> 6;
+      i2c_joystick_registers.a0_msb = adc >> 2;
+      i2c_joystick_registers.a1a0_lsb = ((adc << 2) & 0x0F) | (i2c_joystick_registers.a1a0_lsb & 0xF0);
+  
+      adc = ((i2c_read(false) << 8) | i2c_read(false)) >> 6;
+      i2c_joystick_registers.a1_msb = adc >> 2;
+      i2c_joystick_registers.a1a0_lsb = ((adc << 2) & 0xF0) | (i2c_joystick_registers.a1a0_lsb & 0x0F);
+
+      byte button = i2c_read(false);
+
+      /*if(button)
+        i2c_joystick_registers.input1 |= 1 << 2;
+      else
+        i2c_joystick_registers.input1 &= ~(1 << 2);      */
+      
+      i2c_stop();
+      
+      timer_qwiic_softi2c_read_start_micros = current_softi2c_micros;
+    }
+  }
+#endif
+
+
+#ifdef USE_SLEEP_MODE
+#error I think sleep mode does not work!
+  if(((i2c_joystick_registers.adc_conf_bits & 0x0F) == 0) || !g_read_analog_inputs_asap)
+  {    
+    static byte woke=0;
+    sleep_mode(); //Stop everything and go to sleep. Wake up from Button interrupts.
+    Serial.println(woke++);
+  }
+#endif
 }
