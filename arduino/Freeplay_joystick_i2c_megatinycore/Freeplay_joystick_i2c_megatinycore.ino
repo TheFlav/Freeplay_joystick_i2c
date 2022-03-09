@@ -43,7 +43,7 @@
 
 #define MANUF_ID         0xED
 #define DEVICE_ID        0x00
-#define VERSION_NUMBER   14
+#define VERSION_NUMBER   15
 
 #define CONFIG_PERIODIC_TASK_TIMER_MILLIS 5000
 #define CONFIG_INPUT_READ_TIMER_MICROS 500        //set to 0 for NO delay reading inputs, otherwise try to read inputs at least every CONFIG_INPUT_READ_TIMER_MICROS microseconds
@@ -192,7 +192,8 @@ struct /*i2c_secondary_address_register_struct */
   uint8_t rfu3;              // Reg: 0x07 - reserved for future use (or device-specific use)
   uint8_t rfu4;              // Reg: 0x08 - reserved for future use (or device-specific use)
   uint8_t rfu5;              // Reg: 0x09 - reserved for future use (or device-specific use)
-  uint8_t rfu6;              // Reg: 0x0A - reserved for future use (or device-specific use)
+#define REGISTER_SEC_WRITE_PROTECT      0x0A   //this one is writeable
+  uint8_t write_protect;     // Reg: 0x0A - write 0x00 to make protected registers writeable
 #define REGISTER_SEC_SEC_I2C_ADDR       0x0B   //this one is writeable
   uint8_t secondary_i2c_addr; // Reg: 0x0B - this holds the secondary i2c address (the address where this struct can be found)
 #define REGISTER_SEC_JOY_I2C_ADDR       0x0C   //this one is writeable
@@ -962,15 +963,19 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
   {
     byte temp = Wire.read(); //We might record it, we might throw it away
 
-    if(x == REGISTER_SEC_JOY_I2C_ADDR)
+    if(x == REGISTER_SEC_JOY_I2C_ADDR && i2c_secondary_registers.write_protect == 0x00)
     {
       i2c_secondary_registers.joystick_i2c_addr = temp;      
     }
-    else if(x == REGISTER_SEC_SEC_I2C_ADDR)
+    else if(x == REGISTER_SEC_WRITE_PROTECT)
+    {
+      i2c_secondary_registers.write_protect = temp;      
+    }
+    else if(x == REGISTER_SEC_SEC_I2C_ADDR && i2c_secondary_registers.write_protect == 0x00)
     {
       i2c_secondary_registers.secondary_i2c_addr = temp;      
     }    
-    else if(x == REGISTER_SEC_POWER_CONTROL)
+    else if(x == REGISTER_SEC_POWER_CONTROL && i2c_secondary_registers.write_protect == 0x00)
     {
       backlight_start_flashing(temp);     //change this at some point!
       
@@ -978,7 +983,7 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
       i2c_secondary_registers.power_control = temp;      
     }
 #ifdef USE_PWM_BACKLIGHT
-    else if(x == REGISTER_SEC_CONFIG_BACKLIGHT)   //this is a writeable register
+    else if(x == REGISTER_SEC_CONFIG_BACKLIGHT && i2c_secondary_registers.write_protect == 0x00)   //this is a writeable register
     {
       //set backlight value
       if(temp >= 0 && temp < NUM_BACKLIGHT_PWM_STEPS)
@@ -1114,6 +1119,7 @@ void setup()
   i2c_secondary_registers.version_ID = VERSION_NUMBER;
 
   i2c_secondary_registers.power_control = 0;
+  i2c_secondary_registers.write_protect = 0xFF;
 
   i2c_secondary_registers.features_available = FEATURES_AVAILABLE;
   
