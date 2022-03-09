@@ -305,6 +305,7 @@ volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. W
 #define IS_PRESSED_DPAD_UP() ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP) != INPUT0_DPAD_UP)
 #define IS_PRESSED_DPAD_DOWN() ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN)
 
+#define IS_PRESSED_BTN_START() ((i2c_joystick_registers.input0 & INPUT0_BTN_START) != INPUT0_BTN_START)
 #define IS_PRESSED_BTN_SELECT() ((i2c_joystick_registers.input0 & INPUT0_BTN_SELECT) != INPUT0_BTN_SELECT)
 
 #define IS_PRESSED_BTN_A() ((i2c_joystick_registers.input0 & INPUT0_BTN_A) != INPUT0_BTN_A)
@@ -312,10 +313,11 @@ volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. W
 
 #define IS_PRESSED_BTN_TL() ((i2c_joystick_registers.input1 & INPUT1_BTN_TL) != INPUT1_BTN_TL)
 #define IS_PRESSED_BTN_TR() ((i2c_joystick_registers.input1 & INPUT1_BTN_TR) != INPUT1_BTN_TR)
+#define IS_PRESSED_BTN_Y() ((i2c_joystick_registers.input1 & INPUT1_BTN_Y) != INPUT1_BTN_Y)
 
 #define IS_PRESSED_BTN_POWER() ((i2c_joystick_registers.input1 & INPUT1_BTN_POWER) != INPUT1_BTN_POWER)
 
-#define IS_SPECIAL_INPUT_MODE() (IS_PRESSED_BTN_TL() && IS_PRESSED_BTN_TR() && IS_PRESSED_BTN_SELECT())
+#define IS_SPECIAL_INPUT_MODE() (IS_PRESSED_BTN_TL() && IS_PRESSED_BTN_TR() && IS_PRESSED_BTN_Y())
 
 
 #ifdef USE_SERIAL_DEBUG
@@ -913,7 +915,7 @@ void process_special_inputs()
   {
     prev_pressed_btn_power = false;
   }
-#endif  
+#endif
 }
 
 
