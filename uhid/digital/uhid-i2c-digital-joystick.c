@@ -361,14 +361,16 @@ void i2c_poll_joystick()
     if(ret < 0)
     {
         printf("i2c_poll_joystick: error %d reading i2c block data (%d bytes requested)\n", ret, sizeof(digital_inputs));
-        exit(1);
+        //exit(1);
+	return;
     }
 #else
 	ret = i2c_smbus_read_word_data(i2c_file, 0);
 	if(ret < 0)
 	{
-		printf("i2c_poll_joystick: exiting (ret=%d)\n", ret);
-		exit(1);
+		printf("i2c_poll_joystick: i2c_smbus_read_word_data error (ret=%d)\n", ret);
+		//exit(1);
+		return;
 	}
     
     union digital_inputs_union digital_inputs_u;

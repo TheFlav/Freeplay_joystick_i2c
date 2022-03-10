@@ -398,7 +398,7 @@ void i2c_poll_joystick()
     
     ret = i2c_smbus_read_i2c_block_data(i2c_file, 0, sizeof(i2c_registers), (uint8_t *)&i2c_registers);
     if(ret < 0)
-        exit(1);
+        return;//exit(1);
     
     
     gamepad_report.buttons7to0 = (IS_PRESSED(i2c_registers.input1.btn_tr) << 7)
