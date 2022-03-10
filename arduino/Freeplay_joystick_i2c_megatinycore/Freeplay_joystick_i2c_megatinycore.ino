@@ -84,6 +84,9 @@
 
 
 #ifdef USE_SOFTI2CMASTER
+#warning To use this, you need to make a small mod to the SoftI2CMaster.h library source code.
+// See https://github.com/SpenceKonde/megaTinyCore/discussions/664
+
 #if defined(USE_ADC0) || defined(USE_ADC1)
  #error Can not use ADC0 and ADC1 pins for both ADC and SoftI2CMaster
 #endif
