@@ -1,5 +1,6 @@
 /*
-* UHID driver i2c register file
+* FreeplayTech UHID gamepad driver
+* I2C registers header
 * Only edit if you know what you are doing
 */
 
@@ -24,7 +25,7 @@ struct i2c_joystick_register_struct {
   uint8_t manuf_ID;        // Reg: 0x0D - manuf_ID:device_ID:version_ID needs to be a unique ID that defines a specific device and how it will use above registers
   uint8_t device_ID;       // Reg: 0x0E -
   uint8_t version_ID;      // Reg: 0x0F - 
-} volatile i2c_joystick_registers;
+};
 
 
 struct i2c_secondary_address_register_struct {
@@ -44,4 +45,22 @@ struct i2c_secondary_address_register_struct {
   uint8_t manuf_ID;          // Reg: 0x0D - manuf_ID:device_ID:version_ID needs to be a unique ID that defines a specific device and how it will use above registers
   uint8_t device_ID;         // Reg: 0x0E -
   uint8_t version_ID;        // Reg: 0x0F - 
-} i2c_secondary_registers;
+};
+
+
+//common structures, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
+typedef union { //config0 register bitfield structure
+    struct {uint8_t debounce_level:3, unused3:1, unused4:1, unused5:1, unused6:1, unused7:1;} vals;
+    uint8_t bits;
+} mcu_config0_t;
+
+typedef struct adc_data_struct_t { //ADC read data structure
+	int raw, raw_prev, raw_min, raw_max; //store raw values for min-max report
+	unsigned char res; unsigned int res_limit; //adc resolution/limit set during runtime
+	int value, min, max, offset; //current value, min/max limits, computed offset
+	int fuzz, flat_in, flat_out; //fuzz, inside/outside flat
+	int flat_in_comp, flat_out_comp; //computed recurring values
+	bool reversed, autocenter; //reverse reading, autocenter: check adc value once to set as offset
+} adc_data_t;
+
+

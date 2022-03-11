@@ -1,4 +1,6 @@
 /*
+FreeplayTech UHID gamepad driver
+
 This program sets up a gamepad device in the sytem using UHID-kernel interface.
 Current version is mainly meant to be used with FreeplayTech gen2 device (embedded ATTINY controller for IO/ADC management).
 
@@ -29,10 +31,14 @@ You may need to clone and compile for unofficial github repository as official W
 #include "driver_i2c_registers.h"
 #include "driver_debug_print.h"
 #include "driver_config.h"
-#include "driver_hid_desc.h"
 #include "nns_config.h"
-#include "diag.h"
-#include "driver.h"
+#ifdef DIAG_PROGRAM
+	#undef USE_WIRINGPI_IRQ
+	#undef USE_PIGPIO_IRQ
+#else
+	#include "driver_hid_desc.h"
+#endif
+#include "driver_main.h"
 
 #if defined(USE_PIGPIO_IRQ) && defined(USE_WIRINGPI_IRQ)
 	#error Cannot do both IRQ styles
@@ -43,67 +49,6 @@ You may need to clone and compile for unofficial github repository as official W
 #endif
 
 
-void vars_main_default(){ //reset all main config vars to default
-    debug = def_debug;
-    debug_adv = def_debug_adv;
-    i2c_poll_rate_disable = def_i2c_poll_rate_disable;
-
-    i2c_poll_rate = def_i2c_poll_rate;
-    i2c_adc_poll = def_i2c_adc_poll;
-
-    i2c_bus = def_i2c_bus;
-    i2c_addr = def_i2c_addr;
-    i2c_addr_sec = def_i2c_addr_sec;
-    i2c_addr_adc[0] = def_i2c_addr_adc0;
-    i2c_addr_adc[1] = def_i2c_addr_adc1;
-    i2c_addr_adc[2] = def_i2c_addr_adc2;
-    i2c_addr_adc[3] = def_i2c_addr_adc3;
-
-    irq_gpio = def_irq_gpio;
-    digital_debounce = def_digital_debounce;
-}
-
-void vars_adc_default(){ //reset all adc config vars to default
-    mcu_js_enable[0] = def_js0_enable;
-    mcu_js_enable[1] = def_js1_enable;
-
-    uhid_js_swap = def_uhid_js_swap;
-    uhid_js_swap_axis[0] = def_uhid_js0_swap_axis;
-    uhid_js_swap_axis[1] = def_uhid_js1_swap_axis;
-
-    adc_params[0].res = def_adc0_res;
-    adc_params[0].min = def_adc0_min;
-    adc_params[0].max = def_adc0_max;
-    adc_params[0].fuzz = def_adc0_fuzz;
-    adc_params[0].flat_in = adc_params[0].flat_out = def_adc0_flat;
-    adc_params[0].reversed = def_adc0_reversed;
-    adc_params[0].autocenter = def_adc0_autocenter;
-
-    adc_params[1].res = def_adc1_res;
-    adc_params[1].min = def_adc1_min;
-    adc_params[1].max = def_adc1_max;
-    adc_params[1].fuzz = def_adc1_fuzz;
-    adc_params[1].flat_in = adc_params[1].flat_out = def_adc1_flat;
-    adc_params[1].reversed = def_adc1_reversed;
-    adc_params[1].autocenter = def_adc1_autocenter;
-
-    adc_params[2].res = def_adc2_res;
-    adc_params[2].min = def_adc2_min;
-    adc_params[2].max = def_adc2_max;
-    adc_params[2].fuzz = def_adc2_fuzz;
-    adc_params[2].flat_in = adc_params[2].flat_out = def_adc2_flat;
-    adc_params[2].reversed = def_adc2_reversed;
-    adc_params[2].autocenter = def_adc2_autocenter;
-
-    adc_params[3].res = def_adc3_res;
-    adc_params[3].min = def_adc3_min;
-    adc_params[3].max = def_adc3_max;
-    adc_params[3].fuzz = def_adc3_fuzz;
-    adc_params[3].flat_in = adc_params[3].flat_out = def_adc3_flat;
-    adc_params[3].reversed = def_adc3_reversed;
-    adc_params[3].autocenter = def_adc3_autocenter;
-}
-
 //Time related functions
 double get_time_double(void){ //get time in double (seconds)
 	struct timespec tp; int result = clock_gettime(CLOCK_MONOTONIC, &tp);
@@ -112,7 +57,8 @@ double get_time_double(void){ //get time in double (seconds)
 }
 
 //UHID related functions
-static int uhid_create(int fd) { //create uhid device
+#ifndef DIAG_PROGRAM
+static int uhid_create(int fd){ //create uhid device
 	struct uhid_event ev;
 
 	memset(&ev, 0, sizeof(ev));
@@ -148,7 +94,7 @@ static int uhid_write(int fd, const struct uhid_event* ev){ //write data to uhid
 	return ret;
 }
 
-static int uhid_send_event(int fd) { //send event to uhid device
+static int uhid_send_event(int fd){ //send event to uhid device
 	if (uhid_disabled){return 0;}
 	if (uhid_fd < 0){return -EIO;}
 
@@ -156,69 +102,67 @@ static int uhid_send_event(int fd) { //send event to uhid device
 	memset(&ev, 0, sizeof(ev));
 	ev.type = UHID_INPUT2;
 
+	const int adc_size = sizeof(uint16_t);
 	int index = 0;
+	ev.u.input2.data[index++] = gamepad_report.buttons7to0; //digital msb
+	ev.u.input2.data[index++] = gamepad_report.buttons15to8; //digital lsb
+	ev.u.input2.data[index++] = gamepad_report.hat0; //dpad
 
-	if (!diag_mode){
-		ev.u.input2.data[index++] = gamepad_report.buttons7to0; //digital msb
-		ev.u.input2.data[index++] = gamepad_report.buttons15to8; //digital lsb
-		ev.u.input2.data[index++] = gamepad_report.hat0; //dpad
-		memcpy(&ev.u.input2.data[index], &gamepad_report.left_x, 2); //x1
-		memcpy(&ev.u.input2.data[index+2], &gamepad_report.left_y, 2); //y1
-		memcpy(&ev.u.input2.data[index+4], &gamepad_report.right_x, 2); //x2
-		memcpy(&ev.u.input2.data[index+6], &gamepad_report.right_y, 2); //y2
-		index+=8;
-		ev.u.input2.data[index++] = gamepad_report.buttonsmisc; //digital misc
-	} else { //diagnostic mode, fake report
-		const uint16_t fake_analog = 0x7FFF;
-		memset(&ev.u.input2.data[index++], 0x00, 1); //digital msb
-		memset(&ev.u.input2.data[index++], 0x00, 1); //digital lsb
-		memset(&ev.u.input2.data[index++], 0x00, 1); //dpad
-		memcpy(&ev.u.input2.data[index], &fake_analog, 2); //x1
-		memcpy(&ev.u.input2.data[index+2], &fake_analog, 2); //y1
-		memcpy(&ev.u.input2.data[index+4], &fake_analog, 2); //x2
-		memcpy(&ev.u.input2.data[index+6], &fake_analog, 2); //y2
-		index+=8;
-		memset(&ev.u.input2.data[index++], 0x00, 1); //digital misc
-	}
+	memcpy(&ev.u.input2.data[index], &gamepad_report.left_x, adc_size); //x1
+	memcpy(&ev.u.input2.data[index+2], &gamepad_report.left_y, adc_size); //y1
+	memcpy(&ev.u.input2.data[index+4], &gamepad_report.right_x, adc_size); //x2
+	memcpy(&ev.u.input2.data[index+6], &gamepad_report.right_y, adc_size); //y2
+	index += adc_size*4;
+
+	ev.u.input2.data[index++] = gamepad_report.buttonsmisc; //digital misc
 
 	ev.u.input2.size = index;
 	return uhid_write(fd, &ev);
 }
+#endif
 
 //I2C related
-static int i2c_open(int* fd, int bus, int addr){ //open I2C file, return 0 on success, -1:bus, -2:addr, -3:generic error
-    close(*fd); //close opened fd
-    if (bus < 0 || addr < 0 || addr > 127){print_stderr("FATAL: invalid I2C address:0x%02X (%d)\n", addr, addr); return -3;} //invalid address
+int i2c_check_bus(int bus){ //check I2C bus, return 0 on success, -1:addr
+	if (bus < 0){print_stderr("invalid I2C bus:%d\n", bus); return -1;} //invalid bus
+	char fd_path[13]; sprintf(fd_path, "/dev/i2c-%d", bus);
+	int fd = open(fd_path, O_RDWR);
+	if (fd < 0){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -fd); return -1; //invalid bus
+	} else {print_stdout("I2C bus '%s' found\n", fd_path);}
+	close(fd);
+	return 0;
+}
 
-    char fd_path[13]; sprintf(fd_path, "/dev/i2c-%d", bus);
 
-	*fd = open(fd_path, O_RDWR);
-	if (*fd < 0){ print_stderr("FATAL: failed to open '%s', errno:%d (%m)\n", fd_path, -*fd); return -1;} //invalid bus
+int i2c_open_dev(int* fd, int bus, int addr){ //open I2C device, return 0 on success, -1:bus, -2:addr, -3:generic error
+	if (bus < 0){print_stderr("FATAL: invalid I2C bus:%d\n", bus); return -1;} //invalid bus
+    if (addr < 0 || addr > 127){print_stderr("FATAL: invalid I2C address:0x%02X (%d)\n", addr, addr); return -2;} //invalid address
+
+	char fd_path[13]; sprintf(fd_path, "/dev/i2c-%d", bus);
+	close(*fd); *fd = open(fd_path, O_RDWR);
 
 	int ret = ioctl(*fd, i2c_ignore_busy ? I2C_SLAVE_FORCE : I2C_SLAVE, addr);
-	if (ret < 0) {close(*fd); print_stderr("FATAL: ioctl failed for address 0x%02X, errno:%d (%m)\n", addr, -ret); return -1;} //invalid bus
+	if (ret < 0) {close(*fd); *fd = -1; print_stderr("FATAL: ioctl failed for address 0x%02X, errno:%d (%m)\n", addr, -ret); return -2;} //invalid address
 
 	ret = i2c_smbus_read_byte_data(*fd, 0);
 	if (ret < 0){ //invalid address
-		i2c_allerrors_count++; close(*fd);
+		i2c_allerrors_count++; close(*fd); *fd = -2;
 		print_stderr("FATAL: failed to read from address 0x%02X, errno:%d (%m)\n", addr, -ret);
 		return -2;
 	}
 
-	print_stdout("address:0x%02X opened (bus:%s)\n", addr, fd_path);
+	print_stdout("address:0x%02X opened\n", addr);
 	return 0;
 }
 
-static void i2c_close_all(void){ //close all I2C files
-	int fd_array [] = {i2c_fd, i2c_fd_sec, i2c_adc_fd[0], i2c_adc_fd[1], i2c_adc_fd[2], i2c_adc_fd[3]};
-	int addr_array [] = {i2c_addr, i2c_addr_sec, i2c_addr_adc[0], i2c_addr_adc[1], i2c_addr_adc[2], i2c_addr_adc[3]};
-
+void i2c_close_all(void){ //close all I2C files
+	int* fd_array[] = {&i2c_fd, &i2c_fd_sec, &i2c_adc_fd[0], &i2c_adc_fd[1], &i2c_adc_fd[2], &i2c_adc_fd[3]};
+	int* addr_array[] = {&i2c_addr, &i2c_addr_sec, &i2c_addr_adc[0], &i2c_addr_adc[1], &i2c_addr_adc[2], &i2c_addr_adc[3]};
 	for (int8_t i=0; i<(sizeof(fd_array)/sizeof(fd_array[0])); i++){
-		if(fd_array[i] >= 0){ //"valid" fd
-			int ret = close(fd_array[i]);
-			if (ret < 0){print_stderr("failed to close I2C handle for address 0x%02X, errno:%d (%m)\n", addr_array[i], -ret);}
-			print_stdout("I2C handle for address:0x%02X closed\n", addr_array[i]);
-			fd_array[i] = -1;
+		if(*fd_array[i] >= 0){ //"valid" fd
+			int ret = close(*fd_array[i]);
+			if (ret < 0){print_stderr("failed to close I2C handle for address 0x%02X, errno:%d (%m)\n", *addr_array[i], -ret);}
+			print_stdout("I2C handle for address:0x%02X closed\n", *addr_array[i]);
+			*fd_array[i] = -1;
 		}
 	}
 }
@@ -274,7 +218,7 @@ static int adc_correct_offset_center(int adc_resolution, int adc_value, int adc_
 	return adc_value;
 }
 
-static int MCP3021_read (int fd){ //MCP3021 ADC implement for test purpose
+static int MCP3021_read(int fd){ //MCP3021 ADC implement for test purpose
 	int ret = i2c_smbus_read_word_data(fd, 0);
 	if (ret < 0){
 		i2c_allerrors_count++;
@@ -284,13 +228,12 @@ static int MCP3021_read (int fd){ //MCP3021 ADC implement for test purpose
 	return (((uint16_t)(ret) & (uint16_t)0x00ffU) << 8) | (((uint16_t)(ret) & (uint16_t)0xff00U) >> 8); //return swapped, uapi/linux/swab.h
 }
 
-static void i2c_poll_joystick(void){ //poll data from i2c device
+static void i2c_poll_joystick(bool force_update){ //poll data from i2c device
 	poll_clock_start = get_time_double();
 
 	int read_limit = input_registers_count, ret = 0;
 	bool update_adc = false; //limit adc pull rate
-
-	if ((i2c_adc_poll_loop == i2c_adc_poll && (mcu_js_used[0] || mcu_js_used[1] || external_js_used[0] || external_js_used[1])) || i2c_poll_rate_disable){update_adc = true; i2c_adc_poll_loop = 0;}
+	if (force_update || (i2c_adc_poll_loop == i2c_adc_poll && (mcu_js_used[0] || mcu_js_used[1] || external_js_used[0] || external_js_used[1])) || i2c_poll_rate_disable){update_adc = true; i2c_adc_poll_loop = 0;}
 	if (update_adc){if (mcu_js_used[1]){read_limit += 6;} else if (mcu_js_used[0]){read_limit += 3;}}
 
 	if (!i2c_disabled){ret = i2c_smbus_read_i2c_block_data(i2c_fd, 0, read_limit, (uint8_t *)&i2c_joystick_registers);
@@ -370,7 +313,7 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 				if (adc_params[i].value < 1){adc_params[i].value = 1;} else if (adc_params[i].value > 0xFFFF-1){adc_params[i].value = 0xFFFF-1;} //Reicast overflow fix
 
 				*js_values[adc_map[i]] = (uint16_t)adc_params[i].value;
-			}
+			} else {*js_values[adc_map[i]] = (uint16_t)0x7FFF;} //center value if adc not enabled
 		}
 		
 		adc_firstrun = false;
@@ -378,15 +321,18 @@ static void i2c_poll_joystick(void){ //poll data from i2c device
 	i2c_adc_poll_loop++;
 
 	//report
-	int report_val = 0, report_prev_val = 1;
-	if (!update_adc){
-		report_val = gamepad_report.buttons7to0 + gamepad_report.buttons15to8 + gamepad_report.buttonsmisc + gamepad_report.hat0;
-		report_prev_val = gamepad_report_prev.buttons7to0 + gamepad_report_prev.buttons15to8 + gamepad_report.buttonsmisc + gamepad_report_prev.hat0;
-	}
+	#ifndef DIAG_PROGRAM
+		int report_val = 0, report_prev_val = 1;
+		if (!update_adc){
+			report_val = gamepad_report.buttons7to0 + gamepad_report.buttons15to8 + gamepad_report.buttonsmisc + gamepad_report.hat0;
+			report_prev_val = gamepad_report_prev.buttons7to0 + gamepad_report_prev.buttons15to8 + gamepad_report.buttonsmisc + gamepad_report_prev.hat0;
+		}
+	#endif
 
 	i2c_poll_duration = get_time_double() - poll_clock_start;
-
-	if (report_val != report_prev_val){gamepad_report_prev = gamepad_report; uhid_send_event(uhid_fd);} //uhid update
+	#ifndef DIAG_PROGRAM
+		if (report_val != report_prev_val){gamepad_report_prev = gamepad_report; uhid_send_event(uhid_fd);} //uhid update
+	#endif
 }
 
 
@@ -515,7 +461,7 @@ static void gpio_callback(int gpio, int level, uint32_t tick){ //seems to work
 	switch (level) {
 		case 0:
 			if(debug) print_stdout("DEBUG: GPIO%d low\n", gpio);
-			i2c_poll_joystick();
+			i2c_poll_joystick(false);
 			break;
 		case 1:
 			if(debug) print_stdout("DEBUG: GPIO%d high\n", gpio);
@@ -528,10 +474,9 @@ static void gpio_callback(int gpio, int level, uint32_t tick){ //seems to work
 #elif defined(USE_WIRINGPI_IRQ)
 static void mcu_irq_handler(void){
 	if (debug){print_stdout("DEBUG: GPIO%d triggered\n", irq_gpio);}
-    i2c_poll_joystick();
+    i2c_poll_joystick(false);
 }
 #endif
-
 
 //TTY related functions
 static void tty_signal_handler(int sig){ //handle signal func
@@ -539,7 +484,6 @@ static void tty_signal_handler(int sig){ //handle signal func
     if (term_backup.c_cflag){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
 	kill_resquested = true;
 }
-
 
 //Debug related functions
 static void debug_print_binary_int(int val, int bits, char* var){ //print given var in binary format
@@ -552,6 +496,7 @@ static void debug_print_binary_int_term (int line, int col, int val, int bits, c
 }
 
 //SHM related functions
+#ifndef DIAG_PROGRAM
 static int file_read(char* path, char* bufferptr, int buffersize){ //read file
 	int ret = 0;
 	FILE *filehandle = fopen(path, "r");
@@ -571,6 +516,7 @@ static int file_write(char* path, char* content){ //write file
 	} else {print_stderr("failed to write '%s'\n", path); return -EFAULT;}
 	return 0;
 }
+#endif
 
 static int folder_create(char* path, int rights, int uid, int gid) { //create folder(s), set rights/uid/gui if not -1. Return number of folder created, -errno on error
 	int ret, depth = 0; //security
@@ -610,11 +556,10 @@ static int logs_write(const char* format, ...){ //write to log, return chars wri
 	return ret;
 }
 
-
 static void shm_init(bool first){ //init shm related things, folders and files creation
 	char curr_path[strlen(shm_path)+256]; //current path with additionnal 255 chars for filename
 	if (first){ //initial run, skip i2c part
-		if(shm_path[strlen(shm_path)-1] == '/'){shm_path[strlen(shm_path)-1] = '\0';}
+		//if(shm_path[strlen(shm_path)-1] == '/'){shm_path[strlen(shm_path)-1] = '\0';}
 		if (folder_create(shm_path, 0666, user_uid, user_gid) < 0){return;} //recursive folder create
 
 		//log file
@@ -625,10 +570,12 @@ static void shm_init(bool first){ //init shm related things, folders and files c
 
 		shm_enable=true;
 	} else if (shm_enable) {
-		//status file
-		sprintf(curr_path, "%s/status", shm_path);
-		if (file_write (curr_path, "1") == 0){print_stdout("'%s' content set to 1\n", curr_path);
-		}else{return;}
+		#ifndef DIAG_PROGRAM
+			//status file
+			sprintf(curr_path, "%s/status", shm_path);
+			if (file_write (curr_path, "1") == 0){print_stdout("'%s' content set to 1\n", curr_path);
+			}else{return;}
+		#endif
 
 		//registers to files "bridge"
 		#ifdef USE_SHM_REGISTERS
@@ -650,6 +597,7 @@ static void shm_init(bool first){ //init shm related things, folders and files c
 	}
 }
 
+#ifndef DIAG_PROGRAM
 static void shm_update(void){ //update registers/files linked to shm things
 	#ifdef USE_SHM_REGISTERS
 		if (shm_enable){
@@ -690,16 +638,18 @@ static void shm_update(void){ //update registers/files linked to shm things
 		}
 	#endif
 }
+#endif
 
 static void shm_close(void){ //close shm related things
-	if (shm_enable){
-		char curr_path[strlen(shm_path)+256]; //current path with additionnal 255 chars for filename
-		sprintf(curr_path, "%s/status", shm_path); //current path
-		if (file_write (curr_path, "0") == 0){print_stdout("'%s' content set to 0\n", curr_path);}
-	}
+	#ifndef DIAG_PROGRAM
+		if (shm_enable){
+			char curr_path[strlen(shm_path)+256]; //current path with additionnal 255 chars for filename
+			sprintf(curr_path, "%s/status", shm_path); //current path
+			if (file_write (curr_path, "0") == 0){print_stdout("'%s' content set to 0\n", curr_path);}
+		}
+	#endif
 	if (logs_fh != NULL){fclose(logs_fh);}
 }
-
 
 //integer manipulation functs
 void int_rollover(int* val, int min, int max){ //rollover int value between (incl) min and max, work both way
@@ -720,7 +670,9 @@ static int in_array_int16(int16_t* arr, int16_t value, int arr_size){ //search i
 static void program_close(void){ //regroup all close functs
 	if (already_killed){return;}
     if (term_backup.c_cflag){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
-	uhid_destroy(uhid_fd);
+	#ifndef DIAG_PROGRAM
+		uhid_destroy(uhid_fd);
+	#endif
 	i2c_close_all();
 	shm_close();
 	already_killed = true;
@@ -745,49 +697,50 @@ void program_get_path(char** args, char* var){ //get current program path based 
 //main functions, obviously, no? lool
 static void program_usage (char* program){
 	fprintf(stdout, "Version: %s\n", programversion);
-	fprintf(stdout, "Example : %s -debug -configset disable_pollrate=1\n", program);
-	fprintf(stdout, "Need to run as root.\n"
-	"Arguments:\n"
-	"\t-h or -help: show arguments list.\n"
-	"\t-diag: run into diagnostic mode to display digital and analog output, UHID enabled but no data reported to EV dev.\n"
-	"\t-configreset: reset configuration file to default (*).\n"
-	"\t-configset: set custom configuration variable with specific variable, format: 'VAR=VALUE' (e.g. debug=1) (*).\n"
-	"\t-configlist: list all configuration variables (*).\n"
-	"\t-noi2c: disable IRQ, I2C polls and pollrate, generate garbage data for UHID, mainly used for benchmark. (mostly crash EV monitoring softwares).\n"
-	"\t-nouhid: disable IRQ, UHID reports and pollrate, mainly used for benchmark. (mostly crash EV monitoring softwares).\n"
-	"(*): close program after function executed (incl failed).\n"
-	);
+	#ifndef DIAG_PROGRAM
+		fprintf(stdout, "Example : %s -debug -configset disable_pollrate=1\n", program);
+		fprintf(stdout, "Need to run as root.\n"
+		"Arguments:\n"
+		"\t-h or -help: show arguments list.\n"
+		"\t-configreset: reset configuration file to default (*).\n"
+		"\t-configset: set custom configuration variable with specific variable, format: 'VAR=VALUE' (e.g. debug=1) (*).\n"
+		"\t-configlist: list all configuration variables (*).\n"
+		"\t-noi2c: disable IRQ, I2C polls and pollrate, generate garbage data for UHID, mainly used for benchmark. (mostly crash EV monitoring softwares).\n"
+		"\t-nouhid: disable IRQ, UHID reports and pollrate, mainly used for benchmark. (mostly crash EV monitoring softwares).\n"
+		"(*): close program after function executed (incl failed).\n"
+		);
+	#endif
 }
 
 int main(int argc, char** argv){
-	program_start_time = get_time_double();
+	program_start_time = get_time_double(); //program start time, used for detailed outputs
+	if (argc > 1 && (strcmp(argv[1],"-help") == 0 || strcmp(argv[1],"-h") == 0)){program_usage(argv[0]); return 0;} //help argument requested
+	if (getuid() != 0) {print_stderr("FATAL: this program needs to run as root, current user:%d\n", getuid()); return EXIT_FAILURE;} //not running as root
 
-	if (argc > 1 && (strcmp(argv[1],"-help") == 0 || strcmp(argv[1],"-h") == 0)){program_usage(argv[0]); return 0;}
-	if (getuid() != 0) {print_stderr("FATAL: this program needs to run as root, current user:%d\n", getuid()); return EXIT_FAILURE;}
+	int main_return = EXIT_SUCCESS; //rpogram retunr
 
-	const char *path = "/dev/uhid";
-	int ret, main_return = EXIT_SUCCESS;
-
-	//program arguments parse. TODO
 	program_get_path(argv, program_path); //get current program path
-	{char tmp_cfg_filename[strlen(cfg_filename)+1]; strcpy(tmp_cfg_filename, cfg_filename); sprintf(cfg_filename, "%s/%s", program_path, tmp_cfg_filename);} //convert config relative to full path
+	sprintf(config_path, "%s/%s", program_path, cfg_filename); //convert config relative to full path
+	print_stdout("Config file: %s\n", config_path);
 
+	//program arguments parse
 	for(int i=1; i<argc; ++i){
-		if (strcmp(argv[i],"-diag") == 0){diag_mode = true; //run into diag mode
-		} else if (strcmp(argv[i],"-configreset") == 0){return config_save(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid, true); //reset config file
-		} else if (strcmp(argv[i],"-configset") == 0){ //set custom config var
-			if (++i<argc){return config_set(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid, true, argv[i]);
-			} else {
-				print_stderr("FATAL: -configset defined with invalid argument, format: -configset VAR=VALUE\n");
-				print_stderr("Run program with -h or -help for usage\n");
-				return -EPERM;
+		#ifndef DIAG_PROGRAM
+			if (strcmp(argv[i],"-configreset") == 0){return config_save(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid, true); //reset config file
+			} else if (strcmp(argv[i],"-configset") == 0){ //set custom config var
+				if (++i<argc){return config_set(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid, true, argv[i]);
+				} else {
+					print_stderr("FATAL: -configset defined with invalid argument, format: -configset VAR=VALUE\n");
+					print_stderr("Run program with -h or -help for usage\n");
+					return -EPERM;
+				}
+			} else if (strcmp(argv[i],"-configlist") == 0){config_list(cfg_vars, cfg_vars_arr_size); return 0; //list config vars
+			} else if (strcmp(argv[i],"-noi2c") == 0){i2c_disabled = true; //disable i2c, pollrate, garbage data to uhid for benchmark
+			} else if (strcmp(argv[i],"-nouhid") == 0){uhid_disabled = true; //disable irq, uhid for benchmark
 			}
-		} else if (strcmp(argv[i],"-configlist") == 0){config_list(cfg_vars, cfg_vars_arr_size); return 0; //list config vars
-		} else if (strcmp(argv[i],"-noi2c") == 0){i2c_disabled = true; //disable i2c, pollrate, garbage data to uhid for benchmark
-		} else if (strcmp(argv[i],"-nouhid") == 0){uhid_disabled = true; //disable irq, uhid for benchmark
-		}
+		#endif
 	}
-
+	
 	config_parse(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid); //parse config file, create if needed
 	shm_init(true); //init shm path and files
 
@@ -795,74 +748,88 @@ int main(int argc, char** argv){
 	signal(SIGINT, tty_signal_handler); //ctrl-c
 	signal(SIGTERM, tty_signal_handler); //SIGTERM from htop or other, SIGKILL not work as program get killed before able to handle
 	signal(SIGABRT, tty_signal_handler); //failure
+
 	atexit(program_close); at_quick_exit(program_close); //run on program exit
-
+	
 	//open i2c devices
-	if (i2c_open(&i2c_fd, i2c_bus, i2c_addr) != 0){return EXIT_FAILURE;} //main
-	if (i2c_open(&i2c_fd_sec, i2c_bus, i2c_addr_sec) != 0){return EXIT_FAILURE;} //secondary
-	print_stdout("MCU detected registers: adc_conf_bits:0x%02X, adc_res:0x%02X, config0:0x%02X\n", i2c_mcu_register_adc_conf, i2c_mcu_register_adc_res, i2c_mcu_register_config0);
+	if (!i2c_disabled){
+		if (i2c_check_bus(i2c_bus) != 0){return EXIT_FAILURE;}
 
-	//adc
-	adc_firstrun = true;
-	memcpy(mcu_js_used, mcu_js_enable, sizeof(mcu_js_enable));
+		if (i2c_addr_adc[0]!=0xFF && i2c_addr_adc[1]!=0xFF){external_js_used[0] = true;}
+		if (i2c_addr_adc[2]!=0xFF && i2c_addr_adc[3]!=0xFF){external_js_used[1] = true;}
 
-	for (int i=0; i<2; i++){
-		if (mcu_js_used[i]){external_js_used[i] = false;} //disable external joystick if mcu explicitly enabled
-		if (external_js_used[i]){ //use external
-			int ret0 = i2c_open(&i2c_adc_fd[i*2], i2c_bus, i2c_addr_adc[i*2]);
-			int ret1 = i2c_open(&i2c_adc_fd[i*2+1], i2c_bus, i2c_addr_adc[i*2+1]);
-			if (ret0 + ret1 != 0){ //failed
-				close(i2c_adc_fd[i*2]); close(i2c_adc_fd[i*2+1]); //close both fd
-				external_js_used[i] = false; //disable
+		if (i2c_open_dev(&i2c_fd, i2c_bus, i2c_addr) != 0){return EXIT_FAILURE;} //main
+		if (i2c_open_dev(&i2c_fd_sec, i2c_bus, i2c_addr_sec) != 0){/*return EXIT_FAILURE;*/} //secondary TODO implement
+		print_stdout("MCU detected registers: adc_conf_bits:0x%02X, adc_res:0x%02X, config0:0x%02X\n", i2c_mcu_register_adc_conf, i2c_mcu_register_adc_res, i2c_mcu_register_config0);
+
+		if (mcu_check_manufacturer() != 0){return EXIT_FAILURE;} //invalid manufacturer
+		if (mcu_update_config0() != 0){return EXIT_FAILURE;} //read/update of config0 register failed
+		
+		//adc
+		adc_firstrun = true;
+		memcpy(mcu_js_used, mcu_js_enable, sizeof(mcu_js_enable));
+		for (int i=0; i<2; i++){
+			if (mcu_js_used[i]){external_js_used[i] = false;} //disable external joystick if mcu explicitly enabled
+			if (external_js_used[i]){ //use external
+				int ret0 = i2c_open_dev(&i2c_adc_fd[i*2], i2c_bus, i2c_addr_adc[i*2]);
+				int ret1 = i2c_open_dev(&i2c_adc_fd[i*2+1], i2c_bus, i2c_addr_adc[i*2+1]);
+				if (ret0 + ret1 != 0){ //failed
+					close(i2c_adc_fd[i*2]); close(i2c_adc_fd[i*2+1]); //close both fd
+					external_js_used[i] = false; //disable
+				}
 			}
 		}
+		if (mcu_init_adc() >= 0){
+			adc_data_compute(); //compute adc max value, flat in/out
+			uhid_joystick_swap(); //uhid joystick/axis swap
+		} else {return EXIT_FAILURE;} //read/update of adc data failed
 	}
 
-	if (mcu_check_manufacturer() != 0){return EXIT_FAILURE;} //invalid manufacturer
-	if (mcu_update_config0() != 0){return EXIT_FAILURE;} //read/update of config0 register failed
-	if (mcu_init_adc() != 0){return EXIT_FAILURE;} //read/update of adc data failed
-	adc_data_compute(); //compute adc max value, flat in/out
-	uhid_joystick_swap(); //uhid joystick/axis swap
-
-	if (i2c_disabled){ //i2c disable, enable js0 and js1
-		mcu_js_used[0] = mcu_js_used[1] = true;
-		adc_params[0].res = adc_params[1].res = adc_params[2].res = adc_params[3].res = 10;
-		adc_params[0].res_limit = adc_params[1].res_limit = adc_params[2].res_limit = adc_params[3].res_limit = 1023;
-		adc_params[0].flat_in = adc_params[1].flat_in = adc_params[2].flat_in = adc_params[3].flat_in = 10;
-		adc_params[0].flat_out = adc_params[1].flat_out = adc_params[2].flat_out = adc_params[3].flat_out = 10;
-	}
-
-	if (diag_mode || i2c_disabled || uhid_disabled){
-		i2c_poll_rate_disable = true; irq_enable = false;
-		print_stdout("running in a specific mode (no-i2c:%d, no-uhid:%d, diag:%d), pollrate disabled\n", i2c_disabled, uhid_disabled, diag_mode);
-		if (irq_gpio >= 0){print_stderr("IRQ disabled\n");}
-	}
-
-	shm_init(false); //init shm i2c things
-
-	//uhdi defs
-	if (!uhid_disabled){ //don't create uhid device is -nouhid set
-		uhid_fd = open(path, O_RDWR | O_CLOEXEC);
-		if (uhid_fd < 0) {
-			print_stderr("failed to open uhid-cdev %s, errno:%d (%m)\n", path, -uhid_fd);
-			/*program_close();*/
-			return EXIT_FAILURE;
+	#ifndef DIAG_PROGRAM
+		if (i2c_disabled){ //i2c disable, enable js0 and js1
+			mcu_js_used[0] = mcu_js_used[1] = true;
+			adc_params[0].res = adc_params[1].res = adc_params[2].res = adc_params[3].res = 10;
+			adc_params[0].res_limit = adc_params[1].res_limit = adc_params[2].res_limit = adc_params[3].res_limit = 1023;
+			adc_params[0].flat_in = adc_params[1].flat_in = adc_params[2].flat_in = adc_params[3].flat_in = 10;
+			adc_params[0].flat_out = adc_params[1].flat_out = adc_params[2].flat_out = adc_params[3].flat_out = 10;
 		}
-		print_stdout("uhid-cdev %s opened\n", path);
 
-		ret = uhid_create(uhid_fd);
-		if (ret < 0) {/*program_close();*/ return EXIT_FAILURE;}
-		print_stdout("uhid device created\n");
-	}
+		if (i2c_disabled || uhid_disabled){
+			i2c_poll_rate_disable = true; irq_enable = false;
+			print_stdout("running in a specific mode (no-i2c:%d, no-uhid:%d), pollrate disabled\n", i2c_disabled, uhid_disabled);
+			if (irq_gpio >= 0){print_stderr("IRQ disabled\n");}
+		}
 
-	//initial poll
-	i2c_poll_rate_time = 1. / i2c_poll_rate; //poll interval in sec
-	if (i2c_adc_poll < 1){i2c_adc_poll = 1;}
-	i2c_adc_poll_loop = i2c_adc_poll;
-	i2c_poll_joystick();
+		shm_init(false); //init shm i2c things
+		
+		//uhdi defs
+		if (!uhid_disabled){ //don't create uhid device is -nouhid set
+			uhid_fd = open(uhid_device_path, O_RDWR | O_CLOEXEC);
+			if (uhid_fd < 0) {
+				print_stderr("failed to open uhid-cdev %s, errno:%d (%m)\n", uhid_device_path, -uhid_fd);
+				/*program_close();*/
+				return EXIT_FAILURE;
+			}
+			print_stdout("uhid-cdev %s opened\n", uhid_device_path);
+
+			int ret = uhid_create(uhid_fd);
+			if (ret < 0) {/*program_close();*/ return EXIT_FAILURE;}
+			print_stdout("uhid device created\n");
+		}
+
+		//initial poll
+		if (i2c_poll_rate < 1){i2c_poll_rate_disable = true; //disable pollrate limit
+		} else {i2c_poll_rate_time = 1. / i2c_poll_rate;} //poll interval in sec
+		if (i2c_adc_poll < 1){i2c_adc_poll = 1;}
+		i2c_adc_poll_loop = i2c_adc_poll;
+		i2c_poll_joystick(true);
+	#else
+		i2c_poll_rate_disable = true;
+	#endif
 
 	//interrupt
-	if (irq_gpio >= 0 && irq_enable){
+	if (irq_gpio >= 0 && irq_enable){ //TODO FIX generate a glitch on very first input report making joystick report 0 instead of 0x7FFF
+		irq_enable = false;
 	#ifdef USE_WIRINGPI_IRQ
 		#define WIRINGPI_CODES 1 //allow error code return
 		int err;
@@ -881,7 +848,7 @@ int main(int argc, char** argv){
 		if ((ver = gpioInitialise()) > 0){
 			print_stdout("pigpio: version: %d\n",ver);
 		} else {
-			print_stderr("failed to detect pigpio version\n"); irq_failed = true
+			print_stderr("failed to detect pigpio version\n"); irq_failed = true;
 		}
 
 		if (!irq_failed && irq_gpio > 31){
@@ -905,57 +872,63 @@ int main(int argc, char** argv){
 		} else {
 			print_stdout("using pigpio IRQ on GPIO%d\n", irq_gpio);
 			gpioSetSignalFunc(SIGINT, tty_signal_handler); //ctrl-c
-			gpioSetSignalFunc(SIGtty, tty_signal_handler); //SIGtty from htop or other
+			gpioSetSignalFunc(SIGTERM, tty_signal_handler); //SIGTERM from htop or other, SIGKILL not work as program get killed before able to handle
+			gpioSetSignalFunc(SIGABRT, tty_signal_handler); //failure
 			irq_enable = true;
 		}
 	#else
 		irq_enable = false;
 	#endif
 	} else {irq_enable = false;}
-
+	
     fprintf(stderr, "Press '^C' to quit...\n");
 	
-	if (irq_enable){
-		while (!kill_resquested){ //sleep until app close requested
-			shm_update();
-			usleep((useconds_t)(shm_update_interval * 1000000));
-		}
-	} else if (diag_mode){program_diag_mode(); //diagnostic mode
-	} else {
-		if (!i2c_poll_rate_disable){print_stdout("pollrate: digital:%dhz, adc:%dhz\n", i2c_poll_rate, i2c_poll_rate / i2c_adc_poll);} else {print_stdout("poll speed not limited\n");}
-		while (!kill_resquested){
-			i2c_poll_joystick();
 
-			if (shm_clock_start < -0.1) {shm_clock_start = poll_clock_start;} //used for shm interval
-			if (debug_adv && poll_benchmark_clock_start < -0.1) {poll_benchmark_clock_start = poll_clock_start;} //benchmark
-
-			//shm
-			if (poll_clock_start - shm_clock_start > shm_update_interval){
+	#ifndef DIAG_PROGRAM
+		if (irq_enable){
+			while (!kill_resquested){ //sleep until app close requested
+				i2c_poll_joystick(false); //poll just in case irq missed one shot
 				shm_update();
-				shm_clock_start = -1.;
+				usleep((useconds_t)(shm_update_interval * 1000000));
 			}
+		} else {
+			if (!i2c_poll_rate_disable){print_stdout("pollrate: digital:%dhz, adc:%dhz\n", i2c_poll_rate, i2c_poll_rate / i2c_adc_poll);} else {print_stdout("poll speed not limited\n");}
+			while (!kill_resquested){
+				i2c_poll_joystick(false);
 
-			//poll rate implement
-			if (kill_resquested) break;
-			//if(debug) print_stdout ("DEBUG: poll_clock_start:%lf, i2c_poll_duration:%lf\n", poll_clock_start, i2c_poll_duration);
+				if (shm_clock_start < -0.1) {shm_clock_start = poll_clock_start;} //used for shm interval
+				if (debug_adv && poll_benchmark_clock_start < -0.1) {poll_benchmark_clock_start = poll_clock_start;} //benchmark
 
-			if (!i2c_poll_rate_disable){
-				if (i2c_poll_duration > i2c_poll_duration_warn){print_stderr ("WARNING: extremely long loop duration: %dms\n", (int)(i2c_poll_duration*1000));}
-				if (i2c_poll_duration < 0){i2c_poll_duration = 0;} //hum, how???
-				if (i2c_poll_duration < i2c_poll_rate_time){usleep((useconds_t) ((double)(i2c_poll_rate_time - i2c_poll_duration) * 1000000));} //need to sleep to match poll rate. note: doesn't implement uhid_write_duration as uhid write duration way faster than i2c transaction
-			}
+				//shm
+				if (poll_clock_start - shm_clock_start > shm_update_interval){
+					shm_update();
+					shm_clock_start = -1.;
+				}
 
-			if (i2c_poll_rate_disable && debug_adv){ //benchmark mode
-				poll_benchmark_loop++;
-				if ((poll_clock_start - poll_benchmark_clock_start) > 2.) { //report every seconds
-					print_stdout("poll loops per sec (2secs samples) : %ld\n", poll_benchmark_loop / 2);
-					poll_benchmark_loop = 0; poll_benchmark_clock_start = -1.;
+				//poll rate implement
+				if (kill_resquested) break;
+				//if(debug) print_stdout ("DEBUG: poll_clock_start:%lf, i2c_poll_duration:%lf\n", poll_clock_start, i2c_poll_duration);
+
+				if (!i2c_poll_rate_disable){
+					if (i2c_poll_duration > i2c_poll_duration_warn){print_stderr ("WARNING: extremely long loop duration: %dms\n", (int)(i2c_poll_duration*1000));}
+					if (i2c_poll_duration < 0){i2c_poll_duration = 0;} //hum, how???
+					if (i2c_poll_duration < i2c_poll_rate_time){usleep((useconds_t) ((double)(i2c_poll_rate_time - i2c_poll_duration) * 1000000));} //need to sleep to match poll rate. note: doesn't implement uhid_write_duration as uhid write duration way faster than i2c transaction
+				}
+
+				if (i2c_poll_rate_disable && debug_adv){ //benchmark mode
+					poll_benchmark_loop++;
+					if ((poll_clock_start - poll_benchmark_clock_start) > 2.) { //report every seconds
+						print_stdout("poll loops per sec (2secs samples) : %ld\n", poll_benchmark_loop / 2);
+						poll_benchmark_loop = 0; poll_benchmark_clock_start = -1.;
+					}
 				}
 			}
 		}
-	}
 
-	if (i2c_last_error != 0) {print_stderr("last detected I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));}
+		if (i2c_last_error != 0) {print_stderr("last detected I2C error: %d (%s)\n", -i2c_last_error, strerror(-i2c_last_error));}
+	#else
+		program_diag_mode(); //diagnostic mode
+	#endif
 
 	if (mcu_js_used[0] || mcu_js_used[1] || external_js_used[0] || external_js_used[1]){
 		print_stdout("Detected ADC limits:\n");
@@ -967,6 +940,7 @@ int main(int argc, char** argv){
 			}
 		}
 	}
+
 
 	//if (cfg_save && diag_mode){config_save(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid, false);} //save config in adc detection mode
 

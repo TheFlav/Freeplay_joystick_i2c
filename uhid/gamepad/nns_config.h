@@ -1,5 +1,5 @@
 /*
-* UHID driver configuration functions
+* NNS configuration file handler
 */
 
 #pragma once

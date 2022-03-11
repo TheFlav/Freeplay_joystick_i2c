@@ -1,5 +1,6 @@
 /*
-* UHID driver debug functions
+* FreeplayTech UHID gamepad driver
+* Debug output related
 */
 
 #pragma once

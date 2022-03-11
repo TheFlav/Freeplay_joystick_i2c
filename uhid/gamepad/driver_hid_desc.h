@@ -1,5 +1,6 @@
 /*
-* UHID driver HID descriptor file
+* FreeplayTech UHID gamepad driver
+* HID descriptor header
 */
 
 //partially based on https://github.com/NicoHood/HID/blob/master/src/MultiReport/Gamepad.cpp
