@@ -571,7 +571,9 @@ static void term_select_update(term_select_t* store, int* index, int* index_last
                     if (input->left || input->minus){increment*=-1;}
                     int tmpval = *store[i].value.ptrint + increment;
                     if (tmpval <= store[i].value.min){tmpval = store[i].value.min;} else if (tmpval >= store[i].value.max){tmpval = store[i].value.max;} //clamp
-                    *store[i].value.ptrint = tmpval; update = true;
+                    *store[i].value.ptrint = tmpval;
+                    if(store[i].value.ptrbool){*store[i].value.ptrbool = !(*store[i].value.ptrbool);} //toogle ptrbool if set along to ptrint
+                    update = true;
                 }
             }
 
@@ -643,7 +645,6 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
 
     char* screen_name = "Kernel driver setup/diagnostic tool";
     fprintf(stdout, "\e[%d;%dH\e[1;%dm%s\e[0m", tty_line++, (tty_last_width - strlen(diagprogramname))/2, term_esc_col_normal, diagprogramname);
-
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strlen(screen_name))/2, term_esc_col_normal, screen_name);
 
     if (!i2c_failed){ //display device id/version if i2c not failed
@@ -1335,14 +1336,14 @@ int main(int argc, char** argv){
 	signal(SIGINT, tty_signal_handler); //ctrl-c
 	signal(SIGTERM, tty_signal_handler); //SIGTERM from htop or other, SIGKILL not work as program get killed before able to handle
 	signal(SIGABRT, tty_signal_handler); //failure
+	atexit(program_close); at_quick_exit(program_close); //run on program exit
 
     //disable STDIN print/tty setting backup
     struct termios term_new;
-    if (tcgetattr(STDIN_FILENO, &term_backup) != 0){print_stderr("failed to backup current terminal data\n"); program_close(); return EXIT_FAILURE;}
-    if (atexit(program_close) != 0 || at_quick_exit(program_close) != 0){print_stderr("failed to set atexit() to restore terminal data\n"); program_close(); return EXIT_FAILURE;}
-    if (tcgetattr(STDIN_FILENO, &term_new) != 0){print_stderr("failed to save current terminal data for updates\n"); program_close(); return EXIT_FAILURE;}
+    if (tcgetattr(STDIN_FILENO, &term_backup) != 0){print_stderr("failed to backup current terminal data\n"); /*program_close(); */return EXIT_FAILURE;}
+    if (tcgetattr(STDIN_FILENO, &term_new) != 0){print_stderr("failed to save current terminal data for updates\n"); /*program_close(); */return EXIT_FAILURE;}
     term_new.c_lflag &= ~(ECHO | ECHONL | ICANON); //disable input characters, new line character echo, disable canonical input to avoid needs of enter press for user input submit
-    if (tcsetattr(STDIN_FILENO, TCSANOW, &term_new) != 0){print_stderr("tcsetattr term_new failed\n"); program_close(); return EXIT_FAILURE;}
+    if (tcsetattr(STDIN_FILENO, TCSANOW, &term_new) != 0){print_stderr("tcsetattr term_new failed\n"); /*program_close(); */return EXIT_FAILURE;}
 
     //start term
     tty_start:; //landing point if tty is resized or "screen" changed or bool trigger
@@ -1361,7 +1362,7 @@ int main(int argc, char** argv){
 
     tcflush(STDOUT_FILENO, TCIOFLUSH); //flush STDOUT
     fprintf(stdout, "\e[0;0H\e[2J\e[?25h"); //reset tty, show cursor
-    program_close(); //restore tty original state
+    //program_close(); //restore tty original state
 
     return 0;
 }
