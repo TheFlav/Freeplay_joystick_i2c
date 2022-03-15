@@ -26,8 +26,8 @@ extern bool debug;
 typedef struct cfg_vars_struct {
 	const char* name; //IMPORTANT: no space
 	const char* desc;
-	const int type; //0:int, 1:uint, 2:float, 3:double, 4:bool, 5:int array (split by comma in cfg file), 6:hex8, 7:hex16, 8:hex32, 9:bin8, 10:bin16, 11:bin32
-	const void* ptr;
+	int type; //0:int, 1:uint, 2:float, 3:double, 4:bool, 5:int array (split by comma in cfg file), 6:hex8, 7:hex16, 8:hex32, 9:bin8, 10:bin16, 11:bin32
+	void* ptr;
 } cfg_vars_t;
 
 int config_sum (cfg_vars_t* /*cfg*/, unsigned int /*cfg_size*/); //pseudo checksum for config build

@@ -98,7 +98,7 @@ extern int mcu_update_config0(void); //read/update config0 register, return 0 on
 extern int mcu_init_adc(void); //init adc data, return 0 on success, -1 on resolution read fail, -2 on adc conf
 extern void uhid_joystick_swap(void); //uhid joystick/axis swap
 
-
+extern void i2c_poll_joystick(bool /*force_update*/); //poll data from i2c device
 
 
 
@@ -115,6 +115,12 @@ int i2c_bus_err = 121, i2c_main_err = 121, i2c_sec_err = 121, i2c_adc_err[] = {1
 
 extern uint8_t i2c_dev_sig, i2c_dev_id, i2c_dev_minor; //device device signature, id, version
 extern int i2c_bus_back, i2c_addr_back, i2c_addr_sec_back, i2c_addr_adc_back[];
+
+
+extern bool mcu_js_used[], external_js_used[];
+
+
+
 //extern int term_esc_col_normal, term_esc_col_disabled, term_esc_col_error, term_esc_col_success; //color escape codes
 //extern int term_adc_width, term_adc_vertspacing; //ADC section width, vertical spacing between each horizontal ADC elements
 //extern int term_footer_buttons_width; //footer button width
@@ -133,19 +139,25 @@ extern int i2c_bus_back, i2c_addr_back, i2c_addr_sec_back, i2c_addr_adc_back[];
 #endif
 
 
+    int term_esc_col_normal = 97; //normal color escape code
+    int term_esc_col_disabled = 90; //disabled color escape code
+    int term_esc_col_error = 91; //error color escape code
+    int term_esc_col_success = 92; //success color escape code
+
+    int term_footer_buttons_width = 15; //footer button width
+
+    int term_adc_width = 32; //ADC section width
+    int term_adc_vertspacing = 9; //vertical spacing between each horizontal ADC elements
+
+    int select_index_current = 0, select_index_last = -1; //current element selected, last selected
+
+    int term_screen_current = 1, term_screen_last = -1; //start "screen", last screen
+    int term_screen_update = false; //"screen" require update
 
 	struct winsize ws; //terminal size
 
 	term_input_t term_input = {0};
 
-	int term_esc_col_normal, term_esc_col_disabled, term_esc_col_error, term_esc_col_success; //color escape codes
-	int term_adc_width, term_adc_vertspacing; //ADC section width, vertical spacing between each horizontal ADC elements
-	int term_footer_buttons_width; //footer button width
-
-	int select_index_current, select_index_last; //current element selected, last selected
-
-	int term_screen_current, term_screen_last; //start "screen", last screen
-	bool term_screen_update; //"screen" require update
 
 
 
@@ -164,6 +176,7 @@ extern bool mcu_js_enable[];
 extern bool uhid_js_swap, uhid_js_swap_axis[];
 
 extern adc_data_t adc_params[];
+extern mcu_adc_conf_t mcu_conf_current, mcu_conf_new;
 extern struct i2c_joystick_register_struct i2c_joystick_registers;
 extern struct i2c_secondary_address_register_struct i2c_secondary_registers;
 
@@ -177,3 +190,9 @@ char* tty_buttons_names[uhid_buttons_count] = {"A","B","C","X","Y","Z","TL","TR"
 char* tty_buttons_misc_names[uhid_buttons_misc_count] = {"BTN_0","BTN_1","BTN_2","BTN_3"}; //button naming for diag mode, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 
 
+adc_data_t adc_params_default[4] = {
+	{-1,-1,INT_MAX,INT_MIN, def_adc0_res,0xFF, 0x7FFF,def_adc0_min,def_adc0_max,0, def_adc0_fuzz,def_adc0_flat,def_adc0_flat, 0,0, def_adc0_enabled,def_adc0_reversed,def_adc0_autocenter, "ADC"},
+	{-1,-1,INT_MAX,INT_MIN, def_adc1_res,0xFF, 0x7FFF,def_adc1_min,def_adc1_max,0, def_adc1_fuzz,def_adc1_flat,def_adc1_flat, 0,0, def_adc1_enabled,def_adc1_reversed,def_adc1_autocenter, "ADC"},
+	{-1,-1,INT_MAX,INT_MIN, def_adc2_res,0xFF, 0x7FFF,def_adc2_min,def_adc2_max,0, def_adc2_fuzz,def_adc2_flat,def_adc2_flat, 0,0, def_adc2_enabled,def_adc2_reversed,def_adc2_autocenter, "ADC"},
+	{-1,-1,INT_MAX,INT_MIN, def_adc3_res,0xFF, 0x7FFF,def_adc3_min,def_adc3_max,0, def_adc3_fuzz,def_adc3_flat,def_adc3_flat, 0,0, def_adc3_enabled,def_adc3_reversed,def_adc3_autocenter, "ADC"},
+};

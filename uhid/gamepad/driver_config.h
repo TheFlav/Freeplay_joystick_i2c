@@ -12,24 +12,17 @@
 //default values
 #define def_debug false //enable debug output
 #define def_debug_adv false //enable advanced debug output, benchmark
-//#define def_i2c_poll_rate_disable false //allow full throttle update if true
 
 #define def_irq_gpio 40 //gpio pin used for IRQ, limited to 31 for pigpio, set to -1 to disable
-//#define USE_WIRINGPI_IRQ //uncomment to use wiringPi for IRQ
-//#define USE_PIGPIO_IRQ //or USE_PIGPIO
-//comment both to disable
 
 #define i2c_ignore_busy true //allow i2c running on busy address
 #define def_i2c_bus 1 //I2C bus
 #define def_i2c_addr 0x30 //main MCU I2C address
 #define def_i2c_addr_sec 0x40 //secondary MCU I2C address
-#define def_i2c_addr_adc0 0xFF //external ADC0 I2C address, set to 0xFF to disable
-#define def_i2c_addr_adc1 0xFF //external ADC1 I2C address, set to 0xFF to disable
-#define def_i2c_addr_adc2 0xFF //external ADC2 I2C address, set to 0xFF to disable
-#define def_i2c_addr_adc3 0xFF //external ADC3 I2C address, set to 0xFF to disable
 
 #define cfg_filename "config.cfg" //configuration filename
 #define shm_path "/dev/shm/uhid_i2c_driver/" //SHM path used for temporary storage
+//#define USE_SHM_REGISTERS 1 //allow direct read/write to specific registers using files
 #define user_uid 1000 //normal "non-root" user id, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 #define user_gid 1000 //normal "non-root" group id, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 
@@ -54,14 +47,15 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 
 #define def_digital_debounce 5 //debounce filtering to mitigate possible pad false contact, default:5, max:7, 0 to disable
 
-//joystick defaults
-#define def_js0_enable false //enable left joystick
-#define def_js1_enable false //enable right joystick
-#define def_uhid_js_swap false //swap left and right joystick
-#define def_uhid_js0_swap_axis false //swap left joystick XY axis
-#define def_uhid_js1_swap_axis false //swap right joystick XY axis
+//adc to joystick map defaults. -1:disabled axis, 0:X1, 1:Y1, 2:X2, 3:Y2
+#define def_adc0_map 0 //adc0
+#define def_adc1_map 1 //adc1
+#define def_adc2_map 2 //adc2
+#define def_adc3_map 3 //adc3
 
 //adc0 defaults
+#define def_adc0_i2c_addr 0xFF //external I2C address, set to 0xFF to disable
+#define def_adc0_enabled false
 #define def_adc0_min 0 
 #define def_adc0_max 4095
 #define def_adc0_res 12 //bits
@@ -71,6 +65,8 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc0_autocenter false
 
 //adc1 defaults
+#define def_adc1_i2c_addr 0xFF //external I2C address, set to 0xFF to disable
+#define def_adc1_enabled false
 #define def_adc1_min 0 
 #define def_adc1_max 4095
 #define def_adc1_res 12 //bits
@@ -80,6 +76,8 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc1_autocenter false
 
 //adc2 defaults
+#define def_adc2_i2c_addr 0xFF //external I2C address, set to 0xFF to disable
+#define def_adc2_enabled false
 #define def_adc2_min 0 
 #define def_adc2_max 4095
 #define def_adc2_res 12 //bits
@@ -89,6 +87,8 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc2_autocenter false
 
 //adc3 defaults
+#define def_adc3_i2c_addr 0xFF //external I2C address, set to 0xFF to disable
+#define def_adc3_enabled false
 #define def_adc3_min 0 
 #define def_adc3_max 4095
 #define def_adc3_res 12 //bits

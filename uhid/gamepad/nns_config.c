@@ -113,8 +113,8 @@ bool config_type_parse (cfg_vars_t* cfg, unsigned int cfg_size, int index, int t
 		char tmpVal1 [tmpValSize+1]; strcpy(tmpVal1, value);
 		char *tmpPtr2 = strtok(tmpVal1, ",");
 		while (tmpPtr2 != NULL) {
-			if (j < arrSize) {((int*)((int*)cfg[index].ptr)[0])[j] = atoi (tmpPtr2);} //no overflow
-			j++; tmpPtr2 = strtok (NULL, ","); //next element
+			if (j < arrSize) {((int*)((int*)cfg[index].ptr)[0])[j] = atoi(tmpPtr2);} //no overflow
+			j++; tmpPtr2 = strtok(NULL, ","); //next element
 		}
 
 		if(debug){
