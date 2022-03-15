@@ -51,7 +51,7 @@
 
 #define MANUF_ID         0xED
 #define DEVICE_ID        0x00
-#define VERSION_NUMBER   15
+#define VERSION_NUMBER   16
 
 #define CONFIG_PERIODIC_TASK_TIMER_MILLIS 5000
 #define CONFIG_INPUT_READ_TIMER_MICROS 500        //set to 0 for NO delay reading inputs, otherwise try to read inputs at least every CONFIG_INPUT_READ_TIMER_MICROS microseconds
@@ -184,6 +184,8 @@
 #define FEATURES_AVAILABLE (FEATURES_ADC0 | FEATURES_ADC1 | FEATURES_ADC2 | FEATURES_ADC3 | FEATURES_IRQ)
 #define ADCS_AVAILABLE ((FEATURES_ADC0 | FEATURES_ADC1 | FEATURES_ADC2 | FEATURES_ADC3) << 4)
 
+#define WRITE_PROTECT   0xAA
+#define WRITE_UNPROTECT 0x55
 struct /*i2c_joystick_register_struct */
 {
   uint8_t input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
@@ -423,6 +425,16 @@ void eeprom_save_if_needed()
 #endif    
 }
 
+bool i2c_address_is_in_range(byte address)
+{
+  if(address < 0x10)
+    return false;
+
+  if(address >= 0x70)
+    return false;    
+
+  return true;
+}
 
 
 void eeprom_restore_data()
@@ -475,8 +487,16 @@ void eeprom_restore_data()
 
 
   i2c_secondary_registers.config_backlight = eeprom_data.sec_config_backlight;
-  i2c_secondary_registers.joystick_i2c_addr = eeprom_data.sec_joystick_i2c_addr;
-  i2c_secondary_registers.secondary_i2c_addr = eeprom_data.sec_secondary_i2c_addr;
+
+  if(i2c_address_is_in_range(eeprom_data.sec_joystick_i2c_addr) && (eeprom_data.sec_joystick_i2c_addr != eeprom_data.sec_secondary_i2c_addr))
+    i2c_secondary_registers.joystick_i2c_addr = eeprom_data.sec_joystick_i2c_addr;
+  else
+    i2c_secondary_registers.joystick_i2c_addr = CONFIG_I2C_DEFAULT_ADDR;
+    
+  if(i2c_address_is_in_range(eeprom_data.sec_secondary_i2c_addr) && (eeprom_data.sec_joystick_i2c_addr != eeprom_data.sec_secondary_i2c_addr))
+    i2c_secondary_registers.secondary_i2c_addr = eeprom_data.sec_secondary_i2c_addr;
+  else
+    i2c_secondary_registers.secondary_i2c_addr = CONFIG_I2C_DEFAULT_ADDR;
 
 
   if((eeprom_data.joy_adc_conf_bits & 0xF0) != ADCS_AVAILABLE)
@@ -1003,19 +1023,22 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
   {
     byte temp = Wire.read(); //We might record it, we might throw it away
 
-    if(x == REGISTER_SEC_JOY_I2C_ADDR && i2c_secondary_registers.write_protect == 0x00)
+    if(x == REGISTER_SEC_JOY_I2C_ADDR && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
-      i2c_secondary_registers.joystick_i2c_addr = temp;      
+      if(i2c_address_is_in_range(temp) && temp != i2c_secondary_registers.secondary_i2c_addr)
+        i2c_secondary_registers.joystick_i2c_addr = temp;      
     }
     else if(x == REGISTER_SEC_WRITE_PROTECT)
     {
-      i2c_secondary_registers.write_protect = temp;      
+      if(temp == WRITE_PROTECT || temp == WRITE_UNPROTECT)
+        i2c_secondary_registers.write_protect = temp;      
     }
-    else if(x == REGISTER_SEC_SEC_I2C_ADDR && i2c_secondary_registers.write_protect == 0x00)
+    else if(x == REGISTER_SEC_SEC_I2C_ADDR && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
-      i2c_secondary_registers.secondary_i2c_addr = temp;      
+      if(i2c_address_is_in_range(temp) && temp != i2c_secondary_registers.joystick_i2c_addr)
+        i2c_secondary_registers.secondary_i2c_addr = temp;      
     }    
-    else if(x == REGISTER_SEC_POWER_CONTROL && i2c_secondary_registers.write_protect == 0x00)
+    else if(x == REGISTER_SEC_POWER_CONTROL && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
       backlight_start_flashing(temp);     //change this at some point!
       
@@ -1023,7 +1046,7 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
       i2c_secondary_registers.power_control = temp;      
     }
 #ifdef USE_PWM_BACKLIGHT
-    else if(x == REGISTER_SEC_CONFIG_BACKLIGHT && i2c_secondary_registers.write_protect == 0x00)   //this is a writeable register
+    else if(x == REGISTER_SEC_CONFIG_BACKLIGHT && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)   //this is a writeable register
     {
       //set backlight value
       if(temp >= 0 && temp < NUM_BACKLIGHT_PWM_STEPS)
@@ -1165,7 +1188,7 @@ void setup()
   i2c_secondary_registers.version_ID = VERSION_NUMBER;
 
   i2c_secondary_registers.power_control = 0;
-  i2c_secondary_registers.write_protect = 0xFF;
+  i2c_secondary_registers.write_protect = WRITE_PROTECT;
 
   i2c_secondary_registers.features_available = FEATURES_AVAILABLE;
   
@@ -1299,7 +1322,7 @@ void loop()
 
   if(eeprom_data.sec_joystick_i2c_addr != i2c_secondary_registers.joystick_i2c_addr)
   {
-    if(i2c_secondary_registers.joystick_i2c_addr >= 0x10 && i2c_secondary_registers.joystick_i2c_addr < 0x70 && i2c_secondary_registers.secondary_i2c_addr != i2c_secondary_registers.joystick_i2c_addr)
+    if(i2c_address_is_in_range(i2c_secondary_registers.joystick_i2c_addr) && i2c_secondary_registers.secondary_i2c_addr != i2c_secondary_registers.joystick_i2c_addr)
     {
       eeprom_data.sec_joystick_i2c_addr = i2c_secondary_registers.joystick_i2c_addr;
       eeprom_save_now();    //save to EEPROM right away, becuase we'll reboot next
@@ -1312,7 +1335,7 @@ void loop()
 
   if(eeprom_data.sec_secondary_i2c_addr != i2c_secondary_registers.secondary_i2c_addr)
   {
-    if(i2c_secondary_registers.secondary_i2c_addr >= 0x10 && i2c_secondary_registers.secondary_i2c_addr < 0x70 && i2c_secondary_registers.secondary_i2c_addr != i2c_secondary_registers.joystick_i2c_addr)
+    if(i2c_address_is_in_range(i2c_secondary_registers.secondary_i2c_addr) && i2c_secondary_registers.secondary_i2c_addr != i2c_secondary_registers.joystick_i2c_addr)
     {
       eeprom_data.sec_secondary_i2c_addr = i2c_secondary_registers.secondary_i2c_addr;
       eeprom_save_now();    //save to EEPROM right away, becuase we'll reboot next
