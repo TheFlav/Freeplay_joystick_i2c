@@ -167,8 +167,16 @@ int i2c_open_dev(int* fd, int bus, int addr){ //open I2C device, return 0 on suc
 }
 
 void i2c_close_all(void){ //close all I2C files
-	int* fd_array[] = {&i2c_fd, &i2c_fd_sec, &i2c_adc_fd[0], &i2c_adc_fd[1], &i2c_adc_fd[2], &i2c_adc_fd[3]};
-	int* addr_array[] = {&i2c_addr, &i2c_addr_sec, &i2c_addr_adc[0], &i2c_addr_adc[1], &i2c_addr_adc[2], &i2c_addr_adc[3]};
+	int* fd_array[] = {&i2c_fd, &i2c_fd_sec,
+	#ifdef ALLOW_EXT_ADC
+		&i2c_adc_fd[0], &i2c_adc_fd[1], &i2c_adc_fd[2], &i2c_adc_fd[3]
+	#endif
+	};
+	int* addr_array[] = {&i2c_addr, &i2c_addr_sec, 
+	#ifdef ALLOW_EXT_ADC
+	&i2c_addr_adc[0], &i2c_addr_adc[1], &i2c_addr_adc[2], &i2c_addr_adc[3]
+	#endif
+	};
 	for (int8_t i=0; i<(sizeof(fd_array)/sizeof(fd_array[0])); i++){
 		if(*fd_array[i] >= 0){ //"valid" fd
 			int ret = close(*fd_array[i]);
@@ -179,7 +187,7 @@ void i2c_close_all(void){ //close all I2C files
 	}
 }
 
-static void adc_data_compute(int adc_index){ //compute adc max value, flat in/out
+void adc_data_compute(int adc_index){ //compute adc max value, flat in/out
 	if (!adc_params[adc_index].enabled){return;}
 
 	adc_params[adc_index].res_limit = 0xFFFFFFFF >> (32 - adc_params[adc_index].res); //compute adc limit
@@ -229,15 +237,17 @@ static int adc_correct_offset_center(int adc_resolution, int adc_value, int adc_
 	return adc_value;
 }
 
-static int MCP3021_read(int fd){ //placeholder for external adc, MCP3021 ADC for test purpose
-	int ret = i2c_smbus_read_word_data(fd, 0);
-	if (ret < 0){
-		i2c_allerrors_count++;
-		print_stderr("read failed, errno:%d (%m)\n", -ret);
-		return 0;
+#ifdef ALLOW_EXT_ADC
+	static int MCP3021_read(int fd){ //placeholder for external adc, MCP3021 ADC for test purpose
+		int ret = i2c_smbus_read_word_data(fd, 0);
+		if (ret < 0){
+			i2c_allerrors_count++;
+			print_stderr("read failed, errno:%d (%m)\n", -ret);
+			return 0;
+		}
+		return (((uint16_t)(ret) & (uint16_t)0x00ffU) << 8) | (((uint16_t)(ret) & (uint16_t)0xff00U) >> 8); //return swapped, uapi/linux/swab.h
 	}
-	return (((uint16_t)(ret) & (uint16_t)0x00ffU) << 8) | (((uint16_t)(ret) & (uint16_t)0xff00U) >> 8); //return swapped, uapi/linux/swab.h
-}
+#endif
 
 void i2c_poll_joystick(bool force_update){ //poll data from i2c device
 	poll_clock_start = get_time_double();
@@ -247,8 +257,13 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
 	
 	if (force_update || i2c_adc_poll_loop == i2c_adc_poll || i2c_poll_rate_disable){update_adc = true; i2c_adc_poll_loop = 0;}
 	if (update_adc){
+#ifdef ALLOW_EXT_ADC
 		if ((adc_params[2].enabled && !i2c_adc_fd_valid[2]) || (adc_params[3].enabled && !i2c_adc_fd_valid[3])){read_limit += 6; //needs to read all adc resisters
 		} else if ((adc_params[0].enabled && !i2c_adc_fd_valid[0]) || (adc_params[1].enabled && !i2c_adc_fd_valid[1])){read_limit += 3;} //needs to read adc0-1 adc resisters
+#else
+		if (adc_params[2].enabled || adc_params[3].enabled){read_limit += 6; //needs to read all adc resisters
+		} else if (adc_params[0].enabled || adc_params[1].enabled){read_limit += 3;} //needs to read adc0-1 adc resisters
+#endif
 	}
 
 	if (!i2c_disabled){ret = i2c_smbus_read_i2c_block_data(i2c_fd, 0, read_limit, (uint8_t *)&i2c_joystick_registers);
@@ -260,7 +275,7 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
 
 	if (ret < 0){
 		i2c_errors_count++; i2c_allerrors_count++;
-		if (ret == -6){print_stderr("FATAL: i2c_smbus_read_i2c_block_data() failed, errno:%d (%m)\n", -ret); kill_resquested = true;}
+		if (ret == -6){print_stderr("FATAL: i2c_smbus_read_i2c_block_data() failed, errno:%d (%m)\n", -ret); kill_requested = true;}
 		if (i2c_errors_count >= i2c_errors_report){print_stderr("WARNING: I2C requests failed %d times in a row\n", i2c_errors_count); i2c_errors_count = 0;}
 		i2c_last_error = ret; return;
 	}
@@ -290,15 +305,19 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
 	if (update_adc){
 		for (int i=0; i<4; i++){ //adc loop
 			if (adc_params[i].enabled){
+#ifdef ALLOW_EXT_ADC
 				if (!i2c_adc_fd_valid[i]){ //read mcu adc value
+#endif
 					uint8_t *tmpPtr = (uint8_t*)&i2c_joystick_registers; //pointer to i2c store
 					uint8_t tmpPtrShift = i, tmpMask = 0xF0, tmpShift = 0; //pointer offset, lsb mask, lsb bitshift
 					if (i<2){tmpPtr += i2c_mcu_register_adc0;} else {tmpPtr += i2c_mcu_register_adc2; tmpPtrShift -= 2;} //update pointer
 					if (tmpPtrShift == 0){tmpMask = 0x0F; tmpShift = 4;} //adc0-2 lsb
 					adc_params[i].raw = ((*(tmpPtr + tmpPtrShift) << 8) | (*(tmpPtr + 2) & tmpMask) << tmpShift) >> (16 - adc_params[i].res); //char to word
+#ifdef ALLOW_EXT_ADC
 				} else { //external adc value
 					adc_params[i].raw = MCP3021_read(i2c_adc_fd[i]); //placeholder external adc read function
 				}
+#endif
 
 				if (adc_firstrun){adc_data_compute(i); adc_params[i].raw_prev = adc_params[i].raw;} //compute adc max value, flat in/out, offset
 
@@ -312,7 +331,7 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
 				adc_params[i].value <<= 16 - adc_params[i].res; //convert to 16bits value for report
 				if (adc_params[i].value < 1){adc_params[i].value = 1;} else if (adc_params[i].value > 0xFFFF-1){adc_params[i].value = 0xFFFF-1;} //Reicast overflow fix
 
-				*js_values[adc_map[i]] = (uint16_t)adc_params[i].value; //warning, no check for OOB on js_values because of adc_map[i]
+				if(adc_map[i] > -1){*js_values[adc_map[i]] = (uint16_t)adc_params[i].value;} //adc mapped to -1 should be disabled during runtime if not in diagnostic mode
 			}
 		}
 		adc_firstrun = false;
@@ -353,6 +372,8 @@ int mcu_check_manufacturer(){ //check device manufacturer, fill signature,id,ver
 	print_stdout("I2C device detected, signature:0x%02X, id:%d, version:%d\n", i2c_dev_sig, i2c_dev_id, i2c_dev_minor);
 	logs_write("I2C device: signature:0x%02X, id:%d, version:%d\n\n", i2c_dev_sig, i2c_dev_id, i2c_dev_minor);
 
+	//TODO check if version compatible
+	
 	return 0;
 }
 
@@ -375,7 +396,7 @@ int mcu_update_config0(){ //read/update config0 register, return 0 on success, -
 	return 0;
 }
 
-int mcu_init_adc(){ //init adc data, return 0 on success, -1 on resolution read fail, -2 on adc conf
+int init_adc(){ //init adc data, return 0 on success, -1 on resolution read fail, -2 on adc conf
 	adc_firstrun = true; //force initial adc update
 
 	//mcu adc resolution
@@ -388,42 +409,49 @@ int mcu_init_adc(){ //init adc data, return 0 on success, -1 on resolution read 
 	int ret = i2c_smbus_read_byte_data(i2c_fd, i2c_mcu_register_adc_conf);
 	if (ret < 0){print_stderr("FATAL: reading MCU ADC configuration (register:0x%02X) failed, errno:%d (%m)\n", i2c_mcu_register_adc_conf, -ret); i2c_allerrors_count++; return -2;}
 
-	uint8_t tmp_adc_config_old = (uint8_t)ret;
-	uint8_t tmp_adc_config_new = tmp_adc_config_old & 0xF0; //copy enable bits
+	uint8_t mcu_adc_config_old = (uint8_t)ret;
+	uint8_t mcu_adc_config_new = mcu_adc_config_old & 0xF0; //copy enable bits
 
 	for (int i=0; i<4; i++){ //mcu adc loop
-		bool valid_adc_map = adc_map[i] > -1 && adc_map[i] < 4, tmp_adc_used = false;
-		if (valid_adc_map){
-			if (adc_params[i].enabled && !i2c_adc_fd_valid[i]){ //adc "enabled" but external adc not used
-				if ((tmp_adc_config_old >> (i+4)) & 0b1){
-					tmp_adc_config_new |= 1U << i; tmp_adc_used = true; //mcu adc enabled
-					adc_params[i].res = tmp_adc_res; //adc resolution
-				} else {adc_params[i].enabled = false;} //adc fully disable
+		int_constrain(&adc_map[i], -1, 3); //correct invalid map
+		bool mcu_adc_used = false;
+		mcu_adc_enabled[i] = (mcu_adc_config_old >> (i+4)) & 0b1; //mcu adc enabled
+		if (adc_map[i] > -1 || diag_mode_init){
+			if (!i2c_adc_fd_valid[i]){ //external adc not used
+				adc_params[i].res = tmp_adc_res; //mcu adc resolution
+				if (!mcu_adc_enabled[i]){adc_params[i].enabled = false; //mcu adc fully disable
+				} else if (adc_params[i].enabled){mcu_adc_config_new |= 1U << i; mcu_adc_used = true;} //mcu adc used
 			}
+#ifdef ALLOW_EXT_ADC
+			else {
+				//TODO EXTERNAL
+			}
+#endif
 		} else {adc_params[i].enabled = false;} //disable adc because map is invalid
 		*js_values[i] = (uint16_t)0x7FFF; //reset uhid axis value, mainly used in diag part
 
 		//report
 		if(!diag_mode_init){
 			print_stdout("ADC%d: %s", i, adc_params[i].enabled?"enabled":"disabled");
-			if (!valid_adc_map){fputs(", invalid joystick map", stdout);
-			} else if (adc_params[i].enabled){
+			if (adc_params[i].enabled){
 				fputs(", ", stdout);
-				if (tmp_adc_used){fputs("MCU", stdout);
+				if (mcu_adc_used){fputs("MCU", stdout);
+#ifdef ALLOW_EXT_ADC
 				} else if (i2c_adc_fd_valid[i]){fprintf(stdout, "External(0x%02X)", i2c_addr_adc[i]);
+#endif
 				} else {fputs("BUG???", stdout);}
 			}
-			fputc('\n', stdout);
+			fprintf(stdout, ", mapped to %s(%d)\n", js_axis_names[adc_map[i]+1], adc_map[i]);
 		}
 	}
 
-	if (tmp_adc_config_old != tmp_adc_config_new){ //mcu adc config needs update
-		ret = i2c_smbus_write_byte_data(i2c_fd, i2c_mcu_register_adc_conf, tmp_adc_config_new);
+	if (mcu_adc_config_old != mcu_adc_config_new){ //mcu adc config needs update
+		ret = i2c_smbus_write_byte_data(i2c_fd, i2c_mcu_register_adc_conf, mcu_adc_config_new);
 		if (ret < 0){print_stderr("failed to set new MCU ADC configuration (0x%02X), errno:%d (%m)\n", i2c_mcu_register_adc_conf, -ret); i2c_allerrors_count++; return -2;
 		} else { //read back wrote value by safety
 			ret = i2c_smbus_read_byte_data(i2c_fd, i2c_mcu_register_adc_conf);
-			if (ret != tmp_adc_config_new){print_stderr("failed to update MCU ADC configuration, should be 0x%02X but is 0x%02X\n", tmp_adc_config_new, ret); return -2;
-			} else {print_stdout("MCU ADC configuration updated, is now 0x%02X, was 0x%02X\n", ret, tmp_adc_config_old);}
+			if (ret != mcu_adc_config_new){print_stderr("failed to update MCU ADC configuration, should be 0x%02X but is 0x%02X\n", mcu_adc_config_new, ret); return -2;
+			} else {print_stdout("MCU ADC configuration updated, is now 0x%02X, was 0x%02X\n", ret, mcu_adc_config_old);}
 		}
 	}
 
@@ -457,7 +485,7 @@ static void mcu_irq_handler(void){
 static void tty_signal_handler(int sig){ //handle signal func
 	if (debug){print_stderr("DEBUG: signal received: %d\n", sig);}
     if (term_backup.c_cflag){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
-	kill_resquested = true;
+	kill_requested = true;
 }
 
 //SHM related functions
@@ -721,12 +749,14 @@ int main(int argc, char** argv){
 
 		if (mcu_check_manufacturer() != 0){return EXIT_FAILURE;} //invalid manufacturer
 		if (mcu_update_config0() != 0){return EXIT_FAILURE;} //read/update of config0 register failed
-		
-		for (int i=0; i<4; i++){ //external adcs device loop
-			if (adc_params[i].enabled){i2c_adc_fd_valid[i] = (i2c_open_dev(&i2c_adc_fd[i], i2c_bus, i2c_addr_adc[i]) == 0);}
-		}
 
-		if (mcu_init_adc() < 0){return EXIT_FAILURE;} //init adc data failed
+		#ifdef ALLOW_EXT_ADC
+			for (int i=0; i<4; i++){ //external adcs device loop
+				if (adc_params[i].enabled){i2c_adc_fd_valid[i] = (i2c_open_dev(&i2c_adc_fd[i], i2c_bus, i2c_addr_adc[i]) == 0);}
+			}
+		#endif
+
+		if (init_adc() < 0){return EXIT_FAILURE;} //init adc data failed
 	}
 
 	#ifndef DIAG_PROGRAM
@@ -757,16 +787,16 @@ int main(int argc, char** argv){
 			if (ret < 0){return EXIT_FAILURE;}
 			print_stdout("uhid device created\n");
 		}
-
-		//initial poll
-		if (i2c_poll_rate < 1){i2c_poll_rate_disable = true; //disable pollrate limit
-		} else {i2c_poll_rate_time = 1. / i2c_poll_rate;} //poll interval in sec
-		if (i2c_adc_poll < 1){i2c_adc_poll = 1;}
-		i2c_adc_poll_loop = i2c_adc_poll;
-		i2c_poll_joystick(true);
 	#else
 		i2c_poll_rate_disable = true;
 	#endif
+
+	//initial poll
+	if (i2c_poll_rate < 1){i2c_poll_rate_disable = true; //disable pollrate limit
+	} else {i2c_poll_rate_time = 1. / i2c_poll_rate;} //poll interval in sec
+	if (i2c_adc_poll < 1){i2c_adc_poll = 1;}
+	i2c_adc_poll_loop = i2c_adc_poll;
+	i2c_poll_joystick(true);
 
 	//interrupt
 	if (irq_enable && (adc_params[0].enabled || adc_params[1].enabled || adc_params[2].enabled || adc_params[3].enabled)){print_stdout("IRQ disabled because ADC enabled\n"); irq_enable = false;}
@@ -828,14 +858,14 @@ int main(int argc, char** argv){
 	
 	#ifndef DIAG_PROGRAM
 		if (irq_enable){
-			while (!kill_resquested){ //sleep until app close requested
+			while (!kill_requested){ //sleep until app close requested
 				i2c_poll_joystick(false); //poll just in case irq missed one shot
 				shm_update(); //shm update
 				usleep((useconds_t)(shm_update_interval * 1000000));
 			}
 		} else {
 			if (!i2c_poll_rate_disable){print_stdout("pollrate: digital:%dhz, adc:%dhz\n", i2c_poll_rate, i2c_poll_rate / i2c_adc_poll);} else {print_stdout("poll speed not limited\n");}
-			while (!kill_resquested){
+			while (!kill_requested){
 				i2c_poll_joystick(false);
 
 				if (shm_clock_start < -0.1) {shm_clock_start = poll_clock_start;} //used for shm interval
@@ -843,7 +873,7 @@ int main(int argc, char** argv){
 				if (poll_clock_start - shm_clock_start > shm_update_interval){shm_update(); shm_clock_start = -1.;} //shm update
 
 				//poll rate implement
-				if (kill_resquested) break; 
+				if (kill_requested) break; 
 				//if(debug) print_stdout ("DEBUG: poll_clock_start:%lf, i2c_poll_duration:%lf\n", poll_clock_start, i2c_poll_duration);
 
 				if (!i2c_poll_rate_disable){

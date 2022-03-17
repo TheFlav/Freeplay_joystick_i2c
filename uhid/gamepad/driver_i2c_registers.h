@@ -61,5 +61,4 @@ typedef struct adc_data_struct_t { //ADC read data structure
 	int fuzz, flat_in, flat_out; //fuzz, inside/outside flat
 	int flat_in_comp, flat_out_comp; //computed recurring values
 	bool enabled, reversed, autocenter; //enabled, reverse reading, autocenter: check adc value once to set as offset
-  char name[17];
 } adc_data_t;

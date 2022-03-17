@@ -22,7 +22,6 @@
 
 #define cfg_filename "config.cfg" //configuration filename
 #define shm_path "/dev/shm/uhid_i2c_driver/" //SHM path used for temporary storage
-//#define USE_SHM_REGISTERS 1 //allow direct read/write to specific registers using files
 #define user_uid 1000 //normal "non-root" user id, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 #define user_gid 1000 //normal "non-root" group id, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 
@@ -54,7 +53,7 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc3_map 3 //adc3
 
 //adc0 defaults
-#define def_adc0_i2c_addr 0xFF //external I2C address, set to 0xFF to disable
+#define def_adc0_i2c_addr 0xFF //external I2C address, set to 0xFF to disable, "ALLOW_EXT_ADC" needs to be defined
 #define def_adc0_enabled false
 #define def_adc0_min 0 
 #define def_adc0_max 4095
@@ -65,7 +64,7 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc0_autocenter false
 
 //adc1 defaults
-#define def_adc1_i2c_addr 0xFF //external I2C address, set to 0xFF to disable
+#define def_adc1_i2c_addr 0xFF //external I2C address, set to 0xFF to disable, "ALLOW_EXT_ADC" needs to be defined
 #define def_adc1_enabled false
 #define def_adc1_min 0 
 #define def_adc1_max 4095
@@ -76,7 +75,7 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc1_autocenter false
 
 //adc2 defaults
-#define def_adc2_i2c_addr 0xFF //external I2C address, set to 0xFF to disable
+#define def_adc2_i2c_addr 0xFF //external I2C address, set to 0xFF to disable, "ALLOW_EXT_ADC" needs to be defined
 #define def_adc2_enabled false
 #define def_adc2_min 0 
 #define def_adc2_max 4095
@@ -87,7 +86,7 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc2_autocenter false
 
 //adc3 defaults
-#define def_adc3_i2c_addr 0xFF //external I2C address, set to 0xFF to disable
+#define def_adc3_i2c_addr 0xFF //external I2C address, set to 0xFF to disable, "ALLOW_EXT_ADC" needs to be defined
 #define def_adc3_enabled false
 #define def_adc3_min 0 
 #define def_adc3_max 4095
