@@ -620,7 +620,7 @@ static void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_
 
 static void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){ //main screen:0
     char buffer[buffer_size];
-    bool default_resquested = false, reset_resquested = false;
+    bool default_requested = false, reset_requested = false;
     int hint_line = tty_last_height - 6, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal;
 
     char* term_hint_main_str[]={
@@ -720,13 +720,13 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
     int term_buttons1_pad = (tty_last_width - term_footer_buttons_width * term_footer_main_btn1_count) / (term_footer_main_btn1_count + 1);
 
     term_pos_button_t term_footer_main_btn0[term_footer_main_btn0_count] = {
-        {.str="Discard", .ptrbool=&reset_resquested, .ptrhint=term_hint_main_str[0]},
-        {.str="Default", .ptrbool=&default_resquested, .ptrhint=term_hint_main_str[1]},
+        {.str="Discard", .ptrbool=&reset_requested, .ptrhint=term_hint_main_str[0]},
+        {.str="Default", .ptrbool=&default_requested, .ptrhint=term_hint_main_str[1]},
     };
 
     term_pos_button_t term_footer_main_btn1[term_footer_main_btn1_count] = {
         {.str="Save", .ptrbool=&term_go_save, .ptrhint=term_hint_generic_str[2], .disabled=i2c_failed},
-        {.str="Close", .ptrbool=&kill_resquested, .ptrhint=term_hint_generic_str[6]},
+        {.str="Close", .ptrbool=&kill_requested, .ptrhint=term_hint_generic_str[6]},
     };
 
     for (int i=0; i<term_footer_main_btn0_count; i++){
@@ -745,7 +745,7 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
     assert(select_limit <= select_max); //failsafe
 
     select_index_last = -1; //force selectible element update on first loop
-    while (!kill_resquested){
+    while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
         term_user_input(&term_input); //handle terminal user input
@@ -756,22 +756,22 @@ static void term_screen_main(int tty_line, int tty_last_width, int tty_last_heig
         if (term_go_save){term_screen_current = 2; goto funct_end;} //go to save screen requested
         if (term_go_digitaldebug){term_screen_current = 3; goto funct_end;} //go to digital debug requested
 
-        if (reset_resquested){ //restore backup requested
+        if (reset_requested){ //restore backup requested
             driver_user.bus = driver_back.bus; driver_user.addr = driver_back.addr;
             driver_user.interrupt = driver_back.interrupt; driver_user.digitalbuttons = driver_back.digitalbuttons; driver_user.dpads = driver_back.dpads;
             driver_user.debounce = driver_back.debounce;
         }
 
-        if (default_resquested){ //restore defaults requested
+        if (default_requested){ //restore defaults requested
             driver_user.bus = driver_default.bus; driver_user.addr = driver_default.addr;
             driver_user.interrupt = driver_default.interrupt; driver_user.digitalbuttons = driver_default.digitalbuttons; driver_user.dpads = driver_default.dpads;
             driver_user.debounce = driver_default.debounce;
         }
 
-        if (driver_user.bus != i2c_bus_prev || driver_user.addr != i2c_addr_prev || reset_resquested || default_resquested){ //i2c bus or address changed
+        if (driver_user.bus != i2c_bus_prev || driver_user.addr != i2c_addr_prev || reset_requested || default_requested){ //i2c bus or address changed
             i2c_bus_prev = driver_user.bus; i2c_addr_prev = driver_user.addr;
             i2c_init(&i2c_fd, driver_user.bus, driver_user.addr);
-            if (reset_resquested || default_resquested){select_index_current = 0;}
+            if (reset_requested || default_requested){select_index_current = 0;}
             term_screen_update = true; goto funct_end; //force full redraw
         }
 
@@ -795,7 +795,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
     term_pos_generic_t term_adc_raw[4] = {0}, term_adc_output[4] = {0};
     term_pos_string_t term_adc_string[4] = {0};
     bool adc_use_raw_min[4] = {0}, adc_use_raw_max[4] = {0};
-    bool default_resquested = false, reset_resquested = false, reset_raw_limits_resquested = false, term_go_mainscreen = false;
+    bool default_requested = false, reset_requested = false, reset_raw_limits_requested = false, term_go_mainscreen = false;
 
     char buffer[buffer_size], buffer1[buffer_size];
     int term_adc_pad = (tty_last_width - term_adc_width * 2) / 3; //padding between each ADC sections
@@ -899,9 +899,9 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
     #define term_footer_adc_btn_count 4
     int term_buttons_pad = (tty_last_width - term_footer_buttons_width * term_footer_adc_btn_count) / (term_footer_adc_btn_count + 1);
     term_pos_button_t term_footer_adc_btn[term_footer_adc_btn_count] = {
-        {.str="Reset limits", .ptrbool=&reset_raw_limits_resquested, .ptrhint=term_hint_adc_str[2], .disabled=i2c_failed},
-        {.str="Discard", .ptrbool=&reset_resquested, .ptrhint=term_hint_adc_str[0], .disabled=i2c_failed},
-        {.str="Default", .ptrbool=&default_resquested, .ptrhint=term_hint_adc_str[1], .disabled=i2c_failed},
+        {.str="Reset limits", .ptrbool=&reset_raw_limits_requested, .ptrhint=term_hint_adc_str[2], .disabled=i2c_failed},
+        {.str="Discard", .ptrbool=&reset_requested, .ptrhint=term_hint_adc_str[0], .disabled=i2c_failed},
+        {.str="Default", .ptrbool=&default_requested, .ptrhint=term_hint_adc_str[1], .disabled=i2c_failed},
         {.str="Back", .ptrbool=&term_go_mainscreen, .ptrhint=term_hint_generic_str[5]},
     };
     for (int i=0; i<term_footer_adc_btn_count; i++){
@@ -914,7 +914,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
     assert(select_limit <= select_max); //failsafe
 
     select_index_last = -1; //force selectible element update on first loop
-    while (!kill_resquested){
+    while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
         if (!i2c_failed){
@@ -963,12 +963,12 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
         if (term_input.escape){term_go_mainscreen = true; /*select_index_current = select_limit-1;*/} //escape key pressed, move cursor to last selectible element
         if (term_go_mainscreen){term_screen_current = 0; goto funct_end;} //return to main screen requested
 
-        if (reset_raw_limits_resquested){
+        if (reset_raw_limits_requested){
             for(int i=0; i<4; i++){adc_data[i].raw_min = INT_MAX; adc_data[i].raw_max = INT_MIN;}
             term_screen_update = true; goto funct_end; //force full redraw
         }
 
-        if (reset_resquested){ //restore backup requested
+        if (reset_requested){ //restore backup requested
             for (int i=0; i<4; i++){
                 *adc_settings[i].min = *adc_settings_back[i].min;
                 *adc_settings[i].max = *adc_settings_back[i].max;
@@ -982,7 +982,7 @@ static void term_screen_adc(int tty_line, int tty_last_width, int tty_last_heigh
             select_index_current = 0; term_screen_update = true; goto funct_end; //force full redraw
         }
 
-        if (default_resquested){ //restore defaults requested
+        if (default_requested){ //restore defaults requested
             for (int i=0; i<4; i++){
                 *adc_settings[i].min = *adc_settings_default[i].min;
                 *adc_settings[i].max = *adc_settings_default[i].max;
@@ -1064,27 +1064,27 @@ static void term_screen_save(int tty_line, int tty_last_width, int tty_last_heig
     tty_line += 2;
 
     //save to /boot/config.txt
-    bool save_boot_resquested = false; int save_boot_btn_index = select_limit;
+    bool save_boot_requested = false; int save_boot_btn_index = select_limit;
     char term_buttons_save_configtxt[12+strlen(dtoverlay_filename)]; sprintf(term_buttons_save_configtxt, " Save to %s ", dtoverlay_filename);
-    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_save_configtxt)) / 2, .y=tty_line++, .size=strlen(term_buttons_save_configtxt)}, .type=1, .value={.ptrchar=term_buttons_save_configtxt, .ptrbool=&save_boot_resquested}, .hint={.y=hint_line, .str=term_hint_save_str[7]}};
+    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_save_configtxt)) / 2, .y=tty_line++, .size=strlen(term_buttons_save_configtxt)}, .type=1, .value={.ptrchar=term_buttons_save_configtxt, .ptrbool=&save_boot_requested}, .hint={.y=hint_line, .str=term_hint_save_str[7]}};
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[2], 20)) / 2, term_esc_col_error, term_hint_save_str[2]);
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[3], 20)) / 2, term_esc_col_error, term_hint_save_str[3]);
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[4], 20)) / 2, term_esc_col_error, term_hint_save_str[4]);
     tty_line++;
 
     //save to dtoverlay.txt
-    bool save_text_resquested = false; int save_text_btn_index = select_limit;
+    bool save_text_requested = false; int save_text_btn_index = select_limit;
     char term_buttons_save_dtoverlay_txt[12+strlen(dtoverlay_text_filename)]; sprintf(term_buttons_save_dtoverlay_txt, " Save to %s ", dtoverlay_text_filename);
-    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_save_dtoverlay_txt)) / 2, .y=tty_line++, .size=strlen(term_buttons_save_dtoverlay_txt)}, .type=1, .value={.ptrchar=term_buttons_save_dtoverlay_txt, .ptrbool=&save_text_resquested}, .hint={.y=hint_line, .str=term_hint_save_str[7]}};
+    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_save_dtoverlay_txt)) / 2, .y=tty_line++, .size=strlen(term_buttons_save_dtoverlay_txt)}, .type=1, .value={.ptrchar=term_buttons_save_dtoverlay_txt, .ptrbool=&save_text_requested}, .hint={.y=hint_line, .str=term_hint_save_str[7]}};
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[6], 20)) / 2, term_esc_col_normal, term_hint_save_str[6]);
     char tmp_path[strlen(program_path) + strlen(dtoverlay_text_filename) + 5]; sprintf(tmp_path, "%s/%s", program_path, dtoverlay_text_filename); //full path to dtoverlay.txt
     tty_line += term_print_path_multiline(tmp_path, tty_line, tmp_col, tty_last_width, term_esc_col_normal) + 1; //multiline program path
 
     //save install command
-    bool save_command_resquested = false; int save_command_btn_index = select_limit;
+    bool save_command_requested = false; int save_command_btn_index = select_limit;
     char* term_buttons_save_dtoverlay_cmd = " Save dtoverlay load script ";
     if (strlen(dtoverlay_install_cmd_path)){
-        term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_save_dtoverlay_cmd)) / 2, .y=tty_line++, .size=strlen(term_buttons_save_dtoverlay_cmd)}, .type=1, .value={.ptrchar=term_buttons_save_dtoverlay_cmd, .ptrbool=&save_command_resquested}, .hint={.y=hint_line, .str=term_hint_save_str[7]}};
+        term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_buttons_save_dtoverlay_cmd)) / 2, .y=tty_line++, .size=strlen(term_buttons_save_dtoverlay_cmd)}, .type=1, .value={.ptrchar=term_buttons_save_dtoverlay_cmd, .ptrbool=&save_command_requested}, .hint={.y=hint_line, .str=term_hint_save_str[7]}};
         fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[2], 20)) / 2, term_esc_col_error, term_hint_save_str[2]);
         fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strcpy_noescape(NULL, term_hint_save_str[6], 20)) / 2, term_esc_col_normal, term_hint_save_str[6]);
         tty_line += term_print_path_multiline(dtoverlay_install_cmd_path, tty_line, tmp_col, tty_last_width, term_esc_col_normal) + 1; //multiline command path
@@ -1097,7 +1097,7 @@ static void term_screen_save(int tty_line, int tty_last_width, int tty_last_heig
     #define term_footer_save_btn_count 2
     int term_buttons_pad = (tty_last_width - term_footer_buttons_width * term_footer_save_btn_count) / (term_footer_save_btn_count + 1);
     term_pos_button_t term_footer_save_btn[term_footer_save_btn_count] = {
-        {.str="Close", .ptrbool=&kill_resquested, .ptrhint=term_hint_generic_str[7]},
+        {.str="Close", .ptrbool=&kill_requested, .ptrhint=term_hint_generic_str[7]},
         {.str="Back", .ptrbool=&term_go_mainscreen, .ptrhint=term_hint_generic_str[5]},
     };
     for (int i=0; i<term_footer_save_btn_count; i++){
@@ -1109,7 +1109,7 @@ static void term_screen_save(int tty_line, int tty_last_width, int tty_last_heig
     if (debug){fprintf(stdout, "\e[1;%dH\e[100mselect_limit:%d\e[0m", tty_last_width-17, select_limit);}
     assert(select_limit <= select_max); //failsafe
 
-    while (!kill_resquested){
+    while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
         term_user_input(&term_input); //handle terminal user input
@@ -1118,17 +1118,17 @@ static void term_screen_save(int tty_line, int tty_last_width, int tty_last_heig
         if (term_input.escape){term_go_mainscreen = true; /*select_index_current = select_limit-1;*/} //escape key pressed, move cursor to last selectible element
         if (term_go_mainscreen){term_screen_current = 0; goto funct_end;} //return to main screen requested
 
-        if (save_boot_resquested || save_text_resquested || save_command_resquested){
+        if (save_boot_requested || save_text_requested || save_command_requested){
             bool debug_back = debug; debug = false; int ret = -1, button_index = 0;
 
-            if (save_boot_resquested){
+            if (save_boot_requested){
                 ret = dtoverlay_save(dtoverlay_filename, dtoverlay_name, dtoverlay_store, dtoverlay_store_size);
-                button_index = save_boot_btn_index; save_boot_resquested = false;
-            } else if (save_text_resquested){
+                button_index = save_boot_btn_index; save_boot_requested = false;
+            } else if (save_text_requested){
                 char tmppath[strlen(program_path)+strlen(dtoverlay_text_filename)+3]; sprintf(tmppath, "%s/%s", program_path, dtoverlay_text_filename);
                 ret = dtoverlay_save(tmppath, dtoverlay_name, dtoverlay_store, dtoverlay_store_size);
-                button_index = save_text_btn_index; save_text_resquested = false;
-            } else { //save_command_resquested, save load command script
+                button_index = save_text_btn_index; save_text_requested = false;
+            } else { //save_command_requested, save load command script
                 unsigned int uid = getuid(), gid = getgid(), mode = 0744;
                 struct stat file_stat = {0}, file_back_stat = {0};
                 if (stat(dtoverlay_install_cmd_path, &file_stat) == 0){ //get original file rights and owner, rename existing file
@@ -1150,13 +1150,13 @@ static void term_screen_save(int tty_line, int tty_last_width, int tty_last_heig
                     if (ret > 0){ret=0;} //valid
                 }
 
-                button_index = save_command_btn_index; save_command_resquested = false;
+                button_index = save_command_btn_index; save_command_requested = false;
             }
 
             char* save_hint_ptr = term_hint_save_str[0]; int tmp_esc_col = term_esc_col_success;
             if (ret != 0){save_hint_ptr = term_hint_save_str[1]; tmp_esc_col = term_esc_col_error;} //failed
             fprintf(stdout, "\e[%d;%dH\e[2K\e[%dm%s\e[0m", hint_line-2, (tty_last_width - strcpy_noescape(NULL, save_hint_ptr, 20)) / 2, tmp_esc_col, save_hint_ptr);
-            term_select[button_index].disabled = true; save_boot_resquested = false; debug = debug_back; select_index_current++;
+            term_select[button_index].disabled = true; save_boot_requested = false; debug = debug_back; select_index_current++;
         }
 
         fprintf(stdout, "\e[%d;0H\n", tty_last_height-1); //force tty update
@@ -1235,7 +1235,7 @@ static void term_screen_digitaldebug(int tty_line, int tty_last_width, int tty_l
     if (debug){fprintf(stdout, "\e[1;%dH\e[100mselect_limit:%d\e[0m", tty_last_width-17, select_limit);}
     assert(select_limit <= select_max); //failsafe
 
-    while (!kill_resquested){
+    while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
         term_user_input(&term_input); //handle terminal user input
@@ -1284,7 +1284,7 @@ static void term_screen_digitaldebug(int tty_line, int tty_last_width, int tty_l
 static void tty_signal_handler(int sig){ //signal handle func
 	if (debug){print_stderr("DEBUG: signal received: %d\n", sig);}
     if (term_backup.c_cflag){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
-	kill_resquested = true;
+	kill_requested = true;
 }
 
 static void program_usage(char* program){ //program usage, obviously
