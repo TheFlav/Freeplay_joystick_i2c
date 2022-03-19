@@ -114,7 +114,7 @@ int term_adc_vertspacing = 9; //vertical spacing between each horizontal ADC ele
 
 int select_index_current = 0, select_index_last = -1; //current element selected, last selected
 
-int term_screen_current = 4, term_screen_last = -1; //start "screen", last screen
+int term_screen_current = 0, term_screen_last = -1; //start "screen", last screen
 int term_screen_update = false; //"screen" require update
 
 void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_screen_adc, term_screen_digital, term_screen_save, term_screen_advanced}; //pointer to screen functions
@@ -140,6 +140,7 @@ extern struct termios term_backup; //original terminal state backup
 extern bool debug, debug_adv;  //enable debug output
 extern const char dev_webpage[]; //developer webpage
 extern char* js_axis_names[]; //joystick axis names, virtually start at index -1
+extern char config_path[]; //full path to config file
 
 //i2c
 bool i2c_bus_failed = false; //bus failure

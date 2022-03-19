@@ -159,7 +159,7 @@ static void term_user_input(term_input_t* input){ //process terminal key inputs
                 }
             } else {if(debug){strcpy(last_key, "ESC");} input->escape = true;} //esc key
         } else if (debug){sprintf(last_key, "'%c'(%d), no used", term_read_char, term_read_char);} //debug
-        tcflush(STDIN_FILENO, TCIOFLUSH); //flush STDIN, useful?
+        tcflush(STDIN_FILENO, TCIFLUSH); //flush STDIN, useful?
         if (debug){fprintf(stdout, "\e[1;25H\e[0K\e[100mDEBUG last key: %s\e[0m\n", last_key);} //print last char to STDIN if debug
     }
 }
@@ -295,6 +295,9 @@ int program_diag_mode(){ //main diag function
     fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
     ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); int tty_last_width = ws.ws_col, tty_last_height = ws.ws_row, tty_start_line = 2; //tty size
     fprintf(stdout, "\e[?25l\e[2J"); //hide cursor, reset tty
+
+    int_constrain(&term_screen_current, 0, ((sizeof term_screen_funct_ptr)/sizeof (void*)) - 1); //avoid screen index overflow
+
     if (debug){fprintf(stdout, "\e[1;1H\e[100mtty:%dx%d, screen:%d\e[0m", tty_last_width, tty_last_height, term_screen_current);} //print tty size, 640x480 is 80cols by 30rows
 
     select_index_last = -1; //reset selectible
@@ -453,10 +456,8 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
 
     //advanced configuration
     #ifdef ALLOW_MCU_SEC
-        term_pos_button_t term_advanced_button[] = {
-            {.str=" Advanced Configuration ", .ptrbool=&term_go_screen_advanced, .ptrhint="Warning: Allow to mess with MCU internal settings", .disabled=(mcu_fd_sec<0)},
-        };
-        term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_advanced_button[0].str))/2, .y=tty_line, .size=term_footer_buttons_width}, .type=1, .disabled=term_advanced_button[0].disabled, .value={.ptrchar=term_advanced_button[0].str, .ptrbool=term_advanced_button[0].ptrbool}, .hint={.y=hint_line, .str=term_advanced_button[0].ptrhint}};
+        term_pos_button_t term_advanced_button = {.str=" Advanced Configuration ", .ptrbool=&term_go_screen_advanced, .ptrhint="Warning: Allow to mess with MCU internal settings", .disabled=(mcu_fd_sec<0)};
+        term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_advanced_button.str))/2, .y=tty_line, .size=strlen(term_advanced_button.str)}, .type=1, .disabled=term_advanced_button.disabled, .value={.ptrchar=term_advanced_button.str, .ptrbool=term_advanced_button.ptrbool}, .hint={.y=hint_line, .str=term_advanced_button.ptrhint}};
     #endif
 
     i2c_failed_jump:; //jump point for i2c failure
@@ -467,7 +468,7 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
     //footer buttons
     bool reset_requested = false, default_requested = false, save_requested = false;
     term_pos_button_t term_footer_buttons[] = {
-        {.str="Discard", .ptrbool=&reset_requested, .ptrhint="Discard any unsaved modifications"},
+        {.str="Discard", .ptrbool=&reset_requested, .ptrhint="Reload configuration, unsaved data will be lost"},
         {.str="Default", .ptrbool=&default_requested, .ptrhint="Reset values to default (excl. Analog Configuration)"},
         {.str="Save", .ptrbool=&save_requested, .ptrhint="Save new configuration", .disabled=i2c_failed},
         {.str="Close", .ptrbool=&kill_requested, .ptrhint="Close without saving"},
@@ -704,7 +705,7 @@ void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
 void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
     char buffer[buffer_size], buffer1[buffer_size], buffer2[buffer_size];
     int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal;
-    bool term_go_screen_main = false, i2c_update = false;
+    bool term_go_screen_main = false;
 
     const int select_max = 255; //TODO proper count
     term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
@@ -717,9 +718,9 @@ void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
     tty_line += 2;
 
     //debounce
-    int digital_debounce_default = def_digital_debounce;
+    int digital_debounce_default = def_digital_debounce, digital_debounce_back = digital_debounce;
     fprintf(stdout, "\e[%d;%dH\e[%dmDebounce:__ (filter digital inputs to mitigate false contacts, 0 to disable)\e[0m", tty_line, tmp_col, term_esc_col_normal);
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+9, .y=tty_line, .size=2}, .type=0, .value={.min=0, .max=7, .ptrint=&digital_debounce, .ptrbool=&i2c_update}, .defval={.ptrint=&digital_debounce_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+9, .y=tty_line, .size=2}, .type=0, .value={.min=0, .max=7, .ptrint=&digital_debounce}, .defval={.ptrint=&digital_debounce_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
     tty_line += 2;
 
     //input registers content
@@ -785,19 +786,23 @@ void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
 
         if (term_go_screen_main || term_input.escape){term_screen_current = 0; goto funct_end;} //escape key pressed, go back to main menu
-        if (i2c_update){term_screen_update = true; goto funct_end;} //value update
 
         //update input registers state
         int ret = i2c_smbus_read_i2c_block_data(mcu_fd, 0, input_registers_count, (uint8_t *)&i2c_joystick_registers);
         if (ret >= 0){
             uint32_t inputs = (i2c_joystick_registers.input2 << 16) + (i2c_joystick_registers.input1 << 8) + i2c_joystick_registers.input0;
-
             for (int i=0; i<input_registers_size; i++){
                 int tmpcol_bg = 100, tmpcol_txt = 97, tmpcol_style = 0, tmpcol_enable = 49;
                 if (term_input_pos[i].w){tmpcol_enable = 42;} //valid button
                 if (~(inputs >> i) & 0b1){tmpcol_bg = 47; tmpcol_txt = 30; tmpcol_style = 1 ;} //current input "high"
                 fprintf(stdout, "\e[%d;%dH\e[%dm \e[0m\e[%d;%d;%dm%s\e[0m", term_input_pos[i].y, term_input_pos[i].x, tmpcol_enable, tmpcol_style, tmpcol_txt, tmpcol_bg, term_input_pos[i].str);
             }
+        }
+
+        //update debounce value
+        if (digital_debounce != digital_debounce_back){
+            mcu_update_config0();
+            digital_debounce_back = digital_debounce;
         }
 
         fprintf(stdout, "\e[%d;0H\n", tty_last_height-1); //force tty update
@@ -817,8 +822,24 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
     term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
     int select_limit = 0;
 
-    char* screen_name = "Save current settings TODO";
+    char config_path_backup[strlen(config_path)+11]; sprintf(config_path_backup, "%s.bak.fpjs", config_path); //build config file backup fullpath
+    bool save_requested = false;
+
+    char* screen_name = "Save current settings";
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line, (tty_last_width - strlen(screen_name))/2, term_esc_col_normal, screen_name);
+    tty_line += 2;
+
+    fprintf(stdout, "\e[%d;%dH\e[%d;4mNotes:\e[0m", tty_line++, tmp_col, term_esc_col_normal);
+    fprintf(stdout, "\e[%d;%dH\e[%dm- Any user added comment in config file will be discarded.\e[0m", tty_line++, tmp_col, term_esc_col_normal);
+    fprintf(stdout, "\e[%d;%dH\e[%dm- Configuration file backup will be created with .bak.fpjs extension\e[0m", tty_line, tmp_col, term_esc_col_normal);
+    tty_line += 2;
+
+    fprintf(stdout, "\e[%d;%dH\e[%d;4mCurrent configuration file:\e[0m", tty_line++, tmp_col, term_esc_col_normal);
+    tty_line += term_print_path_multiline(config_path, tty_line, tmp_col, tty_last_width, term_esc_col_normal) + 2; //multiline path
+
+    //save button
+    term_pos_button_t term_save_button = {.str=" Save new configuration ", .ptrbool=&save_requested};
+    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_save_button.str))/2, .y=tty_line, .size=strlen(term_save_button.str)}, .type=1, .value={.ptrchar=term_save_button.str, .ptrbool=term_save_button.ptrbool}};
 
     //footer
     fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[0], 20)) / 2, term_hint_nav_str[0]); //nav hint
@@ -845,6 +866,37 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
 
         if (term_go_screen_main || term_input.escape){term_screen_current = 0; goto funct_end;} //escape key pressed, go back to main menu
+
+        if (save_requested){
+            fprintf(stdout, "\e[0;0H\e[2J\n"); tty_line = 2; //reset tty
+            fprintf(stdout, "\e[%d;%dH\e[%d;4mSaving new configuration file:\e[0m\n", tty_line, tmp_col, term_esc_col_normal);
+            tty_line += 2;
+
+            bool backup_removed = true;
+            struct stat file_stat = {0};
+            if (stat(config_path_backup, &file_stat) == 0){ //delete existing backup
+                if (remove(config_path_backup) != 0){
+                    fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to remove backup file.\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line++, tmp_col, term_esc_col_error, tty_line++, tmp_col, errno);
+                    backup_removed = false;
+                } else {fprintf(stdout, "\e[%d;%dH\e[%dm> Backup file removed.\e[0m\n", tty_line++, tmp_col, term_esc_col_success);}
+            }
+
+            if (backup_removed && stat(config_path, &file_stat) == 0){ //backup
+                if (rename(config_path, config_path_backup) != 0){fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to backup existing configuration file.\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line++, tmp_col, term_esc_col_error, tty_line++, tmp_col, errno);
+                } else {fprintf(stdout, "\e[%d;%dH\e[%dm> Existing configuration file has been backed up.\e[0m\n", tty_line++, tmp_col, term_esc_col_success);}
+            }
+
+            if (config_save(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, false) != 0){fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to save new configuration file.\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line++, tmp_col, term_esc_col_error, tty_line++, tmp_col, errno);
+            } else {fprintf(stdout, "\e[%d;%dH\e[%dm> Configuration file saved successfully.\e[0m\n", tty_line++, tmp_col, term_esc_col_success);}
+
+            fprintf(stdout, "\e[%d;%dH%s\e[%d;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
+            
+            fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK); //set stdin to blocking
+            tcflush(STDIN_FILENO, TCIFLUSH); //flush stdin
+            fgetc(stdin); //wait user to press any key
+            fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
+            term_screen_update = true; goto funct_end; //force update screen
+        }
 
         fprintf(stdout, "\e[%d;0H\n", tty_last_height-1); //force tty update
         usleep (1000000/30); //limit to 30hz max to limit risk of i2c colision if driver is running
@@ -899,8 +951,8 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
         //tty_line++;
 
         int term_mcu_update_button_index = select_limit;
-        term_pos_button_t term_mcu_update_button[] = {{.str=" Update MCU address ", .ptrhint="\e[91mWell, you've been warned"}};
-        term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=term_footer_buttons_width}, .type=1, .disabled=true, .value={.ptrchar=term_mcu_update_button[0].str, .ptrbool=&mcu_update, .force_update=true}, .hint={.y=hint_line, .str=term_mcu_update_button[0].ptrhint}};
+        term_pos_button_t term_mcu_update_button = {.str=" Update MCU address ", .ptrhint="\e[91mWell, you've been warned"};
+        term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=strlen(term_mcu_update_button.str)}, .type=1, .disabled=true, .value={.ptrchar=term_mcu_update_button.str, .ptrbool=&mcu_update, .force_update=true}, .hint={.y=hint_line, .str=term_mcu_update_button.ptrhint}};
         tty_line+=2;
 
         //backlight
@@ -996,10 +1048,11 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
                         }
                     }
                     
+                    usleep (1000000/2); //wait half a sec
                     fprintf(stdout, "\e[%d;%dH%s\e[%d;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
                     
                     fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK); //set stdin to blocking
-                    tcflush(STDIN_FILENO, TCIOFLUSH); //flush stdin
+                    tcflush(STDIN_FILENO, TCIFLUSH); //flush stdin
                     fgetc(stdin); //wait user to press any key
                     fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
                     term_screen_update = true; goto funct_end; //force update screen

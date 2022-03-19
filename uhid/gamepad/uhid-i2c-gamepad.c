@@ -777,9 +777,9 @@ int main(int argc, char** argv){
 	//program arguments parse
 	for(int i=1; i<argc; ++i){
 		#ifndef DIAG_PROGRAM
-			if (strcmp(argv[i],"-configreset") == 0){return config_save(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid, true); //reset config file
+			if (strcmp(argv[i],"-configreset") == 0){return config_save(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true); //reset config file
 			} else if (strcmp(argv[i],"-configset") == 0){ //set custom config var
-				if (++i<argc){return config_set(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid, true, argv[i]);
+				if (++i<argc){return config_set(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true, argv[i]);
 				} else {
 					print_stderr("FATAL: -configset defined with invalid argument, format: -configset VAR=VALUE\n");
 					print_stderr("Run program with -h or -help for usage\n");
@@ -792,7 +792,7 @@ int main(int argc, char** argv){
 		#endif
 	}
 	
-	config_parse(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid); //parse config file, create if needed
+	config_parse(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid); //parse config file, create if needed
 	shm_init(true); //init shm path and files
 
 	//tty signal handling

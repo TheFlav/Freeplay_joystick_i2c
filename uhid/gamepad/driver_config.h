@@ -22,7 +22,7 @@
 
 #define cfg_filename "config.cfg" //configuration filename
 #define cfg_mcu_addr_name "mcu_address" //MCU main I2C address field name into config file
-#define cfg_mcu_addr_sec_name "mcu_address_sec" //MCU secondary I2C address field name into config file
+#define cfg_mcu_addr_sec_name "mcu_address_sec" //MCU secondary I2C address field name into config file, "ALLOW_MCU_SEC" needs to be defined in compilation command line
 
 #define shm_path "/dev/shm/uhid_i2c_driver/" //SHM path used for temporary storage
 #define user_uid 1000 //normal "non-root" user id, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
