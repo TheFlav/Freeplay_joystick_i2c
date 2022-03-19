@@ -78,7 +78,7 @@ void term_screen_main(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_h
 void term_screen_adc(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 void term_screen_digital(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 void term_screen_save(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
-void term_screen_advanced(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
+void term_screen_advanced(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //"ALLOW_MCU_SEC" needs to be defined in compilation command line
 
 //extern funct
 extern void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
@@ -92,6 +92,7 @@ extern void i2c_close_all(void); //close all I2C file
 
 extern int mcu_check_manufacturer(void); //check device manufacturer, fill signature,id,version, return 0 on success, -1 on wrong manufacturer, -2 on i2c error
 extern int mcu_update_config0(void); //read/update config0 register, return 0 on success, -1 on error
+extern int mcu_update_register(int* /*fd*/, uint8_t /*reg*/, uint8_t /*value*/, bool /*check*/); //update and check register, return 0 on success, -1 on error
 extern int init_adc(void); //init adc data, return 0 on success, -1 on resolution read fail, -2 on adc conf
 extern void uhid_joystick_swap(void); //uhid joystick/axis swap
 
@@ -113,7 +114,7 @@ int term_adc_vertspacing = 9; //vertical spacing between each horizontal ADC ele
 
 int select_index_current = 0, select_index_last = -1; //current element selected, last selected
 
-int term_screen_current = 2, term_screen_last = -1; //start "screen", last screen
+int term_screen_current = 4, term_screen_last = -1; //start "screen", last screen
 int term_screen_update = false; //"screen" require update
 
 void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_screen_adc, term_screen_digital, term_screen_save, term_screen_advanced}; //pointer to screen functions
@@ -124,6 +125,8 @@ term_input_t term_input = {0}; //contain user inputs
 char* term_hint_nav_str[]={
     "\e[1m[TAB]\e[0m,\e[1m[UP]\e[0m,\e[1m[DOWN]\e[0m to navigate",
     "\e[1m[LEFT]\e[0m,\e[1m[RIGHT]\e[0m to change value, \e[1m[-]\e[0m,\e[1m[+]\e[0m for plus/minus 50",
+    "\e[1m[ENTER]\e[0m to toogle",
+    "\e[1mPress any key to continue\e[0m",
 };
 
 char* buttons_dpad_names[] = {"Dpad_UP", "Dpad_DOWN", "Dpad_LEFT", "Dpad_RIGHT"};
@@ -135,38 +138,56 @@ char* buttons_misc_names[uhid_buttons_misc_count] = {"BTN_0","BTN_1","BTN_2","BT
 extern bool kill_requested; //allow clean close
 extern struct termios term_backup; //original terminal state backup
 extern bool debug, debug_adv;  //enable debug output
-
+extern const char dev_webpage[]; //developer webpage
 extern char* js_axis_names[]; //joystick axis names, virtually start at index -1
-
 
 //i2c
 bool i2c_bus_failed = false; //bus failure
-int i2c_bus_err = 121, i2c_main_err = 121, i2c_sec_err = 121; //backup detected i2c errors
-
-extern int i2c_fd, i2c_fd_sec; //mcu i2c fd
-extern bool i2c_adc_fd_valid[]; //are external fd valid
-extern int i2c_bus, i2c_addr, i2c_addr_sec; //I2C bus, mcu main/sec address
-int i2c_bus_back = -1, i2c_addr_back = -1, i2c_addr_sec_back = -1;
-
+int i2c_bus_err = 121, i2c_main_err = 121; //backup detected i2c errors
+extern int mcu_fd; //mcu i2c fd
+extern bool adc_fd_valid[]; //are external fd valid
+extern int i2c_bus, mcu_addr; //I2C bus, mcu main/sec address
+int i2c_bus_back = -1, mcu_addr_back = -1;
 extern int i2c_poll_rate, i2c_adc_poll; //Driver pollrate in hz. Poll adc every given poll loops. <=1 for every loop, 2 to poll every 2 poll loop and so on
 
-extern struct i2c_joystick_register_struct i2c_joystick_registers;
-extern struct i2c_secondary_address_register_struct i2c_secondary_registers;
-
+//i2c sec
+#ifdef ALLOW_MCU_SEC
+    int i2c_sec_err = 121; //backup detected i2c errors
+    extern int mcu_fd_sec; //mcu i2c fd
+    extern int mcu_addr_sec; //mcu sec address
+    int mcu_addr_sec_back = -1;
+#endif
 
 //mcu
-extern uint8_t i2c_dev_sig, i2c_dev_id, i2c_dev_minor; //device device signature, id, version
+extern struct i2c_joystick_register_struct i2c_joystick_registers;
+extern uint8_t mcu_signature, mcu_id, mcu_version; //device device signature, id, version
 extern int digital_debounce; //debounce filtering to mitigate possible pad false contact, default:5, max:7, 0 to disable
 extern bool mcu_adc_enabled[]; //adc enabled on mcu, set during runtime
+
+#ifdef ALLOW_MCU_SEC
+    extern struct i2c_secondary_address_register_struct i2c_secondary_registers;
+    extern uint8_t mcu_sec_register_backlight; //defined at runtime, based on i2c_secondary_registers, config_backlight
+    extern uint8_t mcu_sec_register_backlight_max; //defined at runtime, based on i2c_secondary_registers, backlight_max
+    extern uint8_t mcu_sec_register_write_protect; //defined at runtime, based on i2c_secondary_registers, write_protect
+    extern uint8_t mcu_sec_register_joystick_i2c_addr; //defined at runtime, based on i2c_secondary_registers, joystick_i2c_addr
+    extern uint8_t mcu_sec_register_secondary_i2c_addr; //defined at runtime, based on i2c_secondary_registers, secondary_i2c_addr
+    extern int mcu_backlight; //current backlight level, set during runtime
+    extern int mcu_backlight_steps; //maximum amount of backlight steps, set during runtime
+#endif
 
 //adc
 extern int adc_map[]; //adc to joystick maps for uhid report
 
 #ifdef ALLOW_EXT_ADC 
-    extern int i2c_addr_adc[]; //external address
-    extern int i2c_adc_fd[]; //external fd
-    int i2c_addr_adc_back[] = {-1, -1, -1, -1}; //external address backup
-    int i2c_adc_err[] = {121, 121, 121, 121}; //backup external detected i2c errors
+    extern int adc_addr[]; //external address
+    extern int adc_type[];
+    int adc_type_default[] = {def_adc0_type, def_adc1_type, def_adc2_type, def_adc3_type};
+    extern int adc_type_count;
+    extern int adc_fd[]; //external fd
+    int adc_addr_back[] = {-1, -1, -1, -1}; //external address backup
+    int adc_err[] = {121, 121, 121, 121}; //backup external detected i2c errors
+	extern int adc_init_err[]; //0:ok, -1:failed to init
+    char* adc_init_err_str[] = {"init ok", "not enabled", "init failed", "not implemented"};
 #endif
 
 extern adc_data_t adc_params[];

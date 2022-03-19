@@ -2,6 +2,7 @@
 * NNS configuration file handler
 */
 
+#include "driver_debug_print.h"
 #include "nns_config.h"
 
 int config_sum (cfg_vars_t* cfg, unsigned int cfg_size){ //pseudo checksum for config build

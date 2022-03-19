@@ -17,10 +17,13 @@
 
 #define i2c_ignore_busy true //allow i2c running on busy address
 #define def_i2c_bus 1 //I2C bus
-#define def_i2c_addr 0x30 //main MCU I2C address
-#define def_i2c_addr_sec 0x40 //secondary MCU I2C address
+#define def_mcu_addr 0x30 //main MCU I2C address
+#define def_mcu_addr_sec 0x40 //secondary MCU I2C address, "ALLOW_MCU_SEC" needs to be defined in compilation command line
 
 #define cfg_filename "config.cfg" //configuration filename
+#define cfg_mcu_addr_name "mcu_address" //MCU main I2C address field name into config file
+#define cfg_mcu_addr_sec_name "mcu_address_sec" //MCU secondary I2C address field name into config file
+
 #define shm_path "/dev/shm/uhid_i2c_driver/" //SHM path used for temporary storage
 #define user_uid 1000 //normal "non-root" user id, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 #define user_gid 1000 //normal "non-root" group id, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
@@ -31,7 +34,7 @@
 #define def_i2c_poll_rate 125 //Driver pollrate in hz, set to 0 to allow full throttle update
 #define def_i2c_adc_poll 1 //poll adc every given poll loops. <=1 for every loop, 2 to poll every 2 poll loop and so on
 
-#define i2c_dev_manuf 0xED //MCU manufacturer signature, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
+#define mcu_manuf 0xED //MCU manufacturer signature, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 #define input_registers_count 3 //amount of registers dedicated to digital inputs, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 #define input_registers_size input_registers_count*8 //full size of input registers, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 
@@ -53,7 +56,8 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc3_map 3 //adc3
 
 //adc0 defaults
-#define def_adc0_i2c_addr 0xFF //external I2C address, set to 0xFF to disable, "ALLOW_EXT_ADC" needs to be defined
+#define def_adc0_addr 0xFF //PREIMPLEMENT external I2C address, set to 0xFF to disable, "ALLOW_EXT_ADC" needs to be defined in compilation command line
+#define def_adc0_type 0 //PREIMPLEMENT external adc type identifier
 #define def_adc0_enabled false
 #define def_adc0_min 0 
 #define def_adc0_max 4095
@@ -64,7 +68,8 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc0_autocenter false
 
 //adc1 defaults
-#define def_adc1_i2c_addr 0xFF //external I2C address, set to 0xFF to disable, "ALLOW_EXT_ADC" needs to be defined
+#define def_adc1_addr 0xFF //PREIMPLEMENT external I2C address, set to 0xFF to disable, "ALLOW_EXT_ADC" needs to be defined in compilation command line
+#define def_adc1_type 0 //PREIMPLEMENT external adc type identifier
 #define def_adc1_enabled false
 #define def_adc1_min 0 
 #define def_adc1_max 4095
@@ -75,7 +80,8 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc1_autocenter false
 
 //adc2 defaults
-#define def_adc2_i2c_addr 0xFF //external I2C address, set to 0xFF to disable, "ALLOW_EXT_ADC" needs to be defined
+#define def_adc2_addr 0xFF //PREIMPLEMENT external I2C address, set to 0xFF to disable, "ALLOW_EXT_ADC" needs to be defined in compilation command line
+#define def_adc2_type 0 //PREIMPLEMENT external adc type identifier
 #define def_adc2_enabled false
 #define def_adc2_min 0 
 #define def_adc2_max 4095
@@ -86,7 +92,8 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc2_autocenter false
 
 //adc3 defaults
-#define def_adc3_i2c_addr 0xFF //external I2C address, set to 0xFF to disable, "ALLOW_EXT_ADC" needs to be defined
+#define def_adc3_addr 0xFF //PREIMPLEMENT external I2C address, set to 0xFF to disable, "ALLOW_EXT_ADC" needs to be defined in compilation command line
+#define def_adc3_type 0 //PREIMPLEMENT external adc type identifier
 #define def_adc3_enabled false
 #define def_adc3_min 0 
 #define def_adc3_max 4095

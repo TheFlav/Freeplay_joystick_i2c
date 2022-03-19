@@ -6,6 +6,7 @@
 #pragma once
 
 const char programversion[] = "0.1c"; //program version
+const char dev_webpage[] = "https://github.com/TheFlav/Freeplay_joystick_i2c";
 
 //Prototypes
 double get_time_double (void); //get time in double (seconds)
@@ -32,6 +33,7 @@ void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to
 //static void debug_print_binary_int_term (int /*line*/, int /*col*/, int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format at given term position
 
 int mcu_check_manufacturer(void); //check device manufacturer, fill signature,id,version, return 0 on success, -1 on wrong manufacturer, -2 on i2c error
+int mcu_update_register(int* /*fd*/, uint8_t /*reg*/, uint8_t /*value*/, bool /*check*/); //update and check register, return 0 on success, -1 on error
 int mcu_update_config0(void); //read/update config0 register, return 0 on success, -1 on error
 int init_adc(void); //init adc data, return 0 on success, -1 on resolution read fail, -2 on adc conf
 
@@ -46,11 +48,17 @@ int init_adc(void); //init adc data, return 0 on success, -1 on resolution read 
 	#ifdef USE_SHM_REGISTERS
 		static int file_read (char* /*path*/, char* /*bufferptr*/, int /*buffersize*/); //read file
 	#endif
+	#define diag_mode false
 #else
 	extern int program_diag_mode(void); //main diag mode function
 	#undef USE_WIRINGPI_IRQ
 	#undef USE_PIGPIO_IRQ
 	#undef USE_SHM_REGISTERS
+	#define diag_mode true
+#endif
+
+#ifndef ALLOW_MCU_SEC
+	#undef USE_SHM_REGISTERS //can't use shm register "bridge" with MCU secondary feature
 #endif
 
 #ifdef USE_PIGPIO_IRQ
@@ -59,14 +67,14 @@ static void gpio_callback(int /*gpio*/, int /*level*/, uint32_t /*tick*/);
 static void mcu_irq_handler(void);
 #endif
 
-//IRQ
-bool irq_enable = true; //is set during runtime, do not edit
-int irq_gpio = def_irq_gpio; //gpio pin used for IRQ, limited to 31 for pigpio, set to -1 to disable
-
 //debug
 bool debug = def_debug; //enable debug output
 bool debug_adv = def_debug_adv; //enable advanced debug output, benchmark
 bool i2c_disabled = false, uhid_disabled = false;
+
+//IRQ
+bool irq_enable = true; //is set during runtime, do not edit
+int irq_gpio = def_irq_gpio; //gpio pin used for IRQ, limited to 31 for pigpio, set to -1 to disable
 
 //Program related
 char program_path[PATH_MAX] = {'\0'}; //full path to this program
@@ -93,33 +101,49 @@ char* js_axis_names[5] = {"none", "X1", "Y1", "X2", "Y2"}; //joystick axis names
 
 //I2C related
 int i2c_bus = def_i2c_bus; //I2C bus
-int i2c_addr = def_i2c_addr; //main MCU I2C address
-int i2c_addr_sec = def_i2c_addr_sec; //secondary MCU I2C address
-int i2c_fd = -1, i2c_fd_sec = -1;
+int mcu_addr = def_mcu_addr; //main MCU I2C address
+int mcu_fd = -1;
 #ifdef ALLOW_EXT_ADC
-	int i2c_addr_adc[] = {def_adc0_i2c_addr, def_adc1_i2c_addr, def_adc2_i2c_addr, def_adc3_i2c_addr}; //external ADC I2C address, set to 0xFF to disable
-	int i2c_adc_fd[] = {-1, -1, -1, -1};
+	int adc_addr[] = {def_adc0_addr, def_adc1_addr, def_adc2_addr, def_adc3_addr}; //external ADC I2C address, set to 0xFF to disable
+	int adc_type[] = {def_adc0_type, def_adc1_type, def_adc2_type, def_adc3_type};
+	int adc_type_count = 1; //computed during runtime
+	int adc_fd[] = {-1, -1, -1, -1};
+	int adc_init_err[] = {-1, -1, -1, -1}; //0:ok, -1:adc not enabled ,-2:failed to init
 #endif
-bool i2c_adc_fd_valid[4] = {0};
+bool adc_fd_valid[4] = {0};
 const int i2c_errors_report = 10; //error count before report to tty
 int i2c_errors_count = 0; //errors count that happen in a row
 int i2c_last_error = 0; //last detected error
 unsigned long i2c_allerrors_count = 0;
 
+uint8_t mcu_signature = 0, mcu_id=0, mcu_version=0; //device device signature, id, version
 struct i2c_joystick_register_struct i2c_joystick_registers;
-struct i2c_secondary_address_register_struct i2c_secondary_registers;
+const uint8_t mcu_i2c_register_adc0 = offsetof(struct i2c_joystick_register_struct, a0_msb) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, a0_msb
+const uint8_t mcu_i2c_register_adc2 = offsetof(struct i2c_joystick_register_struct, a2_msb) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, a2_msb
+const uint8_t mcu_i2c_register_adc_conf = offsetof(struct i2c_joystick_register_struct, adc_conf_bits) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, adc_conf_bits
+const uint8_t mcu_i2c_register_adc_res = offsetof(struct i2c_joystick_register_struct, adc_res) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, adc_res
+const uint8_t mcu_i2c_register_config0 = offsetof(struct i2c_joystick_register_struct, config0) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, config0
 
-uint8_t i2c_dev_sig = 0, i2c_dev_id=0, i2c_dev_minor=0; //device device signature, id, version
-uint8_t i2c_mcu_register_adc0 = offsetof(struct i2c_joystick_register_struct, a0_msb) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, a0_msb
-uint8_t i2c_mcu_register_adc2 = offsetof(struct i2c_joystick_register_struct, a2_msb) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, a2_msb
-uint8_t i2c_mcu_register_adc_conf = offsetof(struct i2c_joystick_register_struct, adc_conf_bits) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, adc_conf_bits
-uint8_t i2c_mcu_register_adc_res = offsetof(struct i2c_joystick_register_struct, adc_res) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, adc_res
-uint8_t i2c_mcu_register_config0 = offsetof(struct i2c_joystick_register_struct, config0) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, config0
+//I2C secondary related
+#ifdef ALLOW_MCU_SEC
+	int mcu_addr_sec = def_mcu_addr_sec; //secondary MCU I2C address
+	int mcu_fd_sec = -1;
+	struct i2c_secondary_address_register_struct i2c_secondary_registers;
+	const uint8_t mcu_sec_register_backlight = offsetof(struct i2c_secondary_address_register_struct, config_backlight) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, config_backlight
+	const uint8_t mcu_sec_register_backlight_max = offsetof(struct i2c_secondary_address_register_struct, backlight_max) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, backlight_max
+	const uint8_t mcu_sec_register_write_protect = offsetof(struct i2c_secondary_address_register_struct, write_protect) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, write_protect
+	const uint8_t mcu_sec_register_joystick_i2c_addr = offsetof(struct i2c_secondary_address_register_struct, joystick_i2c_addr) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, joystick_i2c_addr
+	const uint8_t mcu_sec_register_secondary_i2c_addr = offsetof(struct i2c_secondary_address_register_struct, secondary_i2c_addr) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, secondary_i2c_addr
+#endif
 
 //MCU config
 int digital_debounce = def_digital_debounce; //debounce filtering to mitigate possible pad false contact, default:5, max:7, 0 to disable
 bool mcu_adc_enabled[4] = {0}; //adc enabled on mcu, set during runtime
 mcu_config0_t mcu_config0 = {0};
+#ifdef ALLOW_MCU_SEC
+	int mcu_backlight = 255; //current backlight level, set during runtime
+	int mcu_backlight_steps = 255; //maximum amount of backlight steps, set during runtime
+#endif
 
 //ADC related
 bool adc_firstrun = true; //trigger adc data compute part when joystick poll
@@ -159,12 +183,12 @@ double shm_clock_start = -1., shm_update_interval = 0.25; //sec
 		int* ptr; //pointer to var
 	} shm_vars[] = {
 		{
-			"", "config_backlight", true, &i2c_fd_sec,
-			offsetof(struct i2c_secondary_address_register_struct, config_backlight) / sizeof(uint8_t),
+			"", "config_backlight", true, &mcu_fd_sec,
+			mcu_sec_register_backlight,
 			(int*)&(i2c_secondary_registers.config_backlight)
 		},
 		/*{
-			"", "poweroff_control", false, &i2c_fd_sec,
+			"", "poweroff_control", false, &mcu_fd_sec,
 			offsetof(struct i2c_secondary_address_register_struct, power_control) / sizeof(uint8_t),
 			(int*)&(i2c_secondary_registers.power_control)
 		},*/
@@ -184,15 +208,18 @@ const char adc_pollrate_desc[] = "ADC pollrate (every given poll loop).";
 const char debounce_desc[] = "Debounce filtering to mitigate possible pad false contact, max:7 (0 to disable).";
 
 const char i2c_bus_desc[] = "I2C bus to use.";
-const char i2c_addr_desc[] = "MCU I2C address.";
-const char i2c_addr_sec_desc[] = "MCU Secondary I2C address for additionnal features.";
+const char mcu_addr_desc[] = "MCU I2C address.";
+#ifdef ALLOW_MCU_SEC
+	const char mcu_addr_sec_desc[] = "MCU Secondary I2C address for additionnal features.";
+#endif
 const char irq_gpio_desc[] = "GPIO pin to use for interrupt, default:40 (-1 to disable)."; //gpio pin used for irq, limited to 31 for pigpio, set to -1 to disable
 
 const char adc_map_desc[] = "ADCs to Joystick axis mapping (-1:disabled axis, 0:X1, 1:Y1, 2:X2, 3:Y2), format: ADC0,ADC1,ADC2,ADC3.";
 
 const char adc_enabled_desc[] = "Enable MCU/External ADC (0:disable, 1:enable).";
 #ifdef ALLOW_EXT_ADC
-	const char adc_i2c_addr_desc[] = "External ADC I2C address, set invalid address (0xFF) to disable.";
+	const char adc_addr_desc[] = "PREIMPLEMENT External ADC I2C address, set invalid address (0xFF) to disable.";
+	const char adc_type_desc[] = "PREIMPLEMENT External ADC type identifier";
 #endif
 const char adc_res_desc[] = "External ADC resolution in bits, ignored if using MCU ADC.";
 const char adc_min_desc[] = "Lowest ADC output limit (>= 0).";
@@ -212,8 +239,10 @@ cfg_vars_t cfg_vars[] = {
 	{"irq_gpio", irq_gpio_desc, 0, &irq_gpio},
 
 	{"\ni2c_bus", i2c_bus_desc, 0, &i2c_bus},
-	{"i2c_address", i2c_addr_desc, 6, &i2c_addr},
-	{"i2c_address_sec", i2c_addr_sec_desc, 6, &i2c_addr_sec},
+	{"mcu_address", mcu_addr_desc, 6, &mcu_addr},
+#ifdef ALLOW_MCU_SEC
+	{"mcu_address_sec", mcu_addr_sec_desc, 6, &mcu_addr_sec},
+#endif
 
 	{"\ndigital_debounce", debounce_desc, 0, &digital_debounce},
 
@@ -221,7 +250,8 @@ cfg_vars_t cfg_vars[] = {
 
 	{"\nadc0_enabled", adc_enabled_desc, 4, &adc_params[0].enabled},
 #ifdef ALLOW_EXT_ADC
-	{"adc0_i2c_address", adc_i2c_addr_desc, 6, &i2c_addr_adc[0]},
+	{"adc0_address", adc_addr_desc, 6, &adc_addr[0]},
+	{"adc0_type", adc_type_desc, 0, &adc_type[0]},
 #endif
 	{"adc0_res", adc_res_desc, 0, &adc_params[0].res},
 	{"adc0_min", adc_min_desc, 0, &adc_params[0].min},
@@ -234,7 +264,8 @@ cfg_vars_t cfg_vars[] = {
 
 	{"\nadc1_enabled", adc_enabled_desc, 4, &adc_params[1].enabled},
 #ifdef ALLOW_EXT_ADC
-	{"adc1_i2c_address", adc_i2c_addr_desc, 6, &i2c_addr_adc[1]},
+	{"adc1_address", adc_addr_desc, 6, &adc_addr[1]},
+	{"adc1_type", adc_type_desc, 0, &adc_type[1]},
 #endif
 	{"adc1_res", adc_res_desc, 0, &adc_params[1].res},
 	{"adc1_min", adc_min_desc, 0, &adc_params[1].min},
@@ -247,7 +278,8 @@ cfg_vars_t cfg_vars[] = {
 
 	{"\nadc2_enabled", adc_enabled_desc, 4, &adc_params[2].enabled},
 #ifdef ALLOW_EXT_ADC
-	{"adc2_i2c_address", adc_i2c_addr_desc, 6, &i2c_addr_adc[2]},
+	{"adc2_address", adc_addr_desc, 6, &adc_addr[2]},
+	{"adc2_type", adc_type_desc, 0, &adc_type[2]},
 #endif
 	{"adc2_res", adc_res_desc, 0, &adc_params[2].res},
 	{"adc2_min", adc_min_desc, 0, &adc_params[2].min},
@@ -260,7 +292,8 @@ cfg_vars_t cfg_vars[] = {
 
 	{"\nadc3_enabled", adc_enabled_desc, 4, &adc_params[3].enabled},
 #ifdef ALLOW_EXT_ADC
-	{"adc3_i2c_address", adc_i2c_addr_desc, 6, &i2c_addr_adc[3]},
+	{"adc3_address", adc_addr_desc, 6, &adc_addr[3]},
+	{"adc3_type", adc_type_desc, 0, &adc_type[3]},
 #endif
 	{"adc3_res", adc_res_desc, 0, &adc_params[3].res},
 	{"adc3_min", adc_min_desc, 0, &adc_params[3].min},
