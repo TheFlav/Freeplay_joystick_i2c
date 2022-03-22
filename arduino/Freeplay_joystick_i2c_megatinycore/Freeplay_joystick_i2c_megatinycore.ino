@@ -35,6 +35,8 @@
 
 #define USE_DIGITAL_BUTTON_DEBOUNCING
 
+#define USE_HOTKEY_TOGGLE_MODE
+
 //#define USE_SLEEP_MODE  //doesn't seem to work properly, yet
 
 //#define USE_SOFTI2CMASTER
@@ -82,6 +84,18 @@
  #define CONFIG_I2C_2NDADDR          0x40  //0x30 wouldn't work
 #endif
 
+#ifdef USE_HOTKEY_TOGGLE_MODE
+enum hotkey_mode_enum {
+    HOTKEY_JUST_ENTERING,
+    HOTKEY_ON,
+    HOTKEY_JUST_EXITING,
+    HOTKEY_OFF    
+} g_hotkey_mode = HOTKEY_OFF;
+
+  byte g_hotkey_input0 = 0xFF;
+  byte g_hotkey_input1 = 0xFF;
+  byte g_hotkey_input2 = 0xFF;
+#endif
 
 #ifdef USE_SOFTI2CMASTER
 #warning To use this, you need to make a small mod to the SoftI2CMaster.h library source code.
@@ -127,6 +141,7 @@
 
 #define MAX_ADC ((1<<ADC_RESOLUTION)-1)
 
+#define PIN_STATUS_LED  9
 
 #ifdef USE_INTERRUPTS
  #define PIN_nINT 7                  //AKA PB4
@@ -359,10 +374,15 @@ volatile bool g_read_analog_inputs_asap = true;
 #define IS_PRESSED_BTN_TR() ((i2c_joystick_registers.input1 & INPUT1_BTN_TR) != INPUT1_BTN_TR)
 #define IS_PRESSED_BTN_Y() ((i2c_joystick_registers.input1 & INPUT1_BTN_Y) != INPUT1_BTN_Y)
 
-#define IS_PRESSED_BTN_POWER() ((i2c_joystick_registers.input1 & INPUT1_BTN_POWER) != INPUT1_BTN_POWER)
+//#define IS_PRESSED_BTN_POWER() ((i2c_joystick_registers.input1 & INPUT1_BTN_POWER) != INPUT1_BTN_POWER)
 
+#define IS_PRESSED_BTN_POWER_INPUT1(in1) ((in1 & INPUT1_BTN_POWER) != INPUT1_BTN_POWER)
+
+#ifdef USE_HOTKEY_TOGGLE_MODE
+#define IS_SPECIAL_INPUT_MODE() (g_hotkey_mode == HOTKEY_ON)
+#else
 #define IS_SPECIAL_INPUT_MODE() (IS_PRESSED_BTN_TL() && IS_PRESSED_BTN_TR() && IS_PRESSED_BTN_Y())
-
+#endif
 
 #ifdef USE_SERIAL_DEBUG
  #define PINB_UART_MASK     (0b00001100)
@@ -392,6 +412,35 @@ void resetViaSWR() {
 
 #define BACKLIGHT_FLASH_MILLIS 150
 uint8_t g_backlight_is_flashing = 0;    //set this to the number of flashes (off/on cycles) to perform
+
+
+void status_led_on()
+{
+#if defined(USE_SERIAL_DEBUG)
+  Serial.println("Status LED ON");
+#else
+  digitalWrite(PIN_STATUS_LED, HIGH);   //turn status LED on
+#endif
+}
+
+void status_led_off()
+{
+#if defined(USE_SERIAL_DEBUG)
+  Serial.println("Status LED OFF");
+#else
+  digitalWrite(PIN_STATUS_LED, LOW);   //turn status LED off
+#endif  
+}
+
+void status_led_init()
+{
+#if defined(USE_SERIAL_DEBUG)
+  Serial.println("Status LED Initialize");
+#else
+  pinMode(PIN_STATUS_LED, OUTPUT);
+#endif  
+}
+
 
 #ifdef USE_EEPROM
 bool g_eeprom_needs_saving = false;
@@ -860,13 +909,72 @@ void read_digital_inputs(void)
   input2 = (pa_in & PINA_IN2_MASK) | (pb_mux0_in & PINB_IN2_MASK) | (1 << 1) | (1 << 0);
 #endif
 
+
 #ifdef USE_DIGITAL_BUTTON_DEBOUNCING
   debounce_inputs(&input0, &input1, &input2);
 #endif
 
-  i2c_joystick_registers.input0 = input0;
-  i2c_joystick_registers.input1 = input1;
-  i2c_joystick_registers.input2 = input2;
+  switch(g_hotkey_mode)
+  {
+    case HOTKEY_JUST_ENTERING:
+      if(!IS_PRESSED_BTN_POWER_INPUT1(input1))
+      {
+        //now, we are fully IN hotkey mode
+        g_hotkey_mode = HOTKEY_ON;
+        status_led_on();    
+      }
+      g_hotkey_input0 = input0;
+      g_hotkey_input1 = input1;
+      g_hotkey_input2 = input2;
+      break;
+      
+    case HOTKEY_ON:
+      if(IS_PRESSED_BTN_POWER_INPUT1(input1))
+      {
+        //leave hotkey mode by reporting just the power button
+        g_hotkey_mode = HOTKEY_JUST_EXITING;
+  
+        i2c_joystick_registers.input0 = input0;
+        i2c_joystick_registers.input1 = input1;
+        i2c_joystick_registers.input2 = input2;
+      }
+      else
+      {    
+        g_hotkey_input0 = input0;
+        g_hotkey_input1 = input1;
+        g_hotkey_input2 = input2;
+      }
+      break;
+      
+    case HOTKEY_JUST_EXITING:
+      if(!IS_PRESSED_BTN_POWER_INPUT1(input1))
+      {
+        //leave hotkey mode by reporting just the power button
+        g_hotkey_mode = HOTKEY_OFF;
+        status_led_off();    
+      }
+      i2c_joystick_registers.input0 = input0;
+      i2c_joystick_registers.input1 = input1;
+      i2c_joystick_registers.input2 = input2;
+      break;
+      
+    case HOTKEY_OFF:
+    default:
+      if(IS_PRESSED_BTN_POWER_INPUT1(input1))
+      {
+        //the power button was just pressed not in hotkey mode
+        g_hotkey_mode = HOTKEY_JUST_ENTERING;
+        //if we're chaging to "hotkey mode" then don't report the inputs to the host
+        g_hotkey_input0 = input0;
+        g_hotkey_input1 = input1;
+        g_hotkey_input2 = input2;
+        return;        
+      }
+      i2c_joystick_registers.input0 = input0;
+      i2c_joystick_registers.input1 = input1;
+      i2c_joystick_registers.input2 = input2;
+      break;
+  }
 }
 
 #if defined(USE_ADC0) || defined(USE_ADC1) || defined(USE_ADC2) || defined(USE_ADC3)
@@ -952,7 +1060,7 @@ void process_special_inputs()
 #ifdef PIN_POWEROFF_OUT
   static unsigned long power_btn_start_millis = 0;
   static bool prev_pressed_btn_power = false;
-  if(IS_PRESSED_BTN_POWER())
+  if(IS_PRESSED_BTN_POWER_INPUT1(g_hotkey_input1) || IS_PRESSED_BTN_POWER_INPUT1(i2c_joystick_registers.input1))
   {
     if(prev_pressed_btn_power)
     {
@@ -1203,8 +1311,6 @@ void setup()
 
   eeprom_restore_data();      //should be done beore startI2C()
   
-  
-  
 #ifdef PIN_nINT
   pinMode(PIN_nINT, OUTPUT);
   digitalWrite(PIN_nINT, g_nINT_state);
@@ -1244,6 +1350,10 @@ void setup()
 #endif
 
   setup_gpio(); //make sure we call this AFTER we set restore eeprom data
+
+
+  status_led_init();  
+
 
   startI2C(); //Determine the I2C address we should be using and begin listening on I2C bus
 
