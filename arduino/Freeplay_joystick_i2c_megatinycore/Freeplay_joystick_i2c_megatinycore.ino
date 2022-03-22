@@ -90,8 +90,9 @@ enum hotkey_mode_enum {
     HOTKEY_JUST_ENTERING,
     HOTKEY_ON,
     HOTKEY_JUST_EXITING,
-    HOTKEY_OFF    
-} g_hotkey_mode = HOTKEY_OFF;
+    HOTKEY_OFF,
+    HOTKEY_SYSTEM_STARTUP   
+} g_hotkey_mode = HOTKEY_SYSTEM_STARTUP;
 
   byte g_hotkey_input0 = 0xFF;
   byte g_hotkey_input1 = 0xFF;
@@ -939,6 +940,10 @@ void read_digital_inputs(void)
 #ifdef USE_HOTKEY_TOGGLE_MODE
   switch(g_hotkey_mode)
   {
+    case HOTKEY_SYSTEM_STARTUP:
+      if(!IS_PRESSED_BTN_POWER_INPUT1(input1))
+        g_hotkey_mode = HOTKEY_OFF;
+      break;
     case HOTKEY_JUST_ENTERING:
       if(!IS_PRESSED_BTN_POWER_INPUT1(input1))
       {
