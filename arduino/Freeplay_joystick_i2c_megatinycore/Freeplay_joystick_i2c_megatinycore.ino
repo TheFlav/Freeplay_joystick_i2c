@@ -31,7 +31,8 @@
 #define USE_MUX_ON_PC0_TO_PC3       //The mux that connects (DPAD u/d/l/r) or (ThumbL, ThumbR, TL2, TR2) to PC0,PC1,PC2,PC3
 #define USE_MUX_ON_PC4_TO_PB7       //The mux that connects (Start, Select, A, B) or (X, Y, TL, TR) to PC4,PC5,PB6,PB7
 
-//#define USE_SERIAL_DEBUG      //UART is on PB2/PB3 which shares pins with IO2_2/IO2_3
+#define USE_STATUS_LED_PB2
+//#define USE_SERIAL_DEBUG      //UART is on PB2/PB3 which shares pins with IO2_2/IO2_3  AND PB2 is also used for the status LED (if desired)
 
 #define USE_DIGITAL_BUTTON_DEBOUNCING
 
@@ -95,6 +96,8 @@ enum hotkey_mode_enum {
   byte g_hotkey_input0 = 0xFF;
   byte g_hotkey_input1 = 0xFF;
   byte g_hotkey_input2 = 0xFF;
+
+  byte g_hotkey_combo_button = 0xFF;
 #endif
 
 #ifdef USE_SOFTI2CMASTER
@@ -141,7 +144,9 @@ enum hotkey_mode_enum {
 
 #define MAX_ADC ((1<<ADC_RESOLUTION)-1)
 
-#define PIN_STATUS_LED  9
+#ifdef USE_STATUS_LED_PB2
+ #define PIN_STATUS_LED  9
+#endif
 
 #ifdef USE_INTERRUPTS
  #define PIN_nINT 7                  //AKA PB4
@@ -313,7 +318,7 @@ volatile bool g_read_analog_inputs_asap = true;
  * 
  * PC0 = IO2_0 = BTN_THUMBL
  * ??? = IO2_1 = 
- * PB2 = IO2_2 = BTN_C (when no Serial debugging)
+ * PB2 = IO2_2 = BTN_C (when no Serial debugging AND no status LED output)
  * PB3 = IO2_3 = BTN_Z (when no Serial debugging)
  * PA4 = IO2_4 = BTN_0 (when ADC0 not used)
  * PA5 = IO2_5 = BTN_1 (when ADC1 not used)
@@ -350,8 +355,8 @@ volatile bool g_read_analog_inputs_asap = true;
 
 #define INPUT2_BTN_THUMBL (1 << 0)      //IO2_0
                                         //IO2_1
-                                        //IO2_2
-                                        //IO2_3
+#define INPUT2_BTN_C      (1 << 2)      //IO2_2 //but this is also used for blue status LED
+#define INPUT2_BTN_Z      (1 << 3)      //IO2_3
 #define INPUT2_BTN_0      (1 << 4)      //IO2_4
 #define INPUT2_BTN_1      (1 << 5)      //IO2_5
 #define INPUT2_BTN_2      (1 << 6)      //IO2_6
@@ -361,8 +366,6 @@ volatile bool g_read_analog_inputs_asap = true;
                                         
 
 //PRESSED means that the bit is 0
-#define IS_PRESSED_DPAD_UP() ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP) != INPUT0_DPAD_UP)
-#define IS_PRESSED_DPAD_DOWN() ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN)
 
 #define IS_PRESSED_BTN_START() ((i2c_joystick_registers.input0 & INPUT0_BTN_START) != INPUT0_BTN_START)
 #define IS_PRESSED_BTN_SELECT() ((i2c_joystick_registers.input0 & INPUT0_BTN_SELECT) != INPUT0_BTN_SELECT)
@@ -379,12 +382,21 @@ volatile bool g_read_analog_inputs_asap = true;
 #define IS_PRESSED_BTN_POWER_INPUT1(in1) ((in1 & INPUT1_BTN_POWER) != INPUT1_BTN_POWER)
 
 #ifdef USE_HOTKEY_TOGGLE_MODE
-#define IS_SPECIAL_INPUT_MODE() (g_hotkey_mode == HOTKEY_ON)
+ #define IS_PRESSED_DPAD_UP()   (g_hotkey_mode == HOTKEY_ON ? ((g_hotkey_input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP  ) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP))
+ #define IS_PRESSED_DPAD_DOWN() (g_hotkey_mode == HOTKEY_ON ? ((g_hotkey_input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN))
+
+ #define IS_SPECIAL_INPUT_MODE() (g_hotkey_mode == HOTKEY_ON)
 #else
-#define IS_SPECIAL_INPUT_MODE() (IS_PRESSED_BTN_TL() && IS_PRESSED_BTN_TR() && IS_PRESSED_BTN_Y())
+ #define IS_PRESSED_DPAD_UP()   ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP)
+ #define IS_PRESSED_DPAD_DOWN() ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN)
+
+ #define IS_SPECIAL_INPUT_MODE() (IS_PRESSED_BTN_TL() && IS_PRESSED_BTN_TR() && IS_PRESSED_BTN_Y())
 #endif
 
 #ifdef USE_SERIAL_DEBUG
+#ifdef USE_STATUS_LED_PB2
+#error STATUS LED and SERIAL DEBUG share pins
+#endif
  #define PINB_UART_MASK     (0b00001100)
  #define PINB_DIGITAL_INPUT_MASK   (0b11100000)  //PB[7..5]
 #else
@@ -401,7 +413,12 @@ volatile bool g_read_analog_inputs_asap = true;
 #define PINC_IN1_MASK      (0b00111110)   //the pins from PINC that are used in IN1
 
 #define PINA_IN2_MASK      (0b11110000)   //the pins from PINA that are used in IN2 extended input register
+
+#if defined(USE_STATUS_LED_PB2)
+#define PINB_IN2_MASK      (0b00001000)   //the pins from PINB that are used in IN2
+#else
 #define PINB_IN2_MASK      (0b00001100)   //the pins from PINB that are used in IN2
+#endif
 #define PINC_IN2_MASK      (0b00000001)   //the pins from PINC that are used in IN2
 
 #define PINA_ADC_MASK      (0b11110000)   //the pins in port A used for ADC
@@ -418,7 +435,7 @@ void status_led_on()
 {
 #if defined(USE_SERIAL_DEBUG)
   Serial.println("Status LED ON");
-#else
+#elif defined(USE_STATUS_LED_PB2)
   digitalWrite(PIN_STATUS_LED, HIGH);   //turn status LED on
 #endif
 }
@@ -427,7 +444,7 @@ void status_led_off()
 {
 #if defined(USE_SERIAL_DEBUG)
   Serial.println("Status LED OFF");
-#else
+#elif defined(USE_STATUS_LED_PB2)
   digitalWrite(PIN_STATUS_LED, LOW);   //turn status LED off
 #endif  
 }
@@ -436,7 +453,7 @@ void status_led_init()
 {
 #if defined(USE_SERIAL_DEBUG)
   Serial.println("Status LED Initialize");
-#else
+#elif defined(USE_STATUS_LED_PB2)
   pinMode(PIN_STATUS_LED, OUTPUT);
 #endif  
 }
@@ -909,11 +926,17 @@ void read_digital_inputs(void)
   input2 = (pa_in & PINA_IN2_MASK) | (pb_mux0_in & PINB_IN2_MASK) | (1 << 1) | (1 << 0);
 #endif
 
+#if defined(USE_STATUS_LED_PB2)
+  input2 |= (1 << 2);
+#endif
+
+
 
 #ifdef USE_DIGITAL_BUTTON_DEBOUNCING
   debounce_inputs(&input0, &input1, &input2);
 #endif
 
+#ifdef USE_HOTKEY_TOGGLE_MODE
   switch(g_hotkey_mode)
   {
     case HOTKEY_JUST_ENTERING:
@@ -929,14 +952,18 @@ void read_digital_inputs(void)
       break;
       
     case HOTKEY_ON:
-      if(IS_PRESSED_BTN_POWER_INPUT1(input1))
+      if((input0 & 0xFC) != 0xFC || input1 != 0xFF)   //when we press a hotkey combo button that should be passed to the host
       {
         //leave hotkey mode by reporting just the power button
         g_hotkey_mode = HOTKEY_JUST_EXITING;
-  
-        i2c_joystick_registers.input0 = input0;
-        i2c_joystick_registers.input1 = input1;
-        i2c_joystick_registers.input2 = input2;
+
+        g_hotkey_input0 = input0 | 0x03;
+        g_hotkey_input1 = input1;
+        g_hotkey_input2 = input2;
+ 
+        i2c_joystick_registers.input0 = input0 & g_hotkey_input0;
+        i2c_joystick_registers.input1 = input1 & ~INPUT1_BTN_POWER & g_hotkey_input1;//make sure the power button is "pressed" while exiting hotkey mode
+        i2c_joystick_registers.input2 = input2 & g_hotkey_input2;
       }
       else
       {    
@@ -947,15 +974,22 @@ void read_digital_inputs(void)
       break;
       
     case HOTKEY_JUST_EXITING:
-      if(!IS_PRESSED_BTN_POWER_INPUT1(input1))
+      if(!((input0 & 0xFC) != 0xFC || input1 != 0xFF))   //when we release the hotkey combo button that should be passed to the host
       {
         //leave hotkey mode by reporting just the power button
         g_hotkey_mode = HOTKEY_OFF;
         status_led_off();    
+        
+        i2c_joystick_registers.input0 = input0;
+        i2c_joystick_registers.input1 = input1;
+        i2c_joystick_registers.input2 = input2;
       }
-      i2c_joystick_registers.input0 = input0;
-      i2c_joystick_registers.input1 = input1;
-      i2c_joystick_registers.input2 = input2;
+      else
+      {
+        i2c_joystick_registers.input0 = input0 & g_hotkey_input0;
+        i2c_joystick_registers.input1 = input1 & ~INPUT1_BTN_POWER & g_hotkey_input1;//make sure the power button is "pressed" while exiting hotkey mode
+        i2c_joystick_registers.input2 = input2 & g_hotkey_input2;
+      }
       break;
       
     case HOTKEY_OFF:
@@ -975,6 +1009,11 @@ void read_digital_inputs(void)
       i2c_joystick_registers.input2 = input2;
       break;
   }
+#else //!defined(USE_HOTKEY_TOGGLE_MODE)
+  i2c_joystick_registers.input0 = input0;
+  i2c_joystick_registers.input1 = input1;
+  i2c_joystick_registers.input2 = input2;
+#endif  
 }
 
 #if defined(USE_ADC0) || defined(USE_ADC1) || defined(USE_ADC2) || defined(USE_ADC3)
@@ -1042,12 +1081,18 @@ void process_special_inputs()
       if(IS_PRESSED_DPAD_UP())
       {
         if(i2c_secondary_registers.config_backlight < (NUM_BACKLIGHT_PWM_STEPS-1))
+        {
           i2c_secondary_registers.config_backlight++;
+          //Serial.println("Backlight +");
+        }
       }
       else if(IS_PRESSED_DPAD_DOWN())
       {
         if(i2c_secondary_registers.config_backlight > 0)
+        {
           i2c_secondary_registers.config_backlight--;
+          //Serial.println("Backlight -");
+        }
       }
     } 
   }
@@ -1060,7 +1105,12 @@ void process_special_inputs()
 #ifdef PIN_POWEROFF_OUT
   static unsigned long power_btn_start_millis = 0;
   static bool prev_pressed_btn_power = false;
+  
+#ifdef USE_HOTKEY_TOGGLE_MODE
   if(IS_PRESSED_BTN_POWER_INPUT1(g_hotkey_input1) || IS_PRESSED_BTN_POWER_INPUT1(i2c_joystick_registers.input1))
+#else
+  if(IS_PRESSED_BTN_POWER_INPUT1(i2c_joystick_registers.input1))
+#endif
   {
     if(prev_pressed_btn_power)
     {
