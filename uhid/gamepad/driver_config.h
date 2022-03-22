@@ -13,16 +13,16 @@
 #define def_debug false //enable debug output
 #define def_debug_adv false //enable advanced debug output, benchmark
 
-#define def_irq_gpio 40 //gpio pin used for IRQ, limited to 31 for pigpio, set to -1 to disable
+#define def_irq_gpio 40 //gpio pin used for digital input interrupt, set to -1 to disable, "USE_POLL_IRQ_PIN" needs to be defined in compilation command line
 
 #define i2c_ignore_busy true //allow i2c running on busy address
 #define def_i2c_bus 1 //I2C bus
 #define def_mcu_addr 0x30 //main MCU I2C address
-#define def_mcu_addr_sec 0x40 //secondary MCU I2C address, "ALLOW_MCU_SEC" needs to be defined in compilation command line
+#define def_mcu_addr_sec 0x40 //secondary MCU I2C address, "ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
 
 #define cfg_filename "config.cfg" //configuration filename
 #define cfg_mcu_addr_name "mcu_address" //MCU main I2C address field name into config file
-#define cfg_mcu_addr_sec_name "mcu_address_sec" //MCU secondary I2C address field name into config file, "ALLOW_MCU_SEC" needs to be defined in compilation command line
+#define cfg_mcu_addr_sec_name "mcu_address_sec" //MCU secondary I2C address field name into config file, "ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
 
 #define shm_path "/dev/shm/uhid_i2c_driver/" //SHM path used for temporary storage
 #define user_uid 1000 //normal "non-root" user id, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING

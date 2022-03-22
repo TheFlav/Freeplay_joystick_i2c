@@ -5,7 +5,7 @@
 
 #pragma once
 
-const char programversion[] = "0.1c"; //program version
+const char programversion[] = "0.1d"; //program version
 const char dev_webpage[] = "https://github.com/TheFlav/Freeplay_joystick_i2c";
 
 //Prototypes
@@ -37,6 +37,10 @@ int mcu_update_register(int* /*fd*/, uint8_t /*reg*/, uint8_t /*value*/, bool /*
 int mcu_update_config0(void); //read/update config0 register, return 0 on success, -1 on error
 int init_adc(void); //init adc data, return 0 on success, -1 on resolution read fail, -2 on adc conf
 
+#ifndef ALLOW_MCU_SEC_I2C
+	#undef USE_SHM_REGISTERS //can't use shm register "bridge" with MCU secondary feature
+#endif
+
 #ifndef DIAG_PROGRAM
 	static int uhid_create (int /*fd*/); //create uhid device
 	static void uhid_destroy (int /*fd*/); //close uhid device
@@ -51,20 +55,9 @@ int init_adc(void); //init adc data, return 0 on success, -1 on resolution read 
 	#define diag_mode false
 #else
 	extern int program_diag_mode(void); //main diag mode function
-	#undef USE_WIRINGPI_IRQ
-	#undef USE_PIGPIO_IRQ
+	#undef USE_POLL_IRQ_PIN
 	#undef USE_SHM_REGISTERS
 	#define diag_mode true
-#endif
-
-#ifndef ALLOW_MCU_SEC
-	#undef USE_SHM_REGISTERS //can't use shm register "bridge" with MCU secondary feature
-#endif
-
-#ifdef USE_PIGPIO_IRQ
-static void gpio_callback(int /*gpio*/, int /*level*/, uint32_t /*tick*/);
-#elif defined(USE_WIRINGPI_IRQ)
-static void mcu_irq_handler(void);
 #endif
 
 //debug
@@ -85,6 +78,8 @@ bool diag_mode_init = false;
 //UHID related
 int uhid_fd = -1;
 int mcu_input_map_size = sizeof(mcu_input_map)/sizeof(mcu_input_map[0]);
+uint32_t mcu_input_digital_prev = 0xFFFF; //last digital inputs
+bool mcu_input_update_digital_prev = false; //last update digital inputs
 
 struct gamepad_report_t {
 	int8_t hat0;
@@ -95,7 +90,7 @@ struct gamepad_report_t {
 	uint16_t left_y;
 	uint16_t right_x;
 	uint16_t right_y;
-} gamepad_report = {0,0,0,0,0x7FFF,0x7FFF,0x7FFF,0x7FFF}, gamepad_report_prev;
+} gamepad_report = {0,0,0,0,0x7FFF,0x7FFF,0x7FFF,0x7FFF}/*, gamepad_report_prev*/;
 uint16_t* js_values[4] = {&gamepad_report.left_x, &gamepad_report.left_y, &gamepad_report.right_x, &gamepad_report.right_y};
 char* js_axis_names[5] = {"none", "X1", "Y1", "X2", "Y2"}; //joystick axis names, virtually start at index -1
 
@@ -118,14 +113,14 @@ unsigned long i2c_allerrors_count = 0;
 
 uint8_t mcu_signature = 0, mcu_id=0, mcu_version=0; //device device signature, id, version
 struct i2c_joystick_register_struct i2c_joystick_registers;
-const uint8_t mcu_i2c_register_adc0 = offsetof(struct i2c_joystick_register_struct, a0_msb) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, a0_msb
-const uint8_t mcu_i2c_register_adc2 = offsetof(struct i2c_joystick_register_struct, a2_msb) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, a2_msb
+//const uint8_t mcu_i2c_register_adc0 = offsetof(struct i2c_joystick_register_struct, a0_msb) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, a0_msb
+//const uint8_t mcu_i2c_register_adc2 = offsetof(struct i2c_joystick_register_struct, a2_msb) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, a2_msb
 const uint8_t mcu_i2c_register_adc_conf = offsetof(struct i2c_joystick_register_struct, adc_conf_bits) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, adc_conf_bits
 const uint8_t mcu_i2c_register_adc_res = offsetof(struct i2c_joystick_register_struct, adc_res) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, adc_res
 const uint8_t mcu_i2c_register_config0 = offsetof(struct i2c_joystick_register_struct, config0) / sizeof(uint8_t); //defined at runtime, based on i2c_joystick_registers, config0
 
 //I2C secondary related
-#ifdef ALLOW_MCU_SEC
+#ifdef ALLOW_MCU_SEC_I2C
 	int mcu_addr_sec = def_mcu_addr_sec; //secondary MCU I2C address
 	int mcu_fd_sec = -1;
 	struct i2c_secondary_address_register_struct i2c_secondary_registers;
@@ -139,8 +134,9 @@ const uint8_t mcu_i2c_register_config0 = offsetof(struct i2c_joystick_register_s
 //MCU config
 int digital_debounce = def_digital_debounce; //debounce filtering to mitigate possible pad false contact, default:5, max:7, 0 to disable
 bool mcu_adc_enabled[4] = {0}; //adc enabled on mcu, set during runtime
+bool mcu_adc_read[2] = {0}; //read mcu adc0-1/2-3 during poll
 mcu_config0_t mcu_config0 = {0};
-#ifdef ALLOW_MCU_SEC
+#ifdef ALLOW_MCU_SEC_I2C
 	int mcu_backlight = 255; //current backlight level, set during runtime
 	int mcu_backlight_steps = 255; //maximum amount of backlight steps, set during runtime
 #endif
@@ -209,7 +205,7 @@ const char debounce_desc[] = "Debounce filtering to mitigate possible pad false 
 
 const char i2c_bus_desc[] = "I2C bus to use.";
 const char mcu_addr_desc[] = "MCU I2C address.";
-#ifdef ALLOW_MCU_SEC
+#ifdef ALLOW_MCU_SEC_I2C
 	const char mcu_addr_sec_desc[] = "MCU Secondary I2C address for additionnal features.";
 #endif
 const char irq_gpio_desc[] = "GPIO pin to use for interrupt, default:40 (-1 to disable)."; //gpio pin used for irq, limited to 31 for pigpio, set to -1 to disable
@@ -240,7 +236,7 @@ cfg_vars_t cfg_vars[] = {
 
 	{"\ni2c_bus", i2c_bus_desc, 0, &i2c_bus},
 	{"mcu_address", mcu_addr_desc, 6, &mcu_addr},
-#ifdef ALLOW_MCU_SEC
+#ifdef ALLOW_MCU_SEC_I2C
 	{"mcu_address_sec", mcu_addr_sec_desc, 6, &mcu_addr_sec},
 #endif
 

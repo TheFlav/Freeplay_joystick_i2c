@@ -78,7 +78,7 @@ void term_screen_main(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_h
 void term_screen_adc(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 void term_screen_digital(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 void term_screen_save(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
-void term_screen_advanced(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //"ALLOW_MCU_SEC" needs to be defined in compilation command line
+void term_screen_advanced(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //"ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
 
 //extern funct
 extern void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
@@ -152,7 +152,7 @@ int i2c_bus_back = -1, mcu_addr_back = -1;
 extern int i2c_poll_rate, i2c_adc_poll; //Driver pollrate in hz. Poll adc every given poll loops. <=1 for every loop, 2 to poll every 2 poll loop and so on
 
 //i2c sec
-#ifdef ALLOW_MCU_SEC
+#ifdef ALLOW_MCU_SEC_I2C
     int i2c_sec_err = 121; //backup detected i2c errors
     extern int mcu_fd_sec; //mcu i2c fd
     extern int mcu_addr_sec; //mcu sec address
@@ -165,7 +165,7 @@ extern uint8_t mcu_signature, mcu_id, mcu_version; //device device signature, id
 extern int digital_debounce; //debounce filtering to mitigate possible pad false contact, default:5, max:7, 0 to disable
 extern bool mcu_adc_enabled[]; //adc enabled on mcu, set during runtime
 
-#ifdef ALLOW_MCU_SEC
+#ifdef ALLOW_MCU_SEC_I2C
     extern struct i2c_secondary_address_register_struct i2c_secondary_registers;
     extern uint8_t mcu_sec_register_backlight; //defined at runtime, based on i2c_secondary_registers, config_backlight
     extern uint8_t mcu_sec_register_backlight_max; //defined at runtime, based on i2c_secondary_registers, backlight_max

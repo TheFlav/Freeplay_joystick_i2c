@@ -20,7 +20,7 @@ void vars_main_default(){ //reset all main config vars to default
 
     i2c_bus = def_i2c_bus;
     mcu_addr = def_mcu_addr;
-    #ifdef ALLOW_MCU_SEC
+    #ifdef ALLOW_MCU_SEC_I2C
         mcu_addr_sec = def_mcu_addr_sec;
     #endif
 
@@ -85,7 +85,7 @@ void vars_cfg_reload(void){ //reload config file
 
     //reset backup vars
 	i2c_bus_back = -1, mcu_addr_back = -1;
-    #ifdef ALLOW_MCU_SEC
+    #ifdef ALLOW_MCU_SEC_I2C
         mcu_addr_sec_back = -1;
     #endif
     #ifdef ALLOW_EXT_ADC
@@ -328,7 +328,7 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
 
     bool i2c_update = false, i2c_failed = false;
     bool term_go_screen_adc = false, term_go_screen_digital = false;
-    #ifdef ALLOW_MCU_SEC
+    #ifdef ALLOW_MCU_SEC_I2C
         bool term_go_screen_advanced = false;
     #endif
 
@@ -367,7 +367,7 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
     if (i2c_failed){goto i2c_failed_jump;} //main address failed
 
     //secondary address
-    #ifdef ALLOW_MCU_SEC
+    #ifdef ALLOW_MCU_SEC_I2C
         int mcu_addr_sec_default = def_mcu_addr_sec;
         if (mcu_addr_sec != mcu_addr_sec_back || i2c_bus_update){
             mcu_addr_sec_back = mcu_addr_sec;
@@ -455,7 +455,7 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
     tty_line += 2;
 
     //advanced configuration
-    #ifdef ALLOW_MCU_SEC
+    #ifdef ALLOW_MCU_SEC_I2C
         term_pos_button_t term_advanced_button = {.str=" Advanced Configuration ", .ptrbool=&term_go_screen_advanced, .ptrhint="Warning: Allow to mess with MCU internal settings", .disabled=(mcu_fd_sec<0)};
         term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_advanced_button.str))/2, .y=tty_line, .size=strlen(term_advanced_button.str)}, .type=1, .disabled=term_advanced_button.disabled, .value={.ptrchar=term_advanced_button.str, .ptrbool=term_advanced_button.ptrbool}, .hint={.y=hint_line, .str=term_advanced_button.ptrhint}};
     #endif
@@ -495,7 +495,7 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
         if (term_go_screen_adc){term_screen_current = 1; goto funct_end;} //go to adc screen requested
         if (term_go_screen_digital){term_screen_current = 2; goto funct_end;} //go to digital screen requested
         if (save_requested){term_screen_current = 3; goto funct_end;} //go to save screen requested
-        #ifdef ALLOW_MCU_SEC
+        #ifdef ALLOW_MCU_SEC_I2C
             if (term_go_screen_advanced){term_screen_current = 4; goto funct_end;} //go to advanced screen requested
         #endif
 
@@ -906,7 +906,7 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
     free(term_select);
 }
 
-#ifdef ALLOW_MCU_SEC
+#ifdef ALLOW_MCU_SEC_I2C
     void term_screen_advanced(int tty_line, int tty_last_width, int tty_last_height){
         char buffer[buffer_size], buffer1[buffer_size], buffer2[buffer_size];
         int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal;
