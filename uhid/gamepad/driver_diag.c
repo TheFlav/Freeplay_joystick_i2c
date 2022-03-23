@@ -364,7 +364,7 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
 
     fprintf(stdout, "\e[%d;%dH\e[%dmMain address:_____ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, buffer);
     term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+13, .y=tty_line++, .size=5}, .type=3, .value={.min=0, .max=127, .ptrint=&mcu_addr, .ptrbool=&i2c_update}, .defval={.ptrint=&mcu_addr_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
-    if (i2c_failed){goto i2c_failed_jump;} //main address failed
+    //if (i2c_failed){goto i2c_failed_jump;} //main address failed
 
     //secondary address
     #ifdef ALLOW_MCU_SEC_I2C
@@ -381,10 +381,17 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
         
         fprintf(stdout, "\e[%d;%dH\e[%dmSecond address:_____ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, buffer);
         term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+15, .y=tty_line++, .size=5}, .type=3, .value={.min=0, .max=127, .ptrint=&mcu_addr_sec, .ptrbool=&i2c_update}, .defval={.ptrint=&mcu_addr_sec_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
-        if (i2c_failed){goto i2c_failed_jump;} //second address failed
+
+        if (mcu_fd < 0 || mcu_fd_sec < 0){
+            int tmp_addr_main = 0,  tmp_addr_sec = 0;
+            if (mcu_search_i2c_addr(i2c_bus, &tmp_addr_main, &tmp_addr_sec) == 0){
+                fprintf(stdout, "\e[%d;%dH\e[%dmPossible address: main:\e[4m0x%02X\e[24m, secondary:\e[4m0x%02X\e[24m\e[0m", tty_line++, tmp_col, term_esc_col_error, tmp_addr_main, tmp_addr_sec);
+            }
+        }
     #else
         fprintf(stdout, "\e[%d;%dH\e[%dmSecond address was disabled during compilation.\e[0m", tty_line++, tmp_col, term_esc_col_disabled, buffer);
     #endif
+    if (i2c_failed){goto i2c_failed_jump;} //address failed
 
     //i2c signature
     int check_manuf_ret = mcu_check_manufacturer();
@@ -667,7 +674,7 @@ void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
 
         term_user_input(&term_input); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
-
+        
         for (int i=0; i<4; i++){
             if (adc_params[i].enabled != adc_enabled_back[i]){adc_settings_update_reload = true;} //adc enable changed
             if (adc_use_raw_min[i]){adc_params[i].min = adc_params[i].raw_min; adc_use_raw_min[i] = false; //set raw min as min limit

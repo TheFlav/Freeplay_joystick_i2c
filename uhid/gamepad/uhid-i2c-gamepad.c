@@ -136,7 +136,8 @@ static int uhid_send_event(int fd){ //send event to uhid device
 //I2C related
 int i2c_check_bus(int bus){ //check I2C bus, return 0 on success, -1:addr
 	if (bus < 0){print_stderr("invalid I2C bus:%d\n", bus); return -1;} //invalid bus
-	char fd_path[13]; sprintf(fd_path, "/dev/i2c-%d", bus);
+
+	char fd_path[strlen(def_i2c_bus_path_format)+4]; sprintf(fd_path, def_i2c_bus_path_format, bus);
 	int fd = open(fd_path, O_RDWR);
 	if (fd < 0){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -fd); return -1; //invalid bus
 	} else {print_stdout("I2C bus '%s' found\n", fd_path);}
@@ -148,16 +149,19 @@ int i2c_open_dev(int* fd, int bus, int addr){ //open I2C device, return 0 on suc
 	if (bus < 0){print_stderr("invalid I2C bus:%d\n", bus); return -1;} //invalid bus
     if (addr < 0 || addr > 127){print_stderr("invalid I2C address:0x%02X (%d)\n", addr, addr); return -2;} //invalid address
 
-	char fd_path[13]; sprintf(fd_path, "/dev/i2c-%d", bus);
+	char fd_path[strlen(def_i2c_bus_path_format)+4]; sprintf(fd_path, def_i2c_bus_path_format, bus);
 	close(*fd); *fd = open(fd_path, O_RDWR);
+	if (*fd < 0){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -*fd); *fd = -1; return -1;}
 
-	int ret = ioctl(*fd, i2c_ignore_busy ? I2C_SLAVE_FORCE : I2C_SLAVE, addr);
-	if (ret < 0) {close(*fd); *fd = -1; print_stderr("ioctl failed for address 0x%02X, errno:%d (%m)\n", addr, -ret); return -2;} //invalid address
+	if (ioctl(*fd, i2c_ignore_busy ? I2C_SLAVE_FORCE : I2C_SLAVE, addr) < 0){ //invalid address
+		close(*fd); *fd = -1;
+		print_stderr("ioctl failed for address 0x%02X, errno:%d (%m)\n", addr, errno);
+		return -2;
+	}
 
-	ret = i2c_smbus_read_byte_data(*fd, 0);
-	if (ret < 0){ //invalid address
+	if (i2c_smbus_read_byte_data(*fd, 0) < 0){ //invalid address
 		i2c_allerrors_count++; close(*fd); *fd = -2;
-		print_stderr("failed to read from address 0x%02X, errno:%d (%m)\n", addr, -ret);
+		print_stderr("failed to read from address 0x%02X, errno:%d (%m)\n", addr, errno);
 		return -2;
 	}
 
@@ -371,6 +375,34 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
 }
 
 //MCU related functions
+#ifdef ALLOW_MCU_SEC_I2C
+int mcu_search_i2c_addr(int bus, int* addr_main, int* addr_sec){ //search mcu on given i2c bus, return -1 on failure, 0 on success
+	*addr_main = *addr_sec = -1;
+
+	if (bus < 0){print_stderr("invalid I2C bus:%d\n", bus); return -1;} //invalid bus
+	char fd_path[strlen(def_i2c_bus_path_format)+4]; sprintf(fd_path, def_i2c_bus_path_format, bus);
+	int fd = open(fd_path, O_RDWR);
+	if (fd < 0){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -fd); return -1;}
+
+	for (int addr=0; addr <=127; addr++){
+		if (ioctl(fd, I2C_SLAVE_FORCE, addr) < 0){print_stderr("ioctl failed for address 0x%02X, errno:%d (%m)\n", addr, errno); continue;} //invalid address
+		int ret = i2c_smbus_read_byte_data(fd, mcu_sec_register_secondary_i2c_addr); if (ret != addr){continue;} //register content needs to match secondary address
+		*addr_sec = addr;
+		ret = i2c_smbus_read_byte_data(fd, mcu_sec_register_joystick_i2c_addr); if (ret < 0 || ret > 127){*addr_sec = -1; continue;} //return not in valid i2c range
+		*addr_main = ret;
+
+		//check if addr_main valid
+		if (ioctl(fd, I2C_SLAVE_FORCE, *addr_main) < 0){print_stderr("ioctl failed for address 0x%02X (addr_main), errno:%d (%m)\n", *addr_main, errno);
+		} else if (i2c_smbus_read_byte_data(fd, 0) < 0){print_stderr("failed to read from address 0x%02X (addr_main), errno:%d (%m)\n", *addr_main, errno);} else {break;}
+		*addr_sec = -1; *addr_main = -1;
+	}
+
+	if (*addr_main == -1 || *addr_sec == -1){print_stderr("failed to detect possible MCU address\n"); return -1;
+	} else {print_stdout("detected possible MCU adresses, main:0x%02X, secondary:0x%02X\n", *addr_main, *addr_sec);	}
+	return 0;
+}
+#endif
+
 int mcu_check_manufacturer(){ //check device manufacturer, fill signature,id,version, return 0 on success, 1 if version missmatch , -1 on wrong manufacturer, -2 on i2c error
 	int tmp_reg = offsetof(struct i2c_joystick_register_struct, manuf_ID) / sizeof(uint8_t); //check signature
 	int ret = i2c_smbus_read_byte_data(mcu_fd, tmp_reg);
@@ -760,9 +792,9 @@ int main(int argc, char** argv){
 	sprintf(config_path, "%s/%s", program_path, cfg_filename); //convert config relative to full path
 	print_stdout("Config file: %s\n", config_path);
 
-	//program arguments parse
-	for(int i=1; i<argc; ++i){
-		#ifndef DIAG_PROGRAM
+	#ifndef DIAG_PROGRAM
+		//program arguments parse
+		for(int i=1; i<argc; ++i){
 			if (strcmp(argv[i],"-configreset") == 0){return config_save(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true); //reset config file
 			} else if (strcmp(argv[i],"-configset") == 0){ //set custom config var
 				if (++i<argc){return config_set(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true, argv[i]);
@@ -775,9 +807,9 @@ int main(int argc, char** argv){
 			} else if (strcmp(argv[i],"-noi2c") == 0){i2c_disabled = true; //disable i2c, pollrate, garbage data to uhid for benchmark
 			} else if (strcmp(argv[i],"-nouhid") == 0){uhid_disabled = true; //disable irq, uhid for benchmark
 			}
-		#endif
-	}
-	
+		}
+	#endif
+
 	config_parse(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid); //parse config file, create if needed
 	shm_init(true); //init shm path and files
 
@@ -790,16 +822,23 @@ int main(int argc, char** argv){
 	
 	//open i2c devices
 	if (!i2c_disabled){
-		if (i2c_check_bus(i2c_bus) != 0){return EXIT_FAILURE;}
-
-		if (i2c_open_dev(&mcu_fd, i2c_bus, mcu_addr) != 0){return EXIT_FAILURE;} //main
+		bool i2c_dev_failed = false;
+		if (i2c_check_bus(i2c_bus) != 0 && !diag_mode){return EXIT_FAILURE;}
+		if (i2c_open_dev(&mcu_fd, i2c_bus, mcu_addr) != 0){i2c_dev_failed = true; print_stderr("Failed to open MCU main address\n");} //main failed
 		#ifdef ALLOW_MCU_SEC_I2C
-			if (i2c_open_dev(&mcu_fd_sec, i2c_bus, mcu_addr_sec) != 0){print_stderr("Failed to open MCU secondary address\n");} //secondary
+			if (i2c_open_dev(&mcu_fd_sec, i2c_bus, mcu_addr_sec) != 0){print_stderr("Failed to open MCU secondary address\n");} //secondary failed
+			if (i2c_dev_failed && !diag_mode){
+				int tmp_addr_main = 0,  tmp_addr_sec = 0;
+				mcu_search_i2c_addr(i2c_bus, &tmp_addr_main, &tmp_addr_sec); //search for mcu address
+				diag_mode_init = true; //disable additionnal prints
+			}
 		#endif
+		if (i2c_dev_failed && !diag_mode){return EXIT_FAILURE;}
+
 		print_stdout("MCU detected registers: adc_conf_bits:0x%02X, adc_res:0x%02X, config0:0x%02X\n", mcu_i2c_register_adc_conf, mcu_i2c_register_adc_res, mcu_i2c_register_config0);
 
-		if (mcu_check_manufacturer() < 0){return EXIT_FAILURE;} //invalid manufacturer
-		if (mcu_update_config0() != 0){return EXIT_FAILURE;} //read/update of config0 register failed
+		if (mcu_check_manufacturer() < 0 && !diag_mode){return EXIT_FAILURE;} //invalid manufacturer
+		if (mcu_update_config0() != 0 && !diag_mode){return EXIT_FAILURE;} //read/update of config0 register failed
 
 		#ifdef ALLOW_EXT_ADC
 			for (int i=0; i<4; i++){ //external adcs device loop
@@ -807,7 +846,7 @@ int main(int argc, char** argv){
 			}
 		#endif
 
-		if (init_adc() < 0){return EXIT_FAILURE;} //init adc data failed
+		if (init_adc() < 0 && !diag_mode){return EXIT_FAILURE;} //init adc data failed
 	}
 
 	//advanced features if mcu secondary address valid
@@ -843,35 +882,32 @@ int main(int argc, char** argv){
 			if (ret < 0){return EXIT_FAILURE;}
 			print_stdout("uhid device created\n");
 		}
-	#else
-		i2c_poll_rate_disable = true;
+
+		//interrupt
+		if (irq_gpio >= 0 && irq_enable){
+			irq_enable = false;
+			#ifdef USE_POLL_IRQ_PIN
+				#define WIRINGPI_CODES 1 //allow error code return
+				int err;
+				if ((err = wiringPiSetupGpio()) < 0){ //use BCM numbering
+					print_stderr("failed to initialize wiringPi, errno:%d\n", -err);
+				} else {
+					pinMode(irq_gpio, INPUT);
+					print_stdout("using wiringPi to poll GPIO%d\n", irq_gpio);
+					irq_enable = true;
+				}
+			#endif
+		} else {irq_enable = false;}
 	#endif
 
+		//initial poll
+		if (i2c_poll_rate < 1){i2c_poll_rate_disable = true;} else {i2c_poll_rate_time = 1. / i2c_poll_rate;} //disable pollrate limit, poll interval in sec
+		if (i2c_adc_poll < 1){i2c_adc_poll = 1;} i2c_adc_poll_loop = i2c_adc_poll;
+		i2c_poll_joystick(true);
 
-	//interrupt
-	if (irq_gpio >= 0 && irq_enable){
-		irq_enable = false;
-		#ifdef USE_POLL_IRQ_PIN
-			#define WIRINGPI_CODES 1 //allow error code return
-			int err;
-			if ((err = wiringPiSetupGpio()) < 0){ //use BCM numbering
-				print_stderr("failed to initialize wiringPi, errno:%d\n", -err);
-			} else {
-				pinMode(irq_gpio, INPUT);
-				print_stdout("using wiringPi to poll GPIO%d\n", irq_gpio);
-				irq_enable = true;
-			}
-		#endif
-	} else {irq_enable = false;}
-	
-	//initial poll
-	if (i2c_poll_rate < 1){i2c_poll_rate_disable = true;} else {i2c_poll_rate_time = 1. / i2c_poll_rate;} //disable pollrate limit, poll interval in sec
-	if (i2c_adc_poll < 1){i2c_adc_poll = 1;} i2c_adc_poll_loop = i2c_adc_poll;
-	i2c_poll_joystick(true);
-
-    fprintf(stderr, "Press '^C' to quit...\n");
-	
 	#ifndef DIAG_PROGRAM
+		fprintf(stdout, "Press '^C' to gracefully close driver\n");
+	
 		if (!i2c_poll_rate_disable){print_stdout("pollrate: digital:%dhz, adc:%dhz\n", i2c_poll_rate, i2c_poll_rate / i2c_adc_poll);} else {print_stdout("poll speed not limited\n");}
 		while (!kill_requested){
 			i2c_poll_joystick(false);
@@ -900,20 +936,21 @@ int main(int argc, char** argv){
 		}
 
 		if (i2c_last_error != 0) {print_stderr("last detected I2C error: %d (%s)\n", -i2c_last_error, strerror(i2c_last_error));}
-	#else
-		program_diag_mode(); //diagnostic mode
-	#endif
 
-	if (adc_params[0].enabled || adc_params[1].enabled || adc_params[2].enabled || adc_params[3].enabled){
-		print_stdout("Detected ADC limits:\n");
-		logs_write("Detected ADC limits:\n");
-		for (uint8_t i=0; i<4; i++){
-			if (adc_params[i].raw_min != INT_MAX){
-				print_stdout("ADC%d: min:%d max:%d\n", i, adc_params[i].raw_min, adc_params[i].raw_max);
-				logs_write("-ADC%d: min:%d, max:%d\n", i, adc_params[i].raw_min, adc_params[i].raw_max);
+		if (adc_params[0].enabled || adc_params[1].enabled || adc_params[2].enabled || adc_params[3].enabled){
+			print_stdout("Detected ADC limits:\n");
+			logs_write("Detected ADC limits:\n");
+			for (uint8_t i=0; i<4; i++){
+				if (adc_params[i].raw_min != INT_MAX){
+					print_stdout("ADC%d: min:%d max:%d\n", i, adc_params[i].raw_min, adc_params[i].raw_max);
+					logs_write("-ADC%d: min:%d, max:%d\n", i, adc_params[i].raw_min, adc_params[i].raw_max);
+				}
 			}
 		}
-	}
+	#else
+		i2c_poll_rate_disable = true;
+		program_diag_mode(); //diagnostic mode
+	#endif
 
 	return main_return;
 }

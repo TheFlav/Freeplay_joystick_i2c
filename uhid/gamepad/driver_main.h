@@ -39,6 +39,8 @@ int init_adc(void); //init adc data, return 0 on success, -1 on resolution read 
 
 #ifndef ALLOW_MCU_SEC_I2C
 	#undef USE_SHM_REGISTERS //can't use shm register "bridge" with MCU secondary feature
+#else
+	int mcu_search_i2c_addr(int /*bus*/, int* /*addr_main*/, int* /*addr_sec*/); //search mcu on given i2c bus, return -1 on failure, 0 on success
 #endif
 
 #ifndef DIAG_PROGRAM

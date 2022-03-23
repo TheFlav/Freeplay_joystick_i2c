@@ -17,6 +17,7 @@
 
 #define i2c_ignore_busy true //allow i2c running on busy address
 #define def_i2c_bus 1 //I2C bus
+#define def_i2c_bus_path_format "/dev/i2c-%d" //path to i2c bus, follow printf format rules
 #define def_mcu_addr 0x30 //main MCU I2C address
 #define def_mcu_addr_sec 0x40 //secondary MCU I2C address, "ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
 

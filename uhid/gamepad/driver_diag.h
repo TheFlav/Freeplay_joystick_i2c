@@ -100,6 +100,11 @@ extern void i2c_poll_joystick(bool /*force_update*/); //poll data from i2c devic
 
 extern void adc_data_compute(int /*adc_index*/); //compute adc max value, flat in/out, offset
 
+#ifdef ALLOW_MCU_SEC_I2C
+    extern int mcu_search_i2c_addr(int /*bus*/, int* /*addr_main*/, int* /*addr_sec*/); //search mcu on given i2c bus, return -1 on failure, 0 on success
+#endif
+
+
 
 //diagnostic part
 int term_esc_col_normal = 97; //normal color escape code
