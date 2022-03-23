@@ -957,13 +957,13 @@ void read_digital_inputs(void)
       break;
       
     case HOTKEY_ON:
-      if((input0 & 0xFC) != 0xFC || input1 != 0xFF)   //when we press a hotkey combo button that should be passed to the host
+      if((input0 & 0xFC) != 0xFC || (input1 & 0xFD) != 0xFD)   //when we press a hotkey combo button that should be passed to the host
       {
         //leave hotkey mode by reporting just the power button
         g_hotkey_mode = HOTKEY_JUST_EXITING;
 
         g_hotkey_input0 = input0 | 0x03;
-        g_hotkey_input1 = input1;
+        g_hotkey_input1 = input1 | 0x02;
         g_hotkey_input2 = input2;
  
         i2c_joystick_registers.input0 = input0 & g_hotkey_input0;
@@ -979,7 +979,7 @@ void read_digital_inputs(void)
       break;
       
     case HOTKEY_JUST_EXITING:
-      if(!((input0 & 0xFC) != 0xFC || input1 != 0xFF))   //when we release the hotkey combo button that should be passed to the host
+      if(!((input0 & 0xFC) != 0xFC || (input1 & 0xFD) != 0xFD))   //when we release the hotkey combo button that should be passed to the host
       {
         //leave hotkey mode by reporting just the power button
         g_hotkey_mode = HOTKEY_OFF;
