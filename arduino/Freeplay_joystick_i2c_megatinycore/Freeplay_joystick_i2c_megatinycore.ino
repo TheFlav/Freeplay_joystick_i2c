@@ -85,6 +85,8 @@
  #define CONFIG_I2C_2NDADDR          0x40  //0x30 wouldn't work
 #endif
 
+bool g_power_button_pressed = false;
+
 #ifdef USE_HOTKEY_TOGGLE_MODE
 enum hotkey_mode_enum {
     HOTKEY_JUST_ENTERING,
@@ -931,21 +933,22 @@ void read_digital_inputs(void)
   input2 |= (1 << 2);
 #endif
 
-
-
 #ifdef USE_DIGITAL_BUTTON_DEBOUNCING
   debounce_inputs(&input0, &input1, &input2);
 #endif
+
+  g_power_button_pressed = IS_PRESSED_BTN_POWER_INPUT1(input1);
+
 
 #ifdef USE_HOTKEY_TOGGLE_MODE
   switch(g_hotkey_mode)
   {
     case HOTKEY_SYSTEM_STARTUP:
-      if(!IS_PRESSED_BTN_POWER_INPUT1(input1))
+      if(!g_power_button_pressed)
         g_hotkey_mode = HOTKEY_OFF;
       break;
     case HOTKEY_JUST_ENTERING:
-      if(!IS_PRESSED_BTN_POWER_INPUT1(input1))
+      if(!g_power_button_pressed)
       {
         //now, we are fully IN hotkey mode
         g_hotkey_mode = HOTKEY_ON;
@@ -957,14 +960,19 @@ void read_digital_inputs(void)
       break;
       
     case HOTKEY_ON:
-      if((input0 & 0xFC) != 0xFC || (input1 & 0xFD) != 0xFD)   //when we press a hotkey combo button that should be passed to the host
+      byte x_input0, x_input1, x_input2;
+      x_input0 = (input0 ^ g_hotkey_input0);
+      x_input1 = (input1 ^ g_hotkey_input1);
+      x_input2 = (input2 ^ g_hotkey_input2);
+
+      if(x_input0 || x_input1 || x_input2)   //when we press a hotkey combo button that should be passed to the host
       {
         //leave hotkey mode by reporting just the power button
         g_hotkey_mode = HOTKEY_JUST_EXITING;
 
-        g_hotkey_input0 = input0 | 0x03;
-        g_hotkey_input1 = input1 | 0x02;
-        g_hotkey_input2 = input2;
+        g_hotkey_input0 = ~x_input0;    //these become a mask for the hotkey combo
+        g_hotkey_input1 = ~x_input1;    //these become a mask for the hotkey combo
+        g_hotkey_input2 = ~x_input2;    //these become a mask for the hotkey combo
  
         i2c_joystick_registers.input0 = input0 & g_hotkey_input0;
         i2c_joystick_registers.input1 = input1 & ~INPUT1_BTN_POWER & g_hotkey_input1;//make sure the power button is "pressed" while exiting hotkey mode
@@ -999,7 +1007,7 @@ void read_digital_inputs(void)
       
     case HOTKEY_OFF:
     default:
-      if(IS_PRESSED_BTN_POWER_INPUT1(input1))
+      if(g_power_button_pressed)
       {
         //the power button was just pressed not in hotkey mode
         g_hotkey_mode = HOTKEY_JUST_ENTERING;
@@ -1111,11 +1119,7 @@ void process_special_inputs()
   static unsigned long power_btn_start_millis = 0;
   static bool prev_pressed_btn_power = false;
   
-#ifdef USE_HOTKEY_TOGGLE_MODE
-  if(IS_PRESSED_BTN_POWER_INPUT1(g_hotkey_input1) || IS_PRESSED_BTN_POWER_INPUT1(i2c_joystick_registers.input1))
-#else
-  if(IS_PRESSED_BTN_POWER_INPUT1(i2c_joystick_registers.input1))
-#endif
+  if(g_power_button_pressed)
   {
     if(prev_pressed_btn_power)
     {
