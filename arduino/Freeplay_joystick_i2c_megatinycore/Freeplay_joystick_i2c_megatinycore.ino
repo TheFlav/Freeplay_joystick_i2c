@@ -1003,7 +1003,7 @@ void read_digital_inputs(void)
         status_led_on();    
       }
       static_power_button_held++;
-      if(static_power_button_held >= 0x400)
+      if(static_power_button_held >= 0x600)
       {
         g_hotkey_mode = HOTKEY_SPECIAL_INPUT_ENTERING;    //user is holding the power to enter a different mode
         backlight_start_flashing(2);
@@ -1579,7 +1579,10 @@ void loop()
     analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
     g_pwm_step = i2c_secondary_registers.config_backlight;
 
-    eeprom_data.sec_config_backlight = i2c_secondary_registers.config_backlight;
+    if(i2c_secondary_registers.config_backlight == 0)   //if the user chose backlight totally OFF, then bootup at default next time
+      eeprom_data.sec_config_backlight = CONFIG_BACKLIGHT_STEP_DEFAULT;
+    else
+      eeprom_data.sec_config_backlight = i2c_secondary_registers.config_backlight;
     eeprom_save_deferred();
   }
 #endif
