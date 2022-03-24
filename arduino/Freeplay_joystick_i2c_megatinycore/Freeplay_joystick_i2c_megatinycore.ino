@@ -54,7 +54,7 @@
 
 #define MANUF_ID         0xED
 #define DEVICE_ID        0x00
-#define VERSION_NUMBER   16
+#define VERSION_NUMBER   17
 
 #define CONFIG_PERIODIC_TASK_TIMER_MILLIS 5000
 #define CONFIG_INPUT_READ_TIMER_MICROS 500        //set to 0 for NO delay reading inputs, otherwise try to read inputs at least every CONFIG_INPUT_READ_TIMER_MICROS microseconds
@@ -260,7 +260,8 @@ struct /*i2c_secondary_address_register_struct */
   uint8_t rfu2;              // Reg: 0x06 - reserved for future use (or device-specific use)
   uint8_t rfu3;              // Reg: 0x07 - reserved for future use (or device-specific use)
   uint8_t rfu4;              // Reg: 0x08 - reserved for future use (or device-specific use)
-  uint8_t rfu5;              // Reg: 0x09 - reserved for future use (or device-specific use)
+#define REGISTER_SEC_STATUS_LED         0x09   //this one is writeable
+  uint8_t status_led_control;// Reg: 0x09 - turn on/off/blinkSlow/blinkFast/etc the blue status LED  (this is actuall a WRITE-ONLY "virtual" register)
 #define REGISTER_SEC_WRITE_PROTECT      0x0A   //this one is writeable
   uint8_t write_protect;     // Reg: 0x0A - write 0x00 to make protected registers writeable
 #define REGISTER_SEC_SEC_I2C_ADDR       0x0B   //this one is writeable
@@ -1283,6 +1284,7 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
   {
     byte temp = Wire.read(); //We might record it, we might throw it away
 
+
     if(x == REGISTER_SEC_JOY_I2C_ADDR && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
       if(i2c_address_is_in_range(temp) && temp != i2c_secondary_registers.secondary_i2c_addr)
@@ -1304,6 +1306,26 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
       
       //we would use this as a way for the i2c master (host system) to tell us about power related stuff (like if the battery is getting low)
       i2c_secondary_registers.power_control = temp;      
+    }
+    else if(x == REGISTER_SEC_STATUS_LED && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
+    {
+      //this one is write-only!  reading will always return 0x00
+      switch(temp)
+      {
+        default:
+        case 0:
+          status_led_off();
+          break;
+        case 1:
+          status_led_on();
+          break;
+        case 2:
+          status_led_flash_slow();
+          break;
+        case 3:
+          status_led_flash_fast();
+          break;
+      }
     }
 #ifdef USE_PWM_BACKLIGHT
     else if(x == REGISTER_SEC_CONFIG_BACKLIGHT && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)   //this is a writeable register
