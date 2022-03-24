@@ -93,6 +93,9 @@ enum hotkey_mode_enum {
     HOTKEY_ON,
     HOTKEY_JUST_EXITING,
     HOTKEY_OFF,
+    HOTKEY_SPECIAL_INPUT,
+    HOTKEY_SPECIAL_INPUT_ENTERING,
+    HOTKEY_SPECIAL_INPUT_EXITING,
     HOTKEY_SYSTEM_STARTUP   
 } g_hotkey_mode = HOTKEY_SYSTEM_STARTUP;
 
@@ -385,13 +388,13 @@ volatile bool g_read_analog_inputs_asap = true;
 #define IS_PRESSED_BTN_POWER_INPUT1(in1) ((in1 & INPUT1_BTN_POWER) != INPUT1_BTN_POWER)
 
 #ifdef USE_HOTKEY_TOGGLE_MODE
- #define IS_PRESSED_DPAD_UP()   (g_hotkey_mode == HOTKEY_ON ? ((g_hotkey_input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP  ) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP))
- #define IS_PRESSED_DPAD_DOWN() (g_hotkey_mode == HOTKEY_ON ? ((g_hotkey_input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN))
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_UP()   (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP  ) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP))
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN() (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN))
 
- #define IS_SPECIAL_INPUT_MODE() (g_hotkey_mode == HOTKEY_ON)
+ #define IS_SPECIAL_INPUT_MODE() (g_hotkey_mode == HOTKEY_SPECIAL_INPUT)
 #else
- #define IS_PRESSED_DPAD_UP()   ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP)
- #define IS_PRESSED_DPAD_DOWN() ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN)
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_UP()   ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP)
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN() ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN)
 
  #define IS_SPECIAL_INPUT_MODE() (IS_PRESSED_BTN_TL() && IS_PRESSED_BTN_TR() && IS_PRESSED_BTN_Y())
 #endif
@@ -434,12 +437,17 @@ void resetViaSWR() {
 uint8_t g_backlight_is_flashing = 0;    //set this to the number of flashes (off/on cycles) to perform
 
 
+#define STATUS_LED_FLASH_MILLIS_FAST 100
+#define STATUS_LED_FLASH_MILLIS_SLOW 200
+uint8_t g_status_led_flashing_millis = 0;     //set to the millis to flash at
+
 void status_led_on()
 {
 #if defined(USE_SERIAL_DEBUG)
   Serial.println("Status LED ON");
 #elif defined(USE_STATUS_LED_PB2)
   digitalWrite(PIN_STATUS_LED, HIGH);   //turn status LED on
+  g_status_led_flashing_millis = 0;
 #endif
 }
 
@@ -449,7 +457,44 @@ void status_led_off()
   Serial.println("Status LED OFF");
 #elif defined(USE_STATUS_LED_PB2)
   digitalWrite(PIN_STATUS_LED, LOW);   //turn status LED off
+  g_status_led_flashing_millis = 0;
 #endif  
+}
+
+void status_led_flash_fast()
+{
+#if defined(USE_SERIAL_DEBUG)
+  Serial.println("Status LED FLASHING FAST");
+#endif
+  g_status_led_flashing_millis = STATUS_LED_FLASH_MILLIS_FAST;
+}
+
+void status_led_flash_slow()
+{
+#if defined(USE_SERIAL_DEBUG)
+  Serial.println("Status LED FLASHING SLOW");
+#endif
+  g_status_led_flashing_millis = STATUS_LED_FLASH_MILLIS_SLOW;
+}
+
+void status_led_update()
+{
+#if defined(USE_STATUS_LED_PB2)
+  
+  if(g_status_led_flashing_millis == 0)
+    return;
+
+  static unsigned long last_millis = 0;
+
+  unsigned long curr_millis = millis();
+
+  if((curr_millis - last_millis) >= g_status_led_flashing_millis)
+  {
+    digitalWrite(PIN_STATUS_LED, !digitalRead(PIN_STATUS_LED));   //toggle status LED 
+
+    last_millis = curr_millis;
+  }
+#endif
 }
 
 void status_led_init()
@@ -880,6 +925,8 @@ void read_digital_inputs(void)
   uint8_t pb_mux0_in;
   uint8_t pc_mux0_in;
 
+  static uint16_t static_power_button_held = 0;
+
     
 
 #ifdef PIN_MUX_SELECT
@@ -952,7 +999,14 @@ void read_digital_inputs(void)
       {
         //now, we are fully IN hotkey mode
         g_hotkey_mode = HOTKEY_ON;
+        static_power_button_held = 0;
         status_led_on();    
+      }
+      static_power_button_held++;
+      if(static_power_button_held >= 0x400)
+      {
+        g_hotkey_mode = HOTKEY_SPECIAL_INPUT_ENTERING;    //user is holding the power to enter a different mode
+        static_power_button_held = 0;
       }
       g_hotkey_input0 = input0;
       g_hotkey_input1 = input1;
@@ -1021,6 +1075,45 @@ void read_digital_inputs(void)
       i2c_joystick_registers.input1 = input1;
       i2c_joystick_registers.input2 = input2;
       break;
+
+    case HOTKEY_SPECIAL_INPUT_ENTERING:
+      status_led_flash_fast();    //will get repeatedly called while power button held
+      if(!g_power_button_pressed)
+      {
+        backlight_start_flashing(2);
+        g_hotkey_mode = HOTKEY_SPECIAL_INPUT;
+      }
+      g_hotkey_input0 = input0;
+      g_hotkey_input1 = input1;
+      g_hotkey_input2 = input2;
+
+      //in special input mode, report as if no buttons are pressed
+      i2c_joystick_registers.input0 = 0xFF;
+      i2c_joystick_registers.input1 = 0xFF;
+      i2c_joystick_registers.input2 = 0xFF;      
+      break;
+
+    case HOTKEY_SPECIAL_INPUT:
+      if(g_power_button_pressed)
+      {
+        backlight_start_flashing(2);
+        g_hotkey_mode = HOTKEY_SPECIAL_INPUT_EXITING;
+      }
+      g_hotkey_input0 = input0;
+      g_hotkey_input1 = input1;
+      g_hotkey_input2 = input2;
+      break;
+      
+    case HOTKEY_SPECIAL_INPUT_EXITING:
+      if(!g_power_button_pressed)
+      {
+        g_hotkey_mode = HOTKEY_OFF;
+        status_led_off();
+      }
+      g_hotkey_input0 = input0;
+      g_hotkey_input1 = input1;
+      g_hotkey_input2 = input2;
+      break;
   }
 #else //!defined(USE_HOTKEY_TOGGLE_MODE)
   i2c_joystick_registers.input0 = input0;
@@ -1080,7 +1173,7 @@ void process_special_inputs()
 
 #ifdef USE_PWM_BACKLIGHT
   static uint16_t special_inputs_loop_counter = 0;
-  if(IS_SPECIAL_INPUT_MODE() && (IS_PRESSED_DPAD_UP() || IS_PRESSED_DPAD_DOWN()))
+  if(IS_SPECIAL_INPUT_MODE() && (IS_PRESSED_SPECIAL_INPUT_DPAD_UP() || IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN()))
   {
     if(special_inputs_loop_counter)   
     {
@@ -1091,7 +1184,7 @@ void process_special_inputs()
     {
       special_inputs_loop_counter = SPECIAL_LOOP_DELAY;
 
-      if(IS_PRESSED_DPAD_UP())
+      if(IS_PRESSED_SPECIAL_INPUT_DPAD_UP())
       {
         if(i2c_secondary_registers.config_backlight < (NUM_BACKLIGHT_PWM_STEPS-1))
         {
@@ -1099,7 +1192,7 @@ void process_special_inputs()
           //Serial.println("Backlight +");
         }
       }
-      else if(IS_PRESSED_DPAD_DOWN())
+      else if(IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN())
       {
         if(i2c_secondary_registers.config_backlight > 0)
         {
@@ -1448,6 +1541,8 @@ void loop()
 
   if(g_backlight_is_flashing)
     backlight_process_flashing();
+
+  status_led_update();
 
 #if defined(CONFIG_INPUT_READ_TIMER_MICROS) && (CONFIG_INPUT_READ_TIMER_MICROS > 0)
   static unsigned long timer_input_read_start_micros = micros();
