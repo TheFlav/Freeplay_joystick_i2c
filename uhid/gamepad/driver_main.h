@@ -100,13 +100,6 @@ char* js_axis_names[5] = {"none", "X1", "Y1", "X2", "Y2"}; //joystick axis names
 int i2c_bus = def_i2c_bus; //I2C bus
 int mcu_addr = def_mcu_addr; //main MCU I2C address
 int mcu_fd = -1;
-#ifdef ALLOW_EXT_ADC
-	int adc_addr[] = {def_adc0_addr, def_adc1_addr, def_adc2_addr, def_adc3_addr}; //external ADC I2C address, set to 0xFF to disable
-	int adc_type[] = {def_adc0_type, def_adc1_type, def_adc2_type, def_adc3_type};
-	int adc_type_count = 1; //computed during runtime
-	int adc_fd[] = {-1, -1, -1, -1};
-	int adc_init_err[] = {-1, -1, -1, -1}; //0:ok, -1:adc not enabled ,-2:failed to init
-#endif
 bool adc_fd_valid[4] = {0};
 const int i2c_errors_report = 10; //error count before report to tty
 int i2c_errors_count = 0; //errors count that happen in a row
@@ -200,7 +193,7 @@ char config_path[PATH_MAX+11] = {'\0'}; //full path to config file
 const char debug_desc[] = "Enable debug outputs (0:disable, 1:enable).";
 const char debug_adv_desc[] = "Enable debug outputs (0:disable, 1:enable).";
 
-const char pollrate_desc[] = "Driver pollrate (in hz), avoid going over 1000.";
+const char pollrate_desc[] = "Driver pollrate (in hz), avoid going over 1000 (0 to disable limit).";
 const char adc_pollrate_desc[] = "ADC pollrate (every given poll loop).";
 
 const char debounce_desc[] = "Debounce filtering to mitigate possible pad false contact, max:7 (0 to disable).";
@@ -216,10 +209,10 @@ const char adc_map_desc[] = "ADCs to Joystick axis mapping (-1:disabled axis, 0:
 
 const char adc_enabled_desc[] = "Enable MCU/External ADC (0:disable, 1:enable).";
 #ifdef ALLOW_EXT_ADC
-	const char adc_addr_desc[] = "PREIMPLEMENT External ADC I2C address, set invalid address (0xFF) to disable.";
-	const char adc_type_desc[] = "PREIMPLEMENT External ADC type identifier";
+	const char adc_addr_desc[] = "External ADC I2C address, set invalid address (0xFF) to disable.";
+	char adc_type_desc[4096] = "External ADC type identifier";
 #endif
-const char adc_res_desc[] = "External ADC resolution in bits, ignored if using MCU ADC.";
+const char adc_res_desc[] = "External ADC resolution in bits, ignored if using MCU ADC or external ADC defines it.";
 const char adc_min_desc[] = "Lowest ADC output limit (>= 0).";
 const char adc_max_desc[] = "Highest ADC output limit (<= 65354).";
 const char adc_fuzz_desc[] = "Fuzz value to smooth ADC value.";

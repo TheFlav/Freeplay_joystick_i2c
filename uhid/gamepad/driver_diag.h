@@ -3,6 +3,8 @@
 * Diagnostic part header
 */
 
+#pragma once
+
 #include <unistd.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -189,6 +191,7 @@ extern int adc_map[]; //adc to joystick maps for uhid report
     extern int adc_type[];
     int adc_type_default[] = {def_adc0_type, def_adc1_type, def_adc2_type, def_adc3_type};
     extern int adc_type_count;
+    extern char* adc_type_name[];
     extern int adc_fd[]; //external fd
     int adc_addr_back[] = {-1, -1, -1, -1}; //external address backup
     int adc_err[] = {121, 121, 121, 121}; //backup external detected i2c errors

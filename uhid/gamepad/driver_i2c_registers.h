@@ -1,7 +1,9 @@
 /*
 * FreeplayTech UHID gamepad driver
 * I2C registers header
+*
 * Only edit if you know what you are doing
+* "i2c_joystick_register_struct" and "i2c_secondary_address_register_struct" have to be identical to same named stuctures defined in MCU source code.
 */
 
 #pragma once

@@ -1,6 +1,11 @@
 /*
 * FreeplayTech UHID gamepad driver
 * HID descriptor header
+*
+* Note:
+* Whole HID descriptor is defined, even without specific things like ADCs, Dpad or misc buttons.
+* It is done that way because some emulator grab inputs from EV dev instead of JS dev.
+* Changing anything here will shift reported buttons/axis "index" numbers and so can mess with some emulators input configuration. 
 */
 
 //partially based on https://github.com/NicoHood/HID/blob/master/src/MultiReport/Gamepad.cpp

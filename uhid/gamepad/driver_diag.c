@@ -543,6 +543,15 @@ void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
         "Detect ADC value at driver startup to help with drifting or non-linear sticks",
     };
 
+    #ifdef ALLOW_EXT_ADC //adc type hint
+        char term_hint_adc_type_str[buffer_size] = "Type: ";
+        for (int i=0; i<adc_type_count; i++){
+            sprintf(buffer, "%d:%s", i, adc_type_name[i]);
+            if(i < adc_type_count-1){strcat(buffer, ", ");}
+            strcat(term_hint_adc_type_str, buffer);
+        }
+    #endif
+
     char* screen_name = "Analog Configuration";
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line, (tty_last_width - strlen(screen_name))/2, term_esc_col_normal, screen_name);
     tty_line += 2;
@@ -575,13 +584,6 @@ void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
 
             //adc type identifier
             #ifdef ALLOW_EXT_ADC
-                char term_hint_adc_type_str[buffer_size] = "Type ";
-                for (int i=0; i<adc_type_count; i++){
-                    sprintf(buffer, "%d:%s", i, "not implemented");
-                    if(i<adc_type_count -1){strcat(buffer, ", ");}
-                    strcat(term_hint_adc_type_str, buffer);
-                }
-
                 if (adc_fd_valid[adc_loop]){
                     int term_type_esc_col = adc_init_err[adc_loop] < -1 ? term_esc_col_error : term_esc_col_normal;
                     x = term_left + 5;
