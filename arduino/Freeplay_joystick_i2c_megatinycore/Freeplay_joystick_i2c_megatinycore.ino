@@ -1006,6 +1006,7 @@ void read_digital_inputs(void)
       if(static_power_button_held >= 0x400)
       {
         g_hotkey_mode = HOTKEY_SPECIAL_INPUT_ENTERING;    //user is holding the power to enter a different mode
+        backlight_start_flashing(2);
         static_power_button_held = 0;
       }
       g_hotkey_input0 = input0;
@@ -1080,7 +1081,6 @@ void read_digital_inputs(void)
       status_led_flash_fast();    //will get repeatedly called while power button held
       if(!g_power_button_pressed)
       {
-        backlight_start_flashing(2);
         g_hotkey_mode = HOTKEY_SPECIAL_INPUT;
       }
       g_hotkey_input0 = input0;
