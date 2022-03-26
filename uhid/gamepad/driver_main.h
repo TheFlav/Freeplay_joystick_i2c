@@ -29,6 +29,7 @@ void program_get_path (char** /*args*/, char* /*var*/); //get current program pa
 static void tty_signal_handler (int /*sig*/); //handle signal func
 void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
 void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value
+int int_digit_count(int /*num*/); //number of digit of a integer, negative sign is consider as a digit
 //static void debug_print_binary_int (int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format
 //static void debug_print_binary_int_term (int /*line*/, int /*col*/, int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format at given term position
 
@@ -124,6 +125,7 @@ const uint8_t mcu_i2c_register_config0 = offsetof(struct i2c_joystick_register_s
 	const uint8_t mcu_sec_register_write_protect = offsetof(struct i2c_secondary_address_register_struct, write_protect) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, write_protect
 	const uint8_t mcu_sec_register_joystick_i2c_addr = offsetof(struct i2c_secondary_address_register_struct, joystick_i2c_addr) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, joystick_i2c_addr
 	const uint8_t mcu_sec_register_secondary_i2c_addr = offsetof(struct i2c_secondary_address_register_struct, secondary_i2c_addr) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, secondary_i2c_addr
+	const uint8_t mcu_sec_register_status_led_control = offsetof(struct i2c_secondary_address_register_struct, status_led_control) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, status_led_control
 #endif
 
 //MCU config

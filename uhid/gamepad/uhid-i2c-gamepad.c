@@ -712,6 +712,13 @@ void int_constrain(int* val, int min, int max){ //limit int value to given (incl
     if(*val < min){*val = min;} else if(*val > max){*val = max;}
 }
 
+int int_digit_count(int num){ //number of digit of a integer, negative sign is consider as a digit
+    char buffer[12];
+    sprintf (buffer, "%d", num);
+    return strlen(buffer);
+}
+
+
 //Generic functions
 static void program_close(void){ //regroup all close functs
 	if (already_killed){return;}

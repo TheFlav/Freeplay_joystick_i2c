@@ -85,6 +85,7 @@ void term_screen_advanced(int /*tty_line*/, int /*tty_last_width*/, int /*tty_la
 //extern funct
 extern void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
 extern void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value
+extern int int_digit_count(int /*num*/); //number of digit of a integer, negative sign is consider as a digit
 extern void vars_main_default(void); //reset all main config vars to default
 extern void vars_adc_default(void); //reset all adc config vars to default
 
@@ -179,6 +180,7 @@ extern bool mcu_adc_enabled[]; //adc enabled on mcu, set during runtime
     extern uint8_t mcu_sec_register_write_protect; //defined at runtime, based on i2c_secondary_registers, write_protect
     extern uint8_t mcu_sec_register_joystick_i2c_addr; //defined at runtime, based on i2c_secondary_registers, joystick_i2c_addr
     extern uint8_t mcu_sec_register_secondary_i2c_addr; //defined at runtime, based on i2c_secondary_registers, secondary_i2c_addr
+    extern uint8_t mcu_sec_register_status_led_control; //defined at runtime, based on i2c_secondary_registers, status_led_control
     extern int mcu_backlight; //current backlight level, set during runtime
     extern int mcu_backlight_steps; //maximum amount of backlight steps, set during runtime
 #endif
