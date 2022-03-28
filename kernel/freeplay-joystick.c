@@ -714,6 +714,12 @@ static int freeplay_probe(struct i2c_client *client)
     priv->dev->phys = priv->phys;
     input_set_drvdata(priv->dev, priv);
     
+    if(priv->joy0_swapped_x_y)
+        dev_dbg(&client->dev, "Swapping Joy0 X/Y\n");
+    if(priv->joy1_swapped_x_y)
+        dev_dbg(&client->dev, "Swapping Joy1 X/Y\n");
+
+    
     //left analog stick
     if(priv->num_analogsticks >= 1)
     {
