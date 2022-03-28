@@ -411,6 +411,13 @@ static void freeplay_i2c_get_and_report_inputs(struct input_dev *input, bool pol
             adc0 = (regs.a0_msb << 4) | (regs.a1a0_lsb.a0_lsb);
             adc1 = (regs.a1_msb << 4) | (regs.a1a0_lsb.a1_lsb);
             
+            if(priv->joy0_swapped_x_y)
+            {
+                u16 adc_temp = adc0;
+                adc0 = adc1;
+                adc1 = adc_temp;
+            }
+            
 #ifdef DEBUG
             if(adc0 < priv->adc0_detected_min)
             {
@@ -445,6 +452,13 @@ static void freeplay_i2c_get_and_report_inputs(struct input_dev *input, bool pol
                 adc2 = (regs.a2_msb << 4) | (regs.a3a2_lsb.a2_lsb);
                 adc3 = (regs.a3_msb << 4) | (regs.a3a2_lsb.a3_lsb);
 
+                if(priv->joy1_swapped_x_y)
+                {
+                    u16 adc_temp = adc2;
+                    adc2 = adc3;
+                    adc3 = adc_temp;
+                }
+                
 #ifdef DEBUG
                 if(adc2 < priv->adc2_detected_min)
                 {
