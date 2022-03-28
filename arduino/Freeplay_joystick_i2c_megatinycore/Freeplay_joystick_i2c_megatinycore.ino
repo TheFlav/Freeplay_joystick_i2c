@@ -80,9 +80,9 @@
 
 #define DEFAULT_CONFIG0 (0xF0 | CONFIG_DEFAULT_DEBOUCE_LEVEL)
 
-#define CONFIG_I2C_DEFAULT_ADDR     0x30
+#define CONFIG_I2C_DEFAULT_PRIMARY_ADDR                     0x30
 #ifdef USE_SECONDARY_I2C_ADDR
- #define CONFIG_I2C_2NDADDR          0x40  //0x30 wouldn't work
+ #define CONFIG_I2C_DEFAULT_SECONDARY_ADDR          0x40  //0x30 wouldn't work
 #endif
 
 bool g_power_button_pressed = false;
@@ -216,13 +216,13 @@ struct /*i2c_joystick_register_struct */
 {
   uint8_t input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
   uint8_t input1;          // Reg: 0x01 - INPUT port 1 (digital buttons/dpad)
-  uint8_t input2;          // Reg: 0x03 - INPUT port 2 (extended digital buttons)     BTN_THUMBL and BTN_THUMBR among other things
-  uint8_t a0_msb;          // Reg: 0x04 - ADC0 most significant 8 bits
-  uint8_t a1_msb;          // Reg: 0x05 - ADC1 most significant 8 bits
-  uint8_t a1a0_lsb;        // Reg: 0x06 - high nibble is a1 least significant 4 bits, low nibble is a0 least significant 4 bits
-  uint8_t a2_msb;          // Reg: 0x07 - ADC2 most significant 8 bits
-  uint8_t a3_msb;          // Reg: 0x08 - ADC2 most significant 8 bits
-  uint8_t a3a2_lsb;        // Reg: 0x09 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
+  uint8_t input2;          // Reg: 0x02 - INPUT port 2 (extended digital buttons)     BTN_THUMBL and BTN_THUMBR among other things
+  uint8_t a0_msb;          // Reg: 0x03 - ADC0 most significant 8 bits
+  uint8_t a1_msb;          // Reg: 0x04 - ADC1 most significant 8 bits
+  uint8_t a1a0_lsb;        // Reg: 0x05 - high nibble is a1 least significant 4 bits, low nibble is a0 least significant 4 bits
+  uint8_t a2_msb;          // Reg: 0x06 - ADC2 most significant 8 bits
+  uint8_t a3_msb;          // Reg: 0x07 - ADC2 most significant 8 bits
+  uint8_t a3a2_lsb;        // Reg: 0x08 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
 #define REGISTER_ADC_CONF_BITS 0x09   //this one is writeable
   uint8_t adc_conf_bits;   // Reg: 0x09 - High Nibble is read-only.  ADC PRESENT = It tells which ADCs are available.
                            //             Low Nibble is read/write.  ADC ON/OFF = The system can read/write what ADCs are sampled and used for a#_msb and lsb above
@@ -291,7 +291,7 @@ volatile byte g_last_sent_input2 = 0xFF;
 
 volatile byte g_i2c_index_to_read = 0;
 volatile byte g_i2c_command_index = 0; //Gets set when user writes an address. We then serve the spot the user requested.
-#ifdef CONFIG_I2C_2NDADDR
+#ifdef CONFIG_I2C_DEFAULT_SECONDARY_ADDR
  volatile byte g_i2c_address = 0;  //if we're using multiple i2c addresses, we need to know which one is in use
 #endif
 volatile bool g_read_analog_inputs_asap = true;
@@ -577,10 +577,10 @@ void eeprom_restore_data()
 #else
     eeprom_data.sec_config_backlight = 0;
 #endif
-    eeprom_data.sec_joystick_i2c_addr = CONFIG_I2C_DEFAULT_ADDR;
+    eeprom_data.sec_joystick_i2c_addr = CONFIG_I2C_DEFAULT_PRIMARY_ADDR;
 
-#ifdef CONFIG_I2C_2NDADDR    
-    eeprom_data.sec_secondary_i2c_addr = CONFIG_I2C_2NDADDR;
+#ifdef CONFIG_I2C_DEFAULT_SECONDARY_ADDR    
+    eeprom_data.sec_secondary_i2c_addr = CONFIG_I2C_DEFAULT_SECONDARY_ADDR;
 #else
     eeprom_data.sec_secondary_i2c_addr = 0x00;
 #endif
@@ -595,8 +595,9 @@ void eeprom_restore_data()
   }
 
 
-#ifndef CONFIG_I2C_2NDADDR  
-  eeprom_data.sec_joystick_i2c_addr = CONFIG_I2C_DEFAULT_ADDR;
+#ifndef USE_SECONDARY_I2C_ADDR  
+  //if there is NOT a secondary address, then always force the main joystick address to be CONFIG_I2C_DEFAULT_PRIMARY_ADDR (because there is no way to change it besides recompiling/uploading)
+  eeprom_data.sec_joystick_i2c_addr = CONFIG_I2C_DEFAULT_PRIMARY_ADDR;
 #endif
 
 
@@ -606,12 +607,12 @@ void eeprom_restore_data()
   if(i2c_address_is_in_range(eeprom_data.sec_joystick_i2c_addr) && (eeprom_data.sec_joystick_i2c_addr != eeprom_data.sec_secondary_i2c_addr))
     i2c_secondary_registers.joystick_i2c_addr = eeprom_data.sec_joystick_i2c_addr;
   else
-    i2c_secondary_registers.joystick_i2c_addr = CONFIG_I2C_DEFAULT_ADDR;
+    i2c_secondary_registers.joystick_i2c_addr = CONFIG_I2C_DEFAULT_PRIMARY_ADDR;
     
   if(i2c_address_is_in_range(eeprom_data.sec_secondary_i2c_addr) && (eeprom_data.sec_joystick_i2c_addr != eeprom_data.sec_secondary_i2c_addr))
     i2c_secondary_registers.secondary_i2c_addr = eeprom_data.sec_secondary_i2c_addr;
   else
-    i2c_secondary_registers.secondary_i2c_addr = CONFIG_I2C_DEFAULT_ADDR;
+    i2c_secondary_registers.secondary_i2c_addr = CONFIG_I2C_DEFAULT_SECONDARY_ADDR;
 
 
   if((eeprom_data.joy_adc_conf_bits & 0xF0) != ADCS_AVAILABLE)
@@ -1272,7 +1273,7 @@ inline void receive_i2c_callback_main_address(int i2c_bytes_received)
   }
 }
 
-#ifdef CONFIG_I2C_2NDADDR  
+#ifdef USE_SECONDARY_I2C_ADDR  
 //this is the function that receives bytes from the i2c master for the SECONDARY
 // i2c address (which is for the joystick functionality)
 inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
@@ -1351,12 +1352,12 @@ void receive_i2c_callback(int i2c_bytes_received)
   if(i2c_joystick_registers.adc_conf_bits & 0x0F)     //if any ADCs are turned on
     g_read_analog_inputs_asap = true;                 //schedule a read ASAP
   
-#ifdef CONFIG_I2C_2NDADDR  
+#ifdef USE_SECONDARY_I2C_ADDR  
   g_i2c_address = Wire.getIncomingAddress() >> 1;
 
-  if(g_i2c_address == CONFIG_I2C_2NDADDR)
+  if(g_i2c_address == i2c_secondary_registers.secondary_i2c_addr)       //secondary address
     receive_i2c_callback_secondary_address(i2c_bytes_received);
-  else
+  else if(g_i2c_address == i2c_secondary_registers.joystick_i2c_addr)   //primary address
     receive_i2c_callback_main_address(i2c_bytes_received);
 #else
 
@@ -1397,7 +1398,7 @@ inline void request_i2c_callback_primary_address()
   }
 }
 
-#ifdef CONFIG_I2C_2NDADDR  
+#ifdef USE_SECONDARY_I2C_ADDR  
 //this is the function that sends bytes from the i2c slave to master for the PRIMARY
 // i2c address (which is for the joystick functionality)
 inline void request_i2c_callback_secondary_address()
@@ -1416,8 +1417,8 @@ void request_i2c_callback()
   //the register the user requested, and when it reaches the end the master
   //will read 0xFFs.
 
-#ifdef CONFIG_I2C_2NDADDR  
-  if(g_i2c_address == CONFIG_I2C_2NDADDR)
+#ifdef USE_SECONDARY_I2C_ADDR  
+  if(g_i2c_address == CONFIG_I2C_DEFAULT_SECONDARY_ADDR)
   {
       request_i2c_callback_secondary_address();
   }
@@ -1435,7 +1436,7 @@ void startI2C()
 {
   Wire.end(); //Before we can change addresses we need to stop
 
-#ifdef CONFIG_I2C_2NDADDR
+#ifdef CONFIG_I2C_DEFAULT_SECONDARY_ADDR
   Wire.begin(i2c_secondary_registers.joystick_i2c_addr, 0, (i2c_secondary_registers.secondary_i2c_addr << 1) | 0x01);
 #else
   Wire.begin(i2c_secondary_registers.joystick_i2c_addr); //Start I2C and answer calls using address from EEPROM
