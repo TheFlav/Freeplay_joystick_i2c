@@ -431,6 +431,7 @@ volatile bool g_read_analog_inputs_asap = true;
 #define PINA_ADC_MASK      (0b11110000)   //the pins in port A used for ADC
 
 void resetViaSWR() {
+  delay(100);   //sometimes EEPROM writes weren't finished, so we add a delay
   _PROTECTED_WRITE(RSTCTRL.SWRR,1);
 }
 
