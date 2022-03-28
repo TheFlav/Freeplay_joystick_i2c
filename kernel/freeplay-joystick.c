@@ -411,13 +411,6 @@ static void freeplay_i2c_get_and_report_inputs(struct input_dev *input, bool pol
             adc0 = (regs.a0_msb << 4) | (regs.a1a0_lsb.a0_lsb);
             adc1 = (regs.a1_msb << 4) | (regs.a1a0_lsb.a1_lsb);
             
-            if(priv->joy0_swapped_x_y)
-            {
-                u16 adc_temp = adc0;
-                adc0 = adc1;
-                adc1 = adc_temp;
-            }
-            
 #ifdef DEBUG
             if(adc0 < priv->adc0_detected_min)
             {
@@ -444,20 +437,21 @@ static void freeplay_i2c_get_and_report_inputs(struct input_dev *input, bool pol
             }
 #endif
             
-            input_report_abs(input, ABS_X, adc0);
-            input_report_abs(input, ABS_Y, adc1);
+            if(priv->joy0_swapped_x_y)
+            {
+                input_report_abs(input, ABS_X, adc1);
+                input_report_abs(input, ABS_Y, adc0);
+            }
+            else
+            {
+                input_report_abs(input, ABS_X, adc0);
+                input_report_abs(input, ABS_Y, adc1);
+            }
             
             if(priv->num_analogsticks == 2)
             {
                 adc2 = (regs.a2_msb << 4) | (regs.a3a2_lsb.a2_lsb);
                 adc3 = (regs.a3_msb << 4) | (regs.a3a2_lsb.a3_lsb);
-
-                if(priv->joy1_swapped_x_y)
-                {
-                    u16 adc_temp = adc2;
-                    adc2 = adc3;
-                    adc3 = adc_temp;
-                }
                 
 #ifdef DEBUG
                 if(adc2 < priv->adc2_detected_min)
@@ -484,9 +478,17 @@ static void freeplay_i2c_get_and_report_inputs(struct input_dev *input, bool pol
                     dev_info(&priv->client->dev, "Freeplay i2c Joystick, freeplay_i2c_get_and_report_inputs: new adc3 max=0x%02X\n", priv->adc3_detected_max);
                 }
 #endif
-                
-                input_report_abs(input, ABS_RX, adc2);
-                input_report_abs(input, ABS_RY, adc3);
+
+                if(priv->joy1_swapped_x_y)
+                {
+                    input_report_abs(input, ABS_RX, adc3);
+                    input_report_abs(input, ABS_RY, adc2);
+                }
+                else
+                {
+                    input_report_abs(input, ABS_RX, adc2);
+                    input_report_abs(input, ABS_RY, adc3);
+                }
             }
         }
     }
