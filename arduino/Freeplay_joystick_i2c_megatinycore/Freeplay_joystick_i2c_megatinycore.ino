@@ -1302,7 +1302,7 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
     }    
     else if(x == REGISTER_SEC_POWER_CONTROL && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
-      backlight_start_flashing(temp);     //change this at some point!
+      //backlight_start_flashing(temp);     //change this at some point!
       
       //we would use this as a way for the i2c master (host system) to tell us about power related stuff (like if the battery is getting low)
       i2c_secondary_registers.power_control = temp;      
