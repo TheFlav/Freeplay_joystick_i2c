@@ -1,7 +1,8 @@
 /*
-* UHID driver configuration functions
+* NNS configuration file handler
 */
 
+#include "driver_debug_print.h"
 #include "nns_config.h"
 
 int config_sum (cfg_vars_t* cfg, unsigned int cfg_size){ //pseudo checksum for config build
@@ -24,7 +25,7 @@ int config_save (cfg_vars_t* cfg, unsigned int cfg_size, char* filename, int uid
     if (reset) {if(remove(filename) != 0) {print_stderr("failed to delete '%s'\n", filename);}}
     FILE *filehandle = fopen(filename, "wb");
     if (filehandle != NULL) {
-        char strBuffer [4096], strBuffer1 [33]; int strBufferSize;
+        char strBuffer [4096], strBuffer1 [33];
         for (unsigned int i = 0; i < cfg_size; i++) {
             int tmpType = cfg[i].type;
             if (tmpType == 0) {fprintf (filehandle, "%s=%d;", cfg[i].name, *(int*)cfg[i].ptr); //int
@@ -58,7 +59,7 @@ int config_save (cfg_vars_t* cfg, unsigned int cfg_size, char* filename, int uid
 		if (uid !=-1 && gid != -1){ //config file owner
 			struct stat file_stat = {0}; bool failed = false;
 			if (stat(filename, &file_stat) == 0){
-				if (uid !=-1 && file_stat.st_uid != uid || gid !=-1 && file_stat.st_gid != gid) {
+				if (uid !=-1 && (file_stat.st_uid != uid || gid !=-1) && file_stat.st_gid != gid) {
 					if (chown(filename, (uid_t) uid, (gid_t) gid) < 0){failed = true;
 					} else {print_stdout("%s owner changed successfully (uid:%d, gid:%d)\n", filename, uid, gid);}
 				}
@@ -113,8 +114,8 @@ bool config_type_parse (cfg_vars_t* cfg, unsigned int cfg_size, int index, int t
 		char tmpVal1 [tmpValSize+1]; strcpy(tmpVal1, value);
 		char *tmpPtr2 = strtok(tmpVal1, ",");
 		while (tmpPtr2 != NULL) {
-			if (j < arrSize) {((int*)((int*)cfg[index].ptr)[0])[j] = atoi (tmpPtr2);} //no overflow
-			j++; tmpPtr2 = strtok (NULL, ","); //next element
+			if (j < arrSize) {((int*)((int*)cfg[index].ptr)[0])[j] = atoi(tmpPtr2);} //no overflow
+			j++; tmpPtr2 = strtok(NULL, ","); //next element
 		}
 
 		if(debug){
