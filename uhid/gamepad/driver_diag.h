@@ -72,15 +72,20 @@ static int term_print_path_multiline(char* /*str*/, int /*line*/, int /*col*/, i
 int term_init(void); //init terminal related vars
 int program_diag_mode(void); //main diag mode function
 
-void vars_main_default(void); //reset all main config vars to default
+//void vars_main_default(void); //reset all main config vars to default
+void vars_i2c_default(void); //reset all i2c config vars to default
+void vars_digital_default(void); //reset all digital config vars to default
 void vars_adc_default(void); //reset all adc config vars to default
 void vars_cfg_reload(void); //reload config file
 
 void term_screen_main(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
+void term_screen_i2c(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 void term_screen_adc(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 void term_screen_digital(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 void term_screen_save(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 void term_screen_advanced(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //"ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
+
+
 
 //extern funct
 extern void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
@@ -93,6 +98,7 @@ extern int i2c_check_bus(int /*bus*/); //check I2C bus, return 0 on success, -1:
 extern int i2c_open_dev(int* /*fd*/, int /*bus*/, int /*addr*/); //open I2C device, return 0 on success, -1:bus, -2:addr, -3:generic error
 extern void i2c_close_all(void); //close all I2C file
 
+extern int mcu_search_i2c_addr(int /*bus*/, int* /*addr_main*/, int* /*addr_sec*/); //search mcu on given i2c bus, return -1 on failure, 0 on success
 extern int mcu_check_manufacturer(void); //check device manufacturer, fill signature,id,version, return 0 on success, -1 on wrong manufacturer, -2 on i2c error
 extern int mcu_update_config0(void); //read/update config0 register, return 0 on success, -1 on error
 extern int mcu_update_register(int* /*fd*/, uint8_t /*reg*/, uint8_t /*value*/, bool /*check*/); //update and check register, return 0 on success, -1 on error
@@ -102,11 +108,6 @@ extern void uhid_joystick_swap(void); //uhid joystick/axis swap
 extern void i2c_poll_joystick(bool /*force_update*/); //poll data from i2c device
 
 extern void adc_data_compute(int /*adc_index*/); //compute adc max value, flat in/out, offset
-
-#ifdef ALLOW_MCU_SEC_I2C
-    extern int mcu_search_i2c_addr(int /*bus*/, int* /*addr_main*/, int* /*addr_sec*/); //search mcu on given i2c bus, return -1 on failure, 0 on success
-#endif
-
 
 
 //diagnostic part
@@ -125,7 +126,8 @@ int select_index_current = 0, select_index_last = -1; //current element selected
 int term_screen_current = 0, term_screen_last = -1; //start "screen", last screen
 int term_screen_update = false; //"screen" require update
 
-void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_screen_adc, term_screen_digital, term_screen_save, term_screen_advanced}; //pointer to screen functions
+void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_screen_i2c, term_screen_adc, term_screen_digital, term_screen_save, term_screen_advanced}; //pointer to screen functions
+enum term_screen {SCREEN_MAIN, SCREEN_I2C, SCREEN_ADC, SCREEN_DIGITAL, SCREEN_SAVE, SCREEN_ADVANCED};
 
 struct winsize ws; //terminal size
 term_input_t term_input = {0}; //contain user inputs
@@ -151,7 +153,7 @@ extern char* js_axis_names[]; //joystick axis names, virtually start at index -1
 extern char config_path[]; //full path to config file
 
 //i2c
-bool i2c_bus_failed = false; //bus failure
+bool i2c_bus_failed = false, i2c_failed = false; //i2c failure
 int i2c_bus_err = 121, i2c_main_err = 121; //backup detected i2c errors
 extern int mcu_fd; //mcu i2c fd
 extern bool adc_fd_valid[]; //are external fd valid
@@ -197,16 +199,16 @@ extern int adc_map[]; //adc to joystick maps for uhid report
     extern int adc_fd[]; //external fd
     int adc_addr_back[] = {-1, -1, -1, -1}; //external address backup
     int adc_err[] = {121, 121, 121, 121}; //backup external detected i2c errors
-	extern int adc_init_err[]; //0:ok, -1:failed to init
+    extern int adc_init_err[]; //0:ok, -1:failed to init
     char* adc_init_err_str[] = {"init ok", "not enabled", "init failed", "not implemented"};
 #endif
 
 extern adc_data_t adc_params[];
 adc_data_t adc_params_default[4] = {
-	{-1,-1,INT_MAX,INT_MIN, def_adc0_res,0xFF, 0x7FFF,def_adc0_min,def_adc0_max,0, def_adc0_fuzz,def_adc0_flat,def_adc0_flat, 0,0, def_adc0_enabled,def_adc0_reversed,def_adc0_autocenter},
-	{-1,-1,INT_MAX,INT_MIN, def_adc1_res,0xFF, 0x7FFF,def_adc1_min,def_adc1_max,0, def_adc1_fuzz,def_adc1_flat,def_adc1_flat, 0,0, def_adc1_enabled,def_adc1_reversed,def_adc1_autocenter},
-	{-1,-1,INT_MAX,INT_MIN, def_adc2_res,0xFF, 0x7FFF,def_adc2_min,def_adc2_max,0, def_adc2_fuzz,def_adc2_flat,def_adc2_flat, 0,0, def_adc2_enabled,def_adc2_reversed,def_adc2_autocenter},
-	{-1,-1,INT_MAX,INT_MIN, def_adc3_res,0xFF, 0x7FFF,def_adc3_min,def_adc3_max,0, def_adc3_fuzz,def_adc3_flat,def_adc3_flat, 0,0, def_adc3_enabled,def_adc3_reversed,def_adc3_autocenter},
+    {-1,-1,INT_MAX,INT_MIN, def_adc0_res,0xFF, 0x7FFF,def_adc0_min,def_adc0_max,0, def_adc0_fuzz,def_adc0_flat,def_adc0_flat, 0,0, def_adc0_enabled,def_adc0_reversed,def_adc0_autocenter},
+    {-1,-1,INT_MAX,INT_MIN, def_adc1_res,0xFF, 0x7FFF,def_adc1_min,def_adc1_max,0, def_adc1_fuzz,def_adc1_flat,def_adc1_flat, 0,0, def_adc1_enabled,def_adc1_reversed,def_adc1_autocenter},
+    {-1,-1,INT_MAX,INT_MIN, def_adc2_res,0xFF, 0x7FFF,def_adc2_min,def_adc2_max,0, def_adc2_fuzz,def_adc2_flat,def_adc2_flat, 0,0, def_adc2_enabled,def_adc2_reversed,def_adc2_autocenter},
+    {-1,-1,INT_MAX,INT_MIN, def_adc3_res,0xFF, 0x7FFF,def_adc3_min,def_adc3_max,0, def_adc3_fuzz,def_adc3_flat,def_adc3_flat, 0,0, def_adc3_enabled,def_adc3_reversed,def_adc3_autocenter},
 };
 
 bool adc_enabled_back[] = {def_adc0_enabled, def_adc1_enabled, def_adc2_enabled, def_adc3_enabled};

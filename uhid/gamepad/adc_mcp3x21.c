@@ -1,7 +1,8 @@
 /*
 * FreeplayTech UHID gamepad driver
 * MCP3021/MCP3221 External ADC implement
-* Mainly here as a template for other ADC implementation
+* Mainly here as a template for other external ADC implementation.
+* Please refer to driver_adc_external.h for additional informations.
 */
 
 #include <linux/swab.h> //byteswap integer

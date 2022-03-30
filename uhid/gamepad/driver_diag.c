@@ -3,20 +3,15 @@
 * Diagnostic part header
 */
 
-
 #include "driver_config.h"
 #include "driver_debug_print.h"
 #include "driver_i2c_registers.h"
 #include "nns_config.h"
 #include "driver_diag.h"
 
-
-void vars_main_default(){ //reset all main config vars to default
-    debug = def_debug;
-    debug_adv = def_debug_adv;
-
-    i2c_poll_rate = def_i2c_poll_rate;
-    i2c_adc_poll = def_i2c_adc_poll;
+void vars_i2c_default(){ //reset all i2c config vars to default
+    //debug = def_debug;
+    //debug_adv = def_debug_adv;
 
     i2c_bus = def_i2c_bus;
     mcu_addr = def_mcu_addr;
@@ -24,24 +19,30 @@ void vars_main_default(){ //reset all main config vars to default
         mcu_addr_sec = def_mcu_addr_sec;
     #endif
 
-    irq_gpio = def_irq_gpio;
-    digital_debounce = def_digital_debounce;
-
     #ifdef ALLOW_EXT_ADC
         adc_addr[0] = def_adc0_addr;
         adc_addr[1] = def_adc1_addr;
         adc_addr[2] = def_adc2_addr;
         adc_addr[3] = def_adc3_addr;
+    #endif
+}
 
+void vars_digital_default(){ //reset all digital config vars to default
+    irq_gpio = def_irq_gpio;
+    digital_debounce = def_digital_debounce;
+    i2c_poll_rate = def_i2c_poll_rate;
+}
+
+void vars_adc_default(){ //reset all adc config vars to default
+    i2c_adc_poll = def_i2c_adc_poll;
+    adc_map[0] = def_adc0_map; adc_map[1] = def_adc1_map; adc_map[2] = def_adc2_map; adc_map[3] = def_adc3_map;
+
+    #ifdef ALLOW_EXT_ADC
         adc_type[0] = def_adc0_type;
         adc_type[1] = def_adc1_type;
         adc_type[2] = def_adc2_type;
         adc_type[3] = def_adc3_type;
     #endif
-}
-
-void vars_adc_default(){ //reset all adc config vars to default
-    adc_map[0] = def_adc0_map; adc_map[1] = def_adc1_map; adc_map[2] = def_adc2_map; adc_map[3] = def_adc3_map;
 
     adc_params[0].enabled = def_adc0_enabled;
     adc_params[0].res = def_adc0_res;
@@ -81,10 +82,10 @@ void vars_adc_default(){ //reset all adc config vars to default
 }
 
 void vars_cfg_reload(void){ //reload config file
-	config_parse(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid); //parse config file, create if needed
+    config_parse(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid); //parse config file, create if needed
 
     //reset backup vars
-	i2c_bus_back = -1, mcu_addr_back = -1;
+    i2c_bus_back = -1, mcu_addr_back = -1;
     #ifdef ALLOW_MCU_SEC_I2C
         mcu_addr_sec_back = -1;
     #endif
@@ -159,7 +160,7 @@ static void term_user_input(term_input_t* input){ //process terminal key inputs
                 }
             } else {if(debug){strcpy(last_key, "ESC");} input->escape = true;} //esc key
         } else if (debug){sprintf(last_key, "'%c'(%d), no used", term_read_char, term_read_char);} //debug
-        tcflush(STDIN_FILENO, TCIFLUSH); //flush STDIN, useful?
+        ioctl(STDIN_FILENO, TCFLSH, 2); //flush stdin
         if (debug){fprintf(stdout, "\e[1;25H\e[0K\e[100mDEBUG last key: %s\e[0m\n", last_key);} //print last char to STDIN if debug
     }
 }
@@ -267,14 +268,14 @@ static int term_print_path_multiline(char* str, int line, int col, int width_lim
     array_fill(buffer, buffer_size, '\0');
     char str_back[strlen(str)+1]; strcpy(str_back, str);
     char *tmpPtr = strtok(str_back, "/");
-	while (tmpPtr != NULL){
+    while (tmpPtr != NULL){
         if(strlen(buffer) + strlen(tmpPtr) + col + 2 > width_limit){
             fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[1m\xE2\x86\x93\e[21m\e[0m", line + lines++, col, esc_color, buffer);
             array_fill(buffer, buffer_size, '\0');
         }
         strcat(buffer, "/"); strcat(buffer, tmpPtr);
-		tmpPtr = strtok (NULL, "/");
-	}
+    tmpPtr = strtok (NULL, "/");
+    }
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", line + lines++, col, esc_color, buffer);
     return lines;
 }
@@ -305,11 +306,11 @@ int program_diag_mode(){ //main diag function
     term_screen_funct_ptr[term_screen_current](tty_start_line, tty_last_width, tty_last_height); //call "screen" function
     if (term_screen_current != term_screen_last || term_screen_update){term_screen_update = false; goto tty_start;} //reset screen request
 
-    tcflush(STDOUT_FILENO, TCIOFLUSH); //flush STDOUT
+    ioctl(STDOUT_FILENO, TCFLSH, 2); //flush stdout
     fprintf(stdout, "\e[0;0H\e[2J\e[?25h"); //reset tty, show cursor
 
     diag_mode_init = false;
-	return 0;
+    return 0;
 }
 
 
@@ -325,138 +326,44 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strlen(screen_name))/2, term_esc_col_normal, screen_name);
     tty_line++;
 
-    bool i2c_update = false, i2c_failed = false;
-    bool term_go_screen_adc = false, term_go_screen_digital = false;
+    //bool i2c_update = false, i2c_failed = false;
+    bool term_go_screen_i2c = false, term_go_screen_adc = false, term_go_screen_digital = false;
     #ifdef ALLOW_MCU_SEC_I2C
         bool term_go_screen_advanced = false;
     #endif
 
-    //bus
-    bool i2c_bus_update = false;
-    int i2c_bus_default = def_i2c_bus;
-    if (i2c_bus != i2c_bus_back){
-        i2c_bus_back = i2c_bus; i2c_bus_update = true;
-        if (i2c_check_bus(i2c_bus) != 0){i2c_bus_err = errno; i2c_bus_failed = true;} else {i2c_bus_failed = false;}
-    }
-
-    if (i2c_bus_failed){
-        tmp_esc_col = term_esc_col_error;
-        sprintf(buffer, "Failed to open I2C bus, %s", strerror(i2c_bus_err));
-    } else {strcpy(buffer, "Bus to use for I2C device(s)");}
-
-    fprintf(stdout, "\e[%d;%dH\e[%dmBus:___ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, buffer);
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+4, .y=tty_line++, .size=3}, .type=0, .value={.min=0, .max=255, .ptrint=&i2c_bus, .ptrbool=&i2c_update}, .defval={.ptrint=&i2c_bus_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
-    if (i2c_bus_failed){goto i2c_failed_jump;} //bus failed
-
-    //main address
-    int mcu_addr_default = def_mcu_addr;
-    if (mcu_addr != mcu_addr_back || i2c_bus_update || mcu_fd < 0){
-        mcu_addr_back = mcu_addr;
-        if (i2c_open_dev(&mcu_fd, i2c_bus, mcu_addr) != 0){i2c_main_err = errno;}
-    }
-
-    if (mcu_fd < 0){ //failed
-        i2c_failed = true;
-        tmp_esc_col = term_esc_col_error;
-        sprintf(buffer, "Invalid address, %s", strerror(i2c_main_err));
-    } else {strcpy(buffer, "Main I2C address, used for inputs");}
-
-    fprintf(stdout, "\e[%d;%dH\e[%dmMain address:_____ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, buffer);
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+13, .y=tty_line++, .size=5}, .type=3, .value={.min=0, .max=127, .ptrint=&mcu_addr, .ptrbool=&i2c_update}, .defval={.ptrint=&mcu_addr_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
-
-    //secondary address
-    #ifdef ALLOW_MCU_SEC_I2C
-        int mcu_addr_sec_default = def_mcu_addr_sec;
-        if (mcu_addr_sec != mcu_addr_sec_back || i2c_bus_update || mcu_fd_sec < 0){
-            mcu_addr_sec_back = mcu_addr_sec;
-            if (i2c_open_dev(&mcu_fd_sec, i2c_bus, mcu_addr_sec) != 0){i2c_sec_err = errno;}
-        }
-
-        if (mcu_fd_sec < 0){ //failed
-            tmp_esc_col = term_esc_col_error;
-            sprintf(buffer, "Invalid address, %s", strerror(i2c_sec_err));
-        } else {strcpy(buffer, "Secondary I2C address, used for additionnal features");}
-        
-        fprintf(stdout, "\e[%d;%dH\e[%dmSecond address:_____ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, buffer);
-        term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+15, .y=tty_line++, .size=5}, .type=3, .value={.min=0, .max=127, .ptrint=&mcu_addr_sec, .ptrbool=&i2c_update}, .defval={.ptrint=&mcu_addr_sec_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
-
-        if (mcu_fd < 0 || mcu_fd_sec < 0){
-            int tmp_addr_main = 0,  tmp_addr_sec = 0;
-            if (mcu_search_i2c_addr(i2c_bus, &tmp_addr_main, &tmp_addr_sec) == 0){
-                fprintf(stdout, "\e[%d;%dH\e[%dmPossible address: main:\e[4m0x%02X\e[24m, secondary:\e[4m0x%02X\e[24m\e[0m", tty_line++, tmp_col, term_esc_col_error, tmp_addr_main, tmp_addr_sec);
-            }
-        }
-    #else
-        fprintf(stdout, "\e[%d;%dH\e[%dmSecond address was disabled during compilation.\e[0m", tty_line++, tmp_col, term_esc_col_disabled, buffer);
-    #endif
-    if (i2c_failed){goto i2c_failed_jump;} //address failed
-
-    //i2c signature
-    int check_manuf_ret = mcu_check_manufacturer();
-    if (check_manuf_ret < 0){i2c_failed = true;} //invalid manufacturer
-    if (i2c_failed){tmp_esc_col = term_esc_col_error; sprintf(buffer, "Wrong device signature, was expecting 0x%02X but got 0x%02X", mcu_manuf, mcu_signature);
-    } else {tmp_esc_col = term_esc_col_normal; sprintf(buffer, "Device signature: 0x%02X, id:%d, version:%d", mcu_signature, mcu_id, mcu_version);}
-    fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, tmp_col, tmp_esc_col, buffer);
-    if (i2c_failed){goto i2c_failed_jump;}
-    if (check_manuf_ret > 0){fprintf(stdout, "\e[%d;%dH\e[%dmWARNING: program register version (%d) mismatch MCU version (%d)\e[0m", tty_line++, tmp_col, term_esc_col_error, mcu_version_even, mcu_version);}
-
-    //config0
-    if (mcu_update_config0() != 0){fprintf(stdout, "\e[%d;%dH\e[%dmWarning, failed to read 'config0' register\e[0m", tty_line++, tmp_col, term_esc_col_error);} //read/update of config0 register failed
-    tty_line++;
-
-    //external adc
-    #ifdef ALLOW_EXT_ADC
-        int adc_addr_default[]={def_adc0_addr, def_adc1_addr, def_adc2_addr, def_adc3_addr};
-        fprintf(stdout, "\e[%d;%dH\e[4;%dmExternal ADCs (set a invalid address to disable):\e[0m", tty_line++, tmp_col, term_esc_col_normal);
-        for (int i=0; i<4; i++){
-            if (adc_addr[i] != adc_addr_back[i] || i2c_bus_update || adc_fd[i] < 0){
-                adc_addr_back[i] = adc_addr[i];
-				adc_fd_valid[i] = (i2c_open_dev(&adc_fd[i], i2c_bus, adc_addr[i]) == 0);
-                adc_err[i] = errno;
-            }
-            if (!adc_fd_valid[i]){tmp_esc_col = term_esc_col_error; sprintf(buffer, "(Invalid address, %s)", strerror(adc_err[i]));
-            } else {tmp_esc_col = term_esc_col_normal; strcpy(buffer, "");}
-            fprintf(stdout, "\e[%d;%dH\e[%dmADC%d address:_____ %s\e[0m", tty_line, tmp_col, tmp_esc_col, i, buffer);
-            term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+13, .y=tty_line++, .size=5}, .type=3, .value={.min=0, .max=127, .ptrint=&adc_addr[i], .ptrbool=&i2c_update}, .defval={.ptrint=&adc_addr_default[i], .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
-        }
-        tty_line++;
-    #else
-        fprintf(stdout, "\e[%d;%dH\e[%dmExternal ADCs feature was disabled during compilation.\e[0m", tty_line, tmp_col, term_esc_col_disabled, buffer);
-        tty_line += 2;
-    #endif
-
     //digital debug / adc configuration
+    bool mcu_failed = mcu_fd < 0 || mcu_signature != mcu_manuf;
     term_pos_button_t term_inputs_buttons[] = {
-        {.str=" Digital Configuration ", .ptrbool=&term_go_screen_digital, .ptrhint="Digital inputs specific settings, display registers state"},
-        {.str=" Analog Configuration ", .ptrbool=&term_go_screen_adc, .ptrhint="ADC inputs specific settings"},
+        {.str=" I2C Configuration ", .ptrbool=&term_go_screen_i2c, .ptrhint="Define I2C settings"},
+        {.str=" Digital Configuration ", .ptrbool=&term_go_screen_digital, .ptrhint="Digital inputs specific settings, display registers state", .disabled=mcu_failed},
+        {.str=" Analog Configuration ", .ptrbool=&term_go_screen_adc, .ptrhint="ADC inputs specific settings", .disabled=mcu_failed},
+        #ifdef ALLOW_MCU_SEC_I2C
+            {.str=" Advanced Configuration ", .ptrbool=&term_go_screen_advanced, .ptrhint="Edit MCU internal settings", .disabled=mcu_fd_sec<0},
+        #endif
     };
 
     int term_inputs_buttons_count = sizeof(term_inputs_buttons) / sizeof(term_inputs_buttons[0]);
-    int term_inputs_buttons_pad = (tty_last_width - term_footer_buttons_width * term_inputs_buttons_count) / (term_inputs_buttons_count + 1);
     for (int i=0; i<term_inputs_buttons_count; i++){
-        int x = term_inputs_buttons_pad + (term_footer_buttons_width + term_inputs_buttons_pad) * i;
-        array_pad(term_inputs_buttons[i].str, strlen(term_inputs_buttons[i].str), term_footer_buttons_width, ' ', 0);
-        term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tty_line, .size=term_footer_buttons_width}, .type=1, .disabled=term_inputs_buttons[i].disabled, .value={.ptrchar=term_inputs_buttons[i].str, .ptrbool=term_inputs_buttons[i].ptrbool}, .hint={.y=hint_line, .str=term_inputs_buttons[i].ptrhint}};
+        int tmp_len = strlen(term_inputs_buttons[i].str);
+        term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - tmp_len)/2, .y=tty_line, .size=tmp_len}, .type=1, .disabled=term_inputs_buttons[i].disabled, .value={.ptrchar=term_inputs_buttons[i].str, .ptrbool=term_inputs_buttons[i].ptrbool}, .hint={.y=hint_line, .str=term_inputs_buttons[i].ptrhint}};
+        tty_line += 2;
     }
-    tty_line += 2;
 
-    //advanced configuration
-    #ifdef ALLOW_MCU_SEC_I2C
-        term_pos_button_t term_advanced_button = {.str=" Advanced Configuration ", .ptrbool=&term_go_screen_advanced, .ptrhint="Warning: Allow to mess with MCU internal settings", .disabled=(mcu_fd_sec<0)};
-        term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(term_advanced_button.str))/2, .y=tty_line, .size=strlen(term_advanced_button.str)}, .type=1, .disabled=term_advanced_button.disabled, .value={.ptrchar=term_advanced_button.str, .ptrbool=term_advanced_button.ptrbool}, .hint={.y=hint_line, .str=term_advanced_button.ptrhint}};
-    #endif
+    if (mcu_failed){fprintf(stdout, "\e[%d;%dH\e[%dmFailed to open MCU main address.\e[0m", tty_line++, tmp_col, term_esc_col_error);}
+#ifdef ALLOW_MCU_SEC_I2C
+    if (mcu_fd_sec<0){mcu_failed=true; fprintf(stdout, "\e[%d;%dH\e[%dmFailed to open MCU secondary address.\e[0m", tty_line++, tmp_col, term_esc_col_error);}
+#endif
+    if (mcu_failed){fprintf(stdout, "\e[%d;%dH\e[%dmPlease check I2C Configuration for more information.\e[0m", tty_line++, tmp_col, term_esc_col_error);}
 
-    i2c_failed_jump:; //jump point for i2c failure
-    
     //footer
     fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[0], 20)) / 2, term_hint_nav_str[0]); //nav hint
 
     //footer buttons
-    bool reset_requested = false, default_requested = false, save_requested = false;
+    bool reset_requested = false, /*default_requested = false, */save_requested = false;
     term_pos_button_t term_footer_buttons[] = {
         {.str="Discard", .ptrbool=&reset_requested, .ptrhint="Reload configuration, unsaved data will be lost"},
-        {.str="Default", .ptrbool=&default_requested, .ptrhint="Reset values to default (excl. Analog Configuration)"},
-        {.str="Save", .ptrbool=&save_requested, .ptrhint="Save new configuration", .disabled=i2c_failed},
+        {.str="Save", .ptrbool=&save_requested, .ptrhint="Save new configuration", .disabled=mcu_fd<0},
         {.str="Close", .ptrbool=&kill_requested, .ptrhint="Close without saving"},
     };
     
@@ -478,16 +385,239 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
 
         if (term_input.escape){select_index_current = select_limit-1;} //escape key pressed, move cursor to last selectible element
-        if (term_go_screen_adc){term_screen_current = 1; goto funct_end;} //go to adc screen requested
-        if (term_go_screen_digital){term_screen_current = 2; goto funct_end;} //go to digital screen requested
-        if (save_requested){term_screen_current = 3; goto funct_end;} //go to save screen requested
+        if (term_go_screen_i2c){term_screen_current = SCREEN_I2C; goto funct_end;} //go to adc screen requested
+        if (term_go_screen_digital){term_screen_current = SCREEN_DIGITAL; goto funct_end;} //go to digital screen requested
+        if (term_go_screen_adc){term_screen_current = SCREEN_ADC; goto funct_end;} //go to adc screen requested
         #ifdef ALLOW_MCU_SEC_I2C
-            if (term_go_screen_advanced){term_screen_current = 4; goto funct_end;} //go to advanced screen requested
+            if (term_go_screen_advanced){term_screen_current = SCREEN_ADVANCED; goto funct_end;} //go to advanced screen requested
         #endif
-
         if (reset_requested){vars_cfg_reload(); term_screen_update = true; goto funct_end;} //reload config file
-        if (default_requested){vars_main_default(); term_screen_update = true; goto funct_end;} //reset vars to default
+        if (save_requested){term_screen_current = SCREEN_SAVE; goto funct_end;} //go to save screen requested
+        fprintf(stdout, "\e[0;0H\n"); //force tty update
+        usleep (1000000/30); //limit to 30hz max to limit risk of i2c colision if driver is running
+    }
+
+    funct_end:; //jump point for fast exit
+    free(term_select);
+}
+
+
+void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
+    int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal;
+    char buffer[buffer_size];
+
+    const int select_max = 255; //TODO proper count
+    term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
+    int select_limit = 0;
+
+    char* screen_name = "I2C configuration";
+    fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, (tty_last_width - strlen(screen_name))/2, term_esc_col_normal, screen_name);
+    tty_line++;
+
+    bool i2c_bus_update = false,  i2c_update = false, display_i2c_map = false; i2c_failed = false;
+
+    //bus
+    int i2c_bus_default = def_i2c_bus;
+    if (i2c_bus != i2c_bus_back){
+        i2c_bus_back = i2c_bus; i2c_bus_update = true;
+        i2c_bus_failed = (i2c_check_bus(i2c_bus) != 0);
+        if (i2c_bus_failed){
+            i2c_bus_err = errno;
+            i2c_bus_failed = true;
+            close(mcu_fd); mcu_fd=-1; //main
+            #ifdef ALLOW_MCU_SEC_I2C
+                close(mcu_fd_sec); mcu_fd_sec = -1; //secondary
+            #endif
+            #ifdef ALLOW_EXT_ADC
+            for (int i=0; i<4; i++){close(adc_fd[i]); adc_fd[i] = -1; adc_fd_valid[i] = false;} //ext adc
+            #endif
+        }
+    }
+
+    if (i2c_bus_failed){
+        tmp_esc_col = term_esc_col_error;
+        sprintf(buffer, "Failed to open I2C bus, %s", strerror(i2c_bus_err));
+    } else {strcpy(buffer, "Bus to use for I2C device(s)");}
+
+    fprintf(stdout, "\e[%d;%dH\e[%dmBus:___ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, buffer);
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+4, .y=tty_line++, .size=3}, .type=0, .value={.min=0, .max=255, .ptrint=&i2c_bus, .ptrbool=&i2c_update}, .defval={.ptrint=&i2c_bus_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+    if (i2c_bus_failed){goto i2c_failed_jump;} //bus failed
+
+    //main address
+    int mcu_addr_default = def_mcu_addr;
+    if (mcu_addr != mcu_addr_back || i2c_bus_update || mcu_fd < 0){
+        mcu_addr_back = mcu_addr;
+        i2c_failed = (i2c_open_dev(&mcu_fd, i2c_bus, mcu_addr) != 0);
+        if (i2c_failed){i2c_main_err = errno;}
+    }
+
+    if (mcu_fd < 0){ //failed
+        i2c_failed = true; tmp_esc_col = term_esc_col_error;
+        sprintf(buffer, "Invalid address, %s", strerror(i2c_main_err));
+    } else {strcpy(buffer, "Main I2C address, used for inputs");}
+
+    fprintf(stdout, "\e[%d;%dH\e[%dmMain address:_____ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, buffer);
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+13, .y=tty_line++, .size=5}, .type=3, .value={.min=0, .max=127, .ptrint=&mcu_addr, .ptrbool=&i2c_update}, .defval={.ptrint=&mcu_addr_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+
+    //secondary address
+    bool mcu_sec_failed = false;
+    #ifdef ALLOW_MCU_SEC_I2C
+        int mcu_addr_sec_default = def_mcu_addr_sec;
+        if (mcu_addr_sec != mcu_addr_sec_back || i2c_bus_update || mcu_fd_sec < 0){
+            mcu_addr_sec_back = mcu_addr_sec;
+            if (i2c_open_dev(&mcu_fd_sec, i2c_bus, mcu_addr_sec) != 0){i2c_sec_err = errno;}
+        }
+
+        if (mcu_fd_sec < 0){ //failed
+            mcu_sec_failed = true;
+            tmp_esc_col = term_esc_col_error;
+            sprintf(buffer, "Invalid address, %s", strerror(i2c_sec_err));
+        } else {strcpy(buffer, "Secondary I2C address, used for additionnal features");}
+        
+        fprintf(stdout, "\e[%d;%dH\e[%dmSecond address:_____ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, buffer);
+        term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+15, .y=tty_line++, .size=5}, .type=3, .value={.min=0, .max=127, .ptrint=&mcu_addr_sec, .ptrbool=&i2c_update}, .defval={.ptrint=&mcu_addr_sec_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+    #else
+        fprintf(stdout, "\e[%d;%dH\e[%dmSecond address was disabled during compilation.\e[0m", tty_line++, tmp_col, term_esc_col_disabled, buffer);
+    #endif
+
+    if (mcu_fd < 0 || mcu_sec_failed){
+        int tmp_addr_main = 0,  tmp_addr_sec = 0;
+        if (mcu_search_i2c_addr(i2c_bus, &tmp_addr_main, &tmp_addr_sec) == 0){
+            fprintf(stdout, "\e[%d;%dH\e[%dmPossible address: main:\e[4m0x%02X\e[24m\e[0m", tty_line++, tmp_col, term_esc_col_error, tmp_addr_main);
+            #ifdef ALLOW_MCU_SEC_I2C
+                fprintf(stdout, "\e[%dm, secondary:\e[4m0x%02X\e[24m\e[0m", term_esc_col_error, tmp_addr_sec);
+            #endif
+        }
+    }
+    //if (i2c_failed){goto i2c_failed_jump;} //address failed
+
+    //i2c signature
+    if (mcu_fd >= 0){
+        int check_manuf_ret = mcu_check_manufacturer();
+        if (check_manuf_ret < 0){i2c_failed = true;} //invalid manufacturer
+        if (i2c_failed){tmp_esc_col = term_esc_col_error; sprintf(buffer, "Wrong device signature, was expecting 0x%02X but got 0x%02X", mcu_manuf, mcu_signature);
+        } else {tmp_esc_col = term_esc_col_normal; sprintf(buffer, "Device signature: 0x%02X, id:%d, version:%d", mcu_signature, mcu_id, mcu_version);}
+        fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line++, tmp_col, tmp_esc_col, buffer);
+        if (i2c_failed){goto i2c_failed_jump;}
+        if (check_manuf_ret > 0){fprintf(stdout, "\e[%d;%dH\e[%dmWARNING: program register version (%d) mismatch MCU version (%d)\e[0m", tty_line++, tmp_col, term_esc_col_error, mcu_version_even, mcu_version);}
+
+        //config0
+        if (mcu_update_config0() != 0){fprintf(stdout, "\e[%d;%dH\e[%dmWarning, failed to read 'config0' register\e[0m", tty_line++, tmp_col, term_esc_col_error);} //read/update of config0 register failed
+    }
+    tty_line++;
+
+    //external adc
+    #ifdef ALLOW_EXT_ADC
+        int adc_addr_default[]={def_adc0_addr, def_adc1_addr, def_adc2_addr, def_adc3_addr};
+        fprintf(stdout, "\e[%d;%dH\e[4;%dmExternal ADCs (set a invalid address to disable):\e[0m", tty_line++, tmp_col, term_esc_col_normal);
+        for (int i=0; i<4; i++){
+            if (adc_addr[i] != adc_addr_back[i] || i2c_bus_update || adc_fd[i] < 0){
+                adc_addr_back[i] = adc_addr[i];
+                adc_fd_valid[i] = (i2c_open_dev(&adc_fd[i], i2c_bus, adc_addr[i]) == 0);
+                adc_err[i] = errno;
+            }
+            if (!adc_fd_valid[i]){tmp_esc_col = term_esc_col_error; sprintf(buffer, "(Invalid address, %s)", strerror(adc_err[i]));
+            } else {tmp_esc_col = term_esc_col_normal; strcpy(buffer, "");}
+            fprintf(stdout, "\e[%d;%dH\e[%dmADC%d address:_____ %s\e[0m", tty_line, tmp_col, tmp_esc_col, i, buffer);
+            term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+13, .y=tty_line++, .size=5}, .type=3, .value={.min=0, .max=127, .ptrint=&adc_addr[i], .ptrbool=&i2c_update}, .defval={.ptrint=&adc_addr_default[i], .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+        }
+    #else
+        fprintf(stdout, "\e[%d;%dH\e[%dmExternal ADCs feature was disabled during compilation.\e[0m", tty_line++, tmp_col, term_esc_col_disabled, buffer);
+    #endif
+    tty_line++;
+
+    //i2c map
+    char* display_i2c_map_hint = "Display all devices on I2C bus";
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=term_footer_buttons_width}, .type=1, .value={.ptrchar=" I2C map ", .ptrbool=&display_i2c_map}, .hint={.y=hint_line, .str=display_i2c_map_hint}};
+    tty_line+=2;
+
+    i2c_failed_jump:; //jump point for i2c failure
+    
+    //footer
+    fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[0], 20)) / 2, term_hint_nav_str[0]); //nav hint
+
+    //footer buttons
+    bool term_go_screen_main = false, default_requested = false;
+    term_pos_button_t term_footer_buttons[] = {
+        {.str="Default", .ptrbool=&default_requested, .ptrhint="Reset values to default"},
+        {.str="Back", .ptrbool=&term_go_screen_main, .ptrhint="Return to main menu"},
+    };
+    
+    int term_footer_buttons_count = sizeof(term_footer_buttons) / sizeof(term_footer_buttons[0]);
+    int term_buttons_pad = (tty_last_width - term_footer_buttons_width * term_footer_buttons_count) / (term_footer_buttons_count + 1);
+    for (int i=0; i<term_footer_buttons_count; i++){
+        int x = term_buttons_pad + (term_footer_buttons_width + term_buttons_pad) * i;
+        array_pad(term_footer_buttons[i].str, strlen(term_footer_buttons[i].str), term_footer_buttons_width, ' ', 0);
+        term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tty_last_height-1, .size=term_footer_buttons_width}, .type=1, .disabled=term_footer_buttons[i].disabled, .value={.ptrchar=term_footer_buttons[i].str, .ptrbool=term_footer_buttons[i].ptrbool}, .hint={.y=hint_line, .str=term_footer_buttons[i].ptrhint}};
+    }
+    
+    if (debug){fprintf(stdout, "\e[1;%dH\e[100mselect_limit:%d\e[0m", tty_last_width-17, select_limit);}
+    assert(select_limit <= select_max); //failsafe
+
+    while (!kill_requested){
+        ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
+
+        term_user_input(&term_input); //handle terminal user input
+        term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
+
+        if (default_requested){vars_i2c_default(); term_screen_update = true; goto funct_end;} //reset vars to default
+        if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
+
         if (i2c_update){term_screen_update = true; goto funct_end;} //value update
+
+        if (display_i2c_map){ //i2c detect "clone"
+            fprintf(stdout, "\e[0;0H\e[2J\n"); tty_line = 2; //reset tty
+            fprintf(stdout, "\e[%d;%dH\e[%d;4mI2C map:\e[0m\n", tty_line, tmp_col, term_esc_col_normal);
+            tty_line += 2;
+
+            int fd; //bus fd
+            if (i2c_bus < 0){ //invalid bus
+                fprintf(stdout, "\e[%d;%dH\e[%dmInvalid I2C bus:\e[1m%d\e[0m\n", tty_line, tmp_col, term_esc_col_error, i2c_bus);
+                goto funct_i2cdetect_end;
+            } else { //avoid jump into scope compiler error
+                char fd_path[strlen(def_i2c_bus_path_format)+4]; sprintf(fd_path, def_i2c_bus_path_format, i2c_bus);
+                fd = open(fd_path, O_RDWR);
+                if (fd < 0){ //invalid bus path
+                    fprintf(stdout, "\e[%d;%dH\e[%dmFailed to open '\e[1m%s\e[21m', errno:%d (%m)\e[0m\n", tty_line, tmp_col, term_esc_col_error, fd_path, -fd);
+                    goto funct_i2cdetect_end;
+                } else {fprintf(stdout, "\e[%d;%dH\e[%dmBus: \e[1m%s\e[0m\n", tty_line, tmp_col, term_esc_col_normal, fd_path);}
+            }
+            tty_line += 2;
+
+            char tmp_buffer[4096], tmp_buffer1[128];
+
+            //header
+            sprintf(tmp_buffer, "\e[%d;%dH\e[1m    ", tty_line++, tmp_col);
+            for (int j=0; j<16; j++){sprintf(tmp_buffer1, " %x ", j); strcat(tmp_buffer, tmp_buffer1);}
+            fputs(tmp_buffer, stdout); fputs("\e[0m\n", stdout);
+
+            //grid
+            double tmp_duration = get_time_double();
+            for (int i=0; i<8; i++){
+                sprintf(tmp_buffer, "\e[%d;%dH\e[1m%d0:\e[0m ", tty_line++, tmp_col, i);
+                for (int j=0; j<16; j++){
+                    int tmp = i*16 + j, tmp_esc_col = term_esc_col_disabled;
+                    if (ioctl(fd, I2C_SLAVE_FORCE, tmp) >= 0 && i2c_smbus_read_byte_data(fd, 0) >= 0){tmp_esc_col = term_esc_col_success;}
+                    sprintf(tmp_buffer1, "\e[%dm%02X\e[0m ", tmp_esc_col, tmp); strcat(tmp_buffer, tmp_buffer1);
+                }
+                fputs(tmp_buffer, stdout); fputc('\n', stdout);
+            }
+            tmp_duration = get_time_double() - tmp_duration;
+            close(fd);
+
+            tty_line++;
+            fprintf(stdout, "\e[%d;%dH\e[%dmDuration: \e[1m%dms\e[0m\n", tty_line++, tmp_col, term_esc_col_normal, (int)(tmp_duration*1000.));
+            funct_i2cdetect_end:; display_i2c_map = false;
+            
+            fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
+            
+            usleep(1000000/2); //wait half a sec
+            fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK); //set stdin to blocking
+            ioctl(STDIN_FILENO, TCFLSH, 2); //flush stdin
+            fgetc(stdin); //wait user to press any key
+            fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
+            term_screen_update = true; goto funct_end; //force update screen
+        }
 
         fprintf(stdout, "\e[0;0H\n"); //force tty update
         usleep (1000000/30); //limit to 30hz max to limit risk of i2c colision if driver is running
@@ -495,8 +625,8 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
 
     funct_end:; //jump point for fast exit
     free(term_select);
-
 }
+
 
 void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
     int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2;
@@ -510,12 +640,6 @@ void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
     bool adc_settings_update = true, adc_settings_update_reload = false;
     for (int i=0; i<4; i++){if (adc_params[i].enabled != adc_enabled_back[i]){adc_enabled_back[i] = adc_params[i].enabled;}}
     init_adc(); //"refresh" mcu adc data/config
-    /*
-    bool adc_settings_update = false, adc_settings_update_reload = false;
-    for (int i=0; i<4; i++){if (adc_params[i].enabled != adc_enabled_back[i]){adc_enabled_back[i] = adc_params[i].enabled; adc_settings_update = true;}}
-    if (adc_settings_update){init_adc();} //"refresh" mcu adc data/config
-    adc_settings_update = true; //force adc data update on first loop 
-    */
 
     char* term_hint_adc_str[]={
         "\e[1m[ENTER]\e[0m to toogle axis",
@@ -652,7 +776,7 @@ void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
     term_pos_button_t term_footer_buttons[] = {
         {.str="Reset limits", .ptrbool=&reset_raw_limits_requested, .ptrhint="Reset min/max detected values"},
         {.str="Default", .ptrbool=&default_requested, .ptrhint="Reset Analog settings to default"},
-        {.str="Back", .ptrbool=&term_go_screen_main, .ptrhint="Go to main menu"},
+        {.str="Back", .ptrbool=&term_go_screen_main, .ptrhint="Return to main menu"},
     };
     int term_footer_buttons_count = sizeof(term_footer_buttons) / sizeof(term_footer_buttons[0]);
     int term_buttons_pad = (tty_last_width - term_footer_buttons_width * term_footer_buttons_count) / (term_footer_buttons_count + 1);
@@ -705,7 +829,7 @@ void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
 
         if (adc_settings_update_reload){term_screen_update = true; goto funct_end;} //adc change require reload
         if (default_requested){vars_adc_default(); term_screen_update = true; goto funct_end;} //reset vars to default
-        if (term_go_screen_main || term_input.escape){term_screen_current = 0; goto funct_end;} //escape key pressed, go back to main menu
+        if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
 
         adc_settings_update = false;
         fprintf(stdout, "\e[0;0H\n"); //force tty update
@@ -716,10 +840,10 @@ void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
     free(term_select);
 }
 
+
 void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
     char buffer[buffer_size], buffer1[buffer_size], buffer2[buffer_size];
     int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal;
-    bool term_go_screen_main = false;
 
     const int select_max = 255; //TODO proper count
     term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
@@ -789,7 +913,9 @@ void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
     fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[0], 20)) / 2, term_hint_nav_str[0]); //nav hint
 
     //buttons
+    bool default_requested = false, term_go_screen_main = false;
     term_pos_button_t term_footer_buttons[] = {
+        {.str="Default", .ptrbool=&default_requested, .ptrhint="Reset Digital settings to default"},
         {.str="Back", .ptrbool=&term_go_screen_main, .ptrhint="Go to main menu"},
     };
     int term_footer_buttons_count = sizeof(term_footer_buttons) / sizeof(term_footer_buttons[0]);
@@ -809,7 +935,8 @@ void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
         term_user_input(&term_input); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
 
-        if (term_go_screen_main || term_input.escape){term_screen_current = 0; goto funct_end;} //escape key pressed, go back to main menu
+        if (default_requested){vars_digital_default(); term_screen_update = true; goto funct_end;} //reset vars to default
+        if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
 
         //update input registers state
         int ret = i2c_smbus_read_i2c_block_data(mcu_fd, 0, input_registers_count, (uint8_t *)&i2c_joystick_registers);
@@ -889,7 +1016,7 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
         term_user_input(&term_input); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
 
-        if (term_go_screen_main || term_input.escape){term_screen_current = 0; goto funct_end;} //escape key pressed, go back to main menu
+        if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
 
         if (save_requested){
             fprintf(stdout, "\e[0;0H\e[2J\n"); tty_line = 2; //reset tty
@@ -915,20 +1042,22 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
 
             fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
             
+            usleep(1000000/2); //wait half a sec
             fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK); //set stdin to blocking
-            tcflush(STDIN_FILENO, TCIFLUSH); //flush stdin
+            ioctl(STDIN_FILENO, TCFLSH, 2); //flush stdin
             fgetc(stdin); //wait user to press any key
             fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
             term_screen_update = true; goto funct_end; //force update screen
         }
 
         fprintf(stdout, "\e[0;0H\n"); //force tty update
-        usleep (1000000/30); //limit to 30hz max to limit risk of i2c colision if driver is running
+        usleep(1000000/30); //limit to 30hz max to limit risk of i2c colision if driver is running
     }
 
     funct_end:; //jump point for fast exit
     free(term_select);
 }
+
 
 #ifdef ALLOW_MCU_SEC_I2C
     void term_screen_advanced(int tty_line, int tty_last_width, int tty_last_height){
@@ -950,6 +1079,18 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
             goto mcu_sec_failed_jump;
         }
 
+        //write protection
+        bool mcu_write_protect = true, mcu_write_protect_back = true; i2c_failed = true;
+        int ret = i2c_smbus_read_byte_data(mcu_fd_sec, mcu_sec_register_write_protect); 
+        if (ret < 0){sprintf(buffer, "failed to read 'write_protect' register");
+        } else {
+            mcu_write_protect = mcu_write_protect_back = (ret == mcu_write_protect_enable)?true:false; i2c_failed = false;
+            sprintf(buffer, "need to be disabled to allow update");
+        }
+        fprintf(stdout, "\e[%d;%dH\e[%dmWrite protection:_ (%s)\e[0m", tty_line, tmp_col, i2c_failed ? term_esc_col_error : term_esc_col_normal, buffer);
+        term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+17, .y=tty_line, .size=1}, .type=2, .value={.ptrbool=&mcu_write_protect}, .hint={.y=hint_line, .str=term_hint_nav_str[2]}};
+        tty_line+=2;
+
         //mcu addresses
         bool mcu_update = false, i2c_failed = true;
         fprintf(stdout, "\e[%d;%dH\e[%d;4mUpdate MCU address (internally):\e[0m", tty_line++, tmp_col, term_esc_col_normal);
@@ -962,32 +1103,20 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
         fprintf(stdout, "\e[%d;%dH\e[%dmSecondary:_____ (provide additional features incl. this page)\e[0m", tty_line, tmp_col, term_esc_col_normal);
         term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+10, .y=tty_line++, .size=5}, .type=3, .value={.min=0, .max=127, .ptrint=&mcu_addr_sec_new}, .defval={.ptrint=&mcu_addr_sec, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
 
-        //write protection
-        bool mcu_write_protect = true, mcu_write_protect_back = true; i2c_failed = true;
-        int ret = i2c_smbus_read_byte_data(mcu_fd_sec, mcu_sec_register_write_protect); 
-        if (ret < 0){sprintf(buffer, "failed to read 'write_protect' register");
-        } else {
-            mcu_write_protect = mcu_write_protect_back = (ret == mcu_write_protect_enable)?true:false; i2c_failed = false;
-            sprintf(buffer, "need to be disabled to allow update");
-        }
-        fprintf(stdout, "\e[%d;%dH\e[%dmWrite protection:_ (%s)\e[0m", tty_line, tmp_col, i2c_failed ? term_esc_col_error : term_esc_col_normal, buffer);
-        term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+17, .y=tty_line++, .size=1}, .type=2, .value={.ptrbool=&mcu_write_protect}, .hint={.y=hint_line, .str=term_hint_nav_str[2]}};
-        //tty_line++;
-
         fprintf(stdout, "\e[%d;%dH\e[%dmWarning, if address update fails, MCU may need to be reflashed.\e[0m", tty_line++, tmp_col, term_esc_col_error);
         fprintf(stdout, "\e[%d;%dH\e[%dmNo confirmation will be asked during update process.\e[0m", tty_line++, tmp_col, term_esc_col_error);
         fprintf(stdout, "\e[%d;%dH\e[%dmAddresses need to be updated one at a time.\e[0m", tty_line++, tmp_col, term_esc_col_error);
         fprintf(stdout, "\e[%d;%dH\e[%dmIf successful, current configuration will be saved.\e[0m", tty_line++, tmp_col, term_esc_col_error);
         fprintf(stdout, "\e[%d;%dH\e[%dmNote: Default values will remain unchanged.\e[0m", tty_line++, tmp_col, term_esc_col_error);
         //tty_line++;
-
         int term_mcu_update_button_index = select_limit;
         term_pos_button_t term_mcu_update_button = {.str=" Update MCU address ", .ptrhint="\e[91mWell, you've been warned"};
         term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=strlen(term_mcu_update_button.str)}, .type=1, .disabled=true, .value={.ptrchar=term_mcu_update_button.str, .ptrbool=&mcu_update, .force_update=true}, .hint={.y=hint_line, .str=term_mcu_update_button.ptrhint}};
         tty_line+=2;
 
         //backlight
-        int mcu_backlight_back = mcu_backlight; i2c_failed = true;
+        i2c_failed = true;
+        int mcu_backlight_back = mcu_backlight, term_mcu_backlight_index = select_limit;
         ret = i2c_smbus_read_byte_data(mcu_fd_sec, mcu_sec_register_backlight_max); //max backlight
         if (ret < 0){sprintf(buffer, "failed to read 'backlight_max' register");
         } else {
@@ -1000,11 +1129,12 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
             }
         }
         fprintf(stdout, "\e[%d;%dH\e[%dmBacklight level:___ (%s)\e[0m", tty_line, tmp_col, i2c_failed ? term_esc_col_error : term_esc_col_normal, buffer);
-        term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+16, .y=tty_line, .size=3}, .type=0, .value={.min=0, .max=mcu_backlight_steps, .ptrint=&mcu_backlight}, .defval={.y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+        term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+16, .y=tty_line, .size=3}, .type=0, .disabled=mcu_write_protect, .value={.min=0, .max=mcu_backlight_steps, .ptrint=&mcu_backlight, .force_update=true}, .defval={.y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
         tty_line += 2;
 
         //led output
-        int mcu_led_output = 0, mcu_led_output_back = 0; i2c_failed = true;
+        i2c_failed = true;
+        int mcu_led_output = 0, mcu_led_output_back = 0, term_mcu_led_output_index = select_limit; 
         ret = i2c_smbus_read_byte_data(mcu_fd_sec, mcu_sec_register_status_led_control); 
         if (ret < 0){sprintf(buffer, "failed to read 'status_led_control' register");
         } else {
@@ -1012,7 +1142,7 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
             sprintf(buffer, "directly update 'status_led_control' register");
         }
         fprintf(stdout, "\e[%d;%dH\e[%dmLed output:___ (%s)\e[0m", tty_line, tmp_col, i2c_failed ? term_esc_col_error : term_esc_col_normal, buffer);
-        term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+11, .y=tty_line, .size=3}, .type=0, .value={.min=0, .max=255, .ptrint=&mcu_led_output}, .defval={.y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+        term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+11, .y=tty_line, .size=3}, .type=0, .disabled=mcu_write_protect, .value={.min=0, .max=255, .ptrint=&mcu_led_output, .force_update=true}, .defval={.y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
         tty_line += 2;
 
         mcu_sec_failed_jump:;
@@ -1041,7 +1171,7 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
             term_user_input(&term_input); //handle terminal user input
             term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
 
-            if (term_go_screen_main || term_input.escape){term_screen_current = 0; goto funct_end;} //escape key pressed, go back to main menu
+            if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
 
             if (mcu_fd_sec >= 0){
                 //mcu address update
@@ -1093,9 +1223,10 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
                         fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
                         
                         fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK); //set stdin to blocking
-                        tcflush(STDIN_FILENO, TCIFLUSH); //flush stdin
+                        ioctl(STDIN_FILENO, TCFLSH, 2); //flush stdin
                         fgetc(stdin); //wait user to press any key
                         fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
+                        select_index_current = 0;
                         term_screen_update = true; goto funct_end; //force update screen
                     }
 
@@ -1106,6 +1237,8 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
                 if (mcu_write_protect != mcu_write_protect_back){
                     i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect ? mcu_write_protect_enable : mcu_write_protect_disable);
                     mcu_write_protect_back = mcu_write_protect;
+                    term_select[term_mcu_backlight_index].disabled = mcu_write_protect;
+                    term_select[term_mcu_led_output_index].disabled = mcu_write_protect;
                 }
 
                 //backlight
@@ -1127,9 +1260,10 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
 
         funct_end:; //jump point for fast exit
         free(term_select);
+        if (!mcu_write_protect){i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_enable);} //re-enable write protection
     }
 #else
-    void term_screen_advanced(int tty_line, int tty_last_width, int tty_last_height){term_screen_current = 0;}
+    void term_screen_advanced(int tty_line, int tty_last_width, int tty_last_height){term_screen_current = SCREEN_MAIN;}
 #endif
 
 /*
@@ -1169,7 +1303,7 @@ void term_screen_generic(int tty_line, int tty_last_width, int tty_last_height){
         term_user_input(&term_input); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
 
-        if (term_go_screen_main || term_input.escape){term_screen_current = 0; goto funct_end;} //escape key pressed, go back to main menu
+        if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
 
         fprintf(stdout, "\e[0;0H\n"); //force tty update
         usleep (1000000/30); //limit to 30hz max to limit risk of i2c colision if driver is running
