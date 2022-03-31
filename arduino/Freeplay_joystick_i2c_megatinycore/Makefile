@@ -46,9 +46,15 @@
 #               in this makefile
 
 
-BUILD_DIR   := Freeplay_joystick_i2c_megatinycore_build
-#CHIP       := 1627
-CHIP       := 817
+ifeq ($(origin CHIP), undefined)
+CHIP = 1627
+#echo "Setting chip to 1627.  Use CHIP=817 to override!"
+endif
+
+BUILD_DIR   := Freeplay_joystick_i2c_megatinycore_build_$(CHIP)
+
+#CHIP       ?= 1627
+#CHIP       := 817
 FQBN       ?= megaTinyCore:megaavr:atxy7:chip=$(CHIP),clock=10internal,bodvoltage=1v8,bodmode=disabled,eesave=enable,millis=enabled,resetpin=UPDI,startuptime=0
 V          ?= 0
 VFLAG      = -t

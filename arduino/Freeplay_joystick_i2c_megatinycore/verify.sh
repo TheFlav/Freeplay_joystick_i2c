@@ -14,6 +14,13 @@ raspi-gpio set 14 a0
 raspi-gpio set 15 a0 pu
 raspi-gpio set 11 op dh
 
+if [ ${CHIP} != 817 ]; then
+  CHIP=1627
+  echo Setting CHIP as ${CHIP}
+else
+  echo Using CHIP as ${CHIP}
+fi
+
 INOFILEBIN=./Freeplay_joystick_i2c_megatinycore_build/Freeplay_joystick_i2c_megatinycore.ino.bin
 READFILEBASE=./Freeplay_joystick_i2c_megatinycore_build/verify
 READFILEHEX=$READFILEBASE.hex
@@ -21,8 +28,7 @@ READFILEBIN=$READFILEBASE.bin
 
 rm -f $READFILEHEX
 rm -f $READFILEBIN
-#pymcuprog -d attiny817 -t uart -u /dev/ttyAMA0 read -m flash -f $READFILEHEX
-pymcuprog -d attiny1627 -t uart -u /dev/ttyAMA0 read -m flash -f $READFILEHEX
+pymcuprog -d attiny${CHIP} -t uart -u /dev/ttyAMA0 read -m flash -f $READFILEHEX
 if [ $? -ne 0 ]
 then
    echo "Read failed!"
