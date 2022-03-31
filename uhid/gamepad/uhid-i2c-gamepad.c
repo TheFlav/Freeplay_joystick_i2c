@@ -941,6 +941,9 @@ int main(int argc, char** argv){
     //initial poll
     if (i2c_poll_rate < 1){i2c_poll_rate_disable = true;} else {i2c_poll_rate_time = 1. / i2c_poll_rate;} //disable pollrate limit, poll interval in sec
     if (i2c_adc_poll < 1){i2c_adc_poll = 1;} i2c_adc_poll_loop = i2c_adc_poll;
+
+    //todo (github desktop test)
+
     i2c_poll_joystick(true);
 
     #ifndef DIAG_PROGRAM
