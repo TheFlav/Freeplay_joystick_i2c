@@ -315,8 +315,7 @@ int program_diag_mode(){ //main diag function
 
 
 void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
-    int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal;
-    char buffer[buffer_size];
+    int hint_line = tty_last_height - 4, tmp_col = 2;
 
     const int select_max = 255; //TODO proper count
     term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
@@ -629,7 +628,7 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
 
 
 void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
-    int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2;
+    int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1;
     int term_adc_pad = (tty_last_width - term_adc_width * 2) / 3; //padding between each ADC column
     char buffer[buffer_size], buffer1[buffer_size], buffer2[buffer_size];
 
@@ -843,7 +842,7 @@ void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
 
 void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
     char buffer[buffer_size], buffer1[buffer_size], buffer2[buffer_size];
-    int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal;
+    int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2;
 
     const int select_max = 255; //TODO proper count
     term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
@@ -877,7 +876,7 @@ void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
     tty_line++;
 
     term_pos_string_t term_input_pos[input_registers_size] = {0};
-    for (int line=0, input_index=0, input_usable=0; line<input_registers_count; line++){
+    for (int line=0, input_index=0; line<input_registers_count; line++){
         fprintf(stdout, "\e[%d;%dH\e[1;4minput%d:\e[0m", tty_line++, tmp_col, line); array_fill(buffer, buffer_size, '\0'); //inputX:
         
         for (int i = 0; i < 8; i++, input_index++){
@@ -965,8 +964,7 @@ void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
 }
 
 void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
-    char buffer[buffer_size], buffer1[buffer_size], buffer2[buffer_size];
-    int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal;
+    int hint_line = tty_last_height - 4, tmp_col = 2;
     bool term_go_screen_main = false;
 
     const int select_max = 255; //TODO proper count
@@ -1027,17 +1025,22 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
             struct stat file_stat = {0};
             if (stat(config_path_backup, &file_stat) == 0){ //delete existing backup
                 if (remove(config_path_backup) != 0){
-                    fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to remove backup file.\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line++, tmp_col, term_esc_col_error, tty_line++, tmp_col, errno);
+                    fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to remove backup file.\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line+1, tmp_col, term_esc_col_error, tty_line+2, tmp_col, errno);
+                    tty_line+=2;
                     backup_removed = false;
                 } else {fprintf(stdout, "\e[%d;%dH\e[%dm> Backup file removed.\e[0m\n", tty_line++, tmp_col, term_esc_col_success);}
             }
 
             if (backup_removed && stat(config_path, &file_stat) == 0){ //backup
-                if (rename(config_path, config_path_backup) != 0){fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to backup existing configuration file.\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line++, tmp_col, term_esc_col_error, tty_line++, tmp_col, errno);
+                if (rename(config_path, config_path_backup) != 0){
+                    fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to backup existing configuration file.\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line+1, tmp_col, term_esc_col_error, tty_line+2, tmp_col, errno);
+                    tty_line+=2;
                 } else {fprintf(stdout, "\e[%d;%dH\e[%dm> Existing configuration file has been backed up.\e[0m\n", tty_line++, tmp_col, term_esc_col_success);}
             }
 
-            if (config_save(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, false) != 0){fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to save new configuration file.\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line++, tmp_col, term_esc_col_error, tty_line++, tmp_col, errno);
+            if (config_save(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, false) != 0){
+                fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to save new configuration file.\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line+1, tmp_col, term_esc_col_error, tty_line+1, tmp_col, errno);
+                tty_line+=2;
             } else {fprintf(stdout, "\e[%d;%dH\e[%dm> Configuration file saved successfully.\e[0m\n", tty_line++, tmp_col, term_esc_col_success);}
 
             fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
@@ -1061,8 +1064,8 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
 
 #ifdef ALLOW_MCU_SEC_I2C
     void term_screen_advanced(int tty_line, int tty_last_width, int tty_last_height){
-        char buffer[buffer_size], buffer1[buffer_size], buffer2[buffer_size];
-        int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal;
+        char buffer[buffer_size];
+        int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2;
         bool term_go_screen_main = false;
 
         const int select_max = 255;
@@ -1197,12 +1200,15 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
                         } else {
                             fprintf(stdout, "\e[%d;%dH\e[%dm> Write protection disabled\e[0m\n", tty_line++, tmp_col, term_esc_col_success);
                             if (mcu_update_register(&mcu_fd_sec, update_register, update_value, false) < 0){
-                                fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to update %s address to 0x%02X\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line++, tmp_col, term_esc_col_error, update_mcu_main?"Main":"Secondary", update_value, tty_line++, tmp_col, errno);
+                                fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to update %s address to 0x%02X\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line+1, tmp_col, term_esc_col_error, update_mcu_main?"Main":"Secondary", update_value, tty_line+2, tmp_col, errno);
+                                tty_line+=2;
                             } else {
                                 fprintf(stdout, "\e[%d;%dH\e[%dm> Address updated. Reconnecting MCU, please wait...\e[0m\n", tty_line++, tmp_col, term_esc_col_success); usleep (1000000*2); //wait 2s
 
                                 int tmp_addr = update_mcu_main ? update_value : mcu_addr; //reopen main address
-                                if (i2c_open_dev(&mcu_fd, i2c_bus, tmp_addr) < 0){fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to open main address (0x%02X)\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line++, tmp_col, term_esc_col_error, tmp_addr, tty_line++, tmp_col, errno);
+                                if (i2c_open_dev(&mcu_fd, i2c_bus, tmp_addr) < 0){
+                                    fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to open main address (0x%02X)\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line+1, tmp_col, term_esc_col_error, tmp_addr, tty_line+2, tmp_col, errno);
+                                    tty_line+=2;
                                 } else {
                                     fprintf(stdout, "\e[%d;%dH\e[%dm> Main address (0x%02X) opened\e[0m\n", tty_line++, tmp_col, term_esc_col_success, tmp_addr);
                                     mcu_addr = tmp_addr; sprintf(buffer, "%s=0x%02X", cfg_mcu_addr_name, mcu_addr);
@@ -1210,7 +1216,9 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
                                 }
 
                                 tmp_addr = update_mcu_main ? mcu_addr_sec : update_value; //reopen second address
-                                if (i2c_open_dev(&mcu_fd_sec, i2c_bus, tmp_addr) < 0){fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to open secondary address (0x%02X)\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line++, tmp_col, term_esc_col_error, tmp_addr, tty_line++, tmp_col, errno);
+                                if (i2c_open_dev(&mcu_fd_sec, i2c_bus, tmp_addr) < 0){
+                                    fprintf(stdout, "\e[%d;%dH\e[%dm> Failed to open secondary address (0x%02X)\e[%d;%dHerrno:%d(%m)\e[0m\n", tty_line+1, tmp_col, term_esc_col_error, tmp_addr, tty_line+2, tmp_col, errno);
+                                    tty_line+=2;
                                 } else {
                                     fprintf(stdout, "\e[%d;%dH\e[%dm> Secondary address (0x%02X) opened\e[0m\n", tty_line++, tmp_col, term_esc_col_success, tmp_addr);
                                     mcu_addr_sec = tmp_addr; sprintf(buffer, "%s=0x%02X", cfg_mcu_addr_sec_name, mcu_addr_sec);

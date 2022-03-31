@@ -789,7 +789,7 @@ static void program_usage (char* program){
         "(*): close program after function executed (incl failure).\n"
         );
     #else
-        fprintf(stdout, "Setup/diagnostic program doesn't have any arguments\n", program);
+        fprintf(stdout, "Setup/diagnostic program doesn't have any arguments\n");
     #endif
 }
 
