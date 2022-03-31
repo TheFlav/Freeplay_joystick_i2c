@@ -1,10 +1,4 @@
 #!/bin/bash
-#bin/arduino-cli compile -v -b megaTinyCore:megaavr:atxy7:chip=1627,clock=10internal,bodvoltage=1v8,bodmode=disabled,eesave=enable,millis=enabled,resetpin=UPDI,startuptime=0 --output-dir ./Freeplay_joystick_i2c_megatinycore_build/
-#if [ $? -ne 0 ]
-#then
-#   echo "Build failed!"
-#   exit
-#fi
 sudo systemctl stop hciuart.service
 sudo systemctl stop bluetooth.service
 sudo rmmod hci_uart
@@ -21,10 +15,16 @@ else
   echo Using CHIP as ${CHIP}
 fi
 
-INOFILEBIN=./Freeplay_joystick_i2c_megatinycore_build/Freeplay_joystick_i2c_megatinycore.ino.bin
-READFILEBASE=./Freeplay_joystick_i2c_megatinycore_build/verify
+INOFILEBIN=./Freeplay_joystick_i2c_megatinycore_build_${CHIP}/Freeplay_joystick_i2c_megatinycore.ino.bin
+READFILEBASE=./Freeplay_joystick_i2c_megatinycore_build_${CHIP}/verify
 READFILEHEX=$READFILEBASE.hex
 READFILEBIN=$READFILEBASE.bin
+
+if [[ ! -f "$INOFILEBIN" ]]; then
+    echo "$INOFILEBIN does not exist!"
+    exit 1
+fi
+
 
 rm -f $READFILEHEX
 rm -f $READFILEBIN

@@ -51,6 +51,10 @@ CHIP = 1627
 #echo "Setting chip to 1627.  Use CHIP=817 to override!"
 endif
 
+ifeq "$(CHIP)" ""
+CHIP = 1627
+endif
+
 BUILD_DIR   := Freeplay_joystick_i2c_megatinycore_build_$(CHIP)
 
 #CHIP       ?= 1627
