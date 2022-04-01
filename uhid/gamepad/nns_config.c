@@ -24,7 +24,7 @@ int config_search_name (cfg_vars_t* cfg, unsigned int cfg_size, char *value, boo
 int config_save (cfg_vars_t* cfg, unsigned int cfg_size, char* filename, int uid, int gid, bool reset){ //save config file
     if (reset) {if(remove(filename) != 0) {print_stderr("failed to delete '%s'\n", filename);}}
     FILE *filehandle = fopen(filename, "wb");
-    if (filehandle != NULL) {
+    if (filehandle != NULL){
         char strBuffer [4096], strBuffer1 [33];
         for (unsigned int i = 0; i < cfg_size; i++) {
             int tmpType = cfg[i].type;
@@ -155,9 +155,10 @@ bool config_type_parse (cfg_vars_t* cfg, unsigned int cfg_size, int index, int t
     return true;
 }
 
-void config_parse (cfg_vars_t* cfg, unsigned int cfg_size, char* filename, int uid, int gid){ //parse/create program config file
+int config_parse (cfg_vars_t* cfg, unsigned int cfg_size, char* filename, int uid, int gid){ //parse/create program config file, return -errno on failure, 0 on success, 1 if new config created
+    int ret = 0;
     FILE *filehandle = fopen(filename, "r");
-    if (filehandle != NULL) {
+    if (filehandle != NULL){
         char strBuffer [4096], strTmpBuffer [4096]; //string buffer
         char *tmpPtr, *tmpPtr1, *pos; //pointers
         int cfg_ver=0, line=0;
@@ -196,15 +197,17 @@ void config_parse (cfg_vars_t* cfg, unsigned int cfg_size, char* filename, int u
         fclose(filehandle);
 
         //pseudo checksum for config build
-        int cfg_ver_org = config_sum (cfg, cfg_size); 
+        int cfg_ver_org = config_sum(cfg, cfg_size); 
         if(cfg_ver != cfg_ver_org) {
             print_stderr("config file version mismatch (got:%d, should be:%d), forcing save to implement new vars set\n", cfg_ver, cfg_ver_org);
-            config_save (cfg, cfg_size, filename, uid, gid, false);
+            ret = config_save(cfg, cfg_size, filename, uid, gid, false);
         }
     } else {
         print_stderr("config file not found, creating a new one\n");
-        config_save (cfg, cfg_size, filename, uid, gid, false);
+        int tmp_ret = config_save(cfg, cfg_size, filename, uid, gid, false);
+        ret = (tmp_ret == 0) ? 1 : tmp_ret;
     }
+    return ret;
 }
 
 void config_list (cfg_vars_t* cfg, unsigned int cfg_size){ //print all config vars

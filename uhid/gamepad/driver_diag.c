@@ -289,6 +289,7 @@ int program_diag_mode(){ //main diag function
     if (tcsetattr(STDIN_FILENO, TCSANOW, &term_new) != 0){print_stderr("tcsetattr term_new failed\n"); exit(EXIT_FAILURE);}
 
     diag_mode_init = true;
+    if (diag_first_run){term_screen_current = SCREEN_FIRSTRUN;}
 
     //start term
     tty_start:; //landing point if tty is resized or "screen" changed or bool trigger
@@ -1273,6 +1274,212 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
 #else
     void term_screen_advanced(int tty_line, int tty_last_width, int tty_last_height){term_screen_current = SCREEN_MAIN;}
 #endif
+
+
+
+
+
+
+
+
+
+
+void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height){
+    char buffer[buffer_size], buffer1[buffer_size], buffer2[buffer_size];
+    int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2, tmp_esc_col = term_esc_col_normal;
+    int term_adc_pad = (tty_last_width - term_adc_width * 2) / 3; //padding between each ADC column
+    bool term_go_screen_main = false;
+
+    const int select_max = 255; //TODO proper count
+    term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
+    int select_limit = 0;
+
+    char* screen_name = "UHID driver setup/diagnostic tool";
+    fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line, (tty_last_width - strlen(screen_name))/2, term_esc_col_normal, screen_name);
+
+
+    //adcs
+    for(int x_loop=0, axis_loop=0; x_loop<2; x_loop++){
+        int term_left = term_adc_pad + (term_adc_width + term_adc_pad) * x_loop, term_right = term_left + term_adc_width, tmp_line = tty_line; //left/right border of current adc
+        int x, x1, x2, w;
+
+        char* js_side_name = (x_loop==0)?"Left":"Right";
+
+
+
+        for(int y_loop=0; y_loop<2; y_loop++){
+            char* axis_name = (y_loop==0)?"Horizontal":"Vertical";
+
+
+
+
+
+/*
+            int term_esc_col = term_esc_col_disabled;
+            bool adc_enabled = adc_params[adc_loop].enabled, adc_available = adc_fd_valid[adc_loop] || mcu_adc_enabled[adc_loop];
+
+            //adc "title"
+            sprintf(buffer2, "%s", adc_fd_valid[adc_loop] ? "Ext" : "MCU");
+            if (adc_enabled){sprintf(buffer1, "%dbits:%s", adc_params[adc_loop].res, buffer2); term_esc_col = term_esc_col_normal;
+            } else if (adc_available){sprintf(buffer1, "available:%s", buffer2);
+            } else {sprintf(buffer1, "disabled");}
+            
+            sprintf(buffer, "ADC%d(%s)(%s)", adc_loop, js_axis_names[adc_map[adc_loop]+1], buffer1); strcpy(term_adc_string[adc_loop].str, buffer);
+            x = term_left + array_pad(buffer, strlen(buffer), term_adc_width, '_', 0); w = strlen(buffer1);
+            fprintf(stdout, "\e[%d;%dH\e[4;%dm%s\e[0m", tmp_line, term_left, term_esc_col, buffer);
+            if (adc_available){term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tmp_line, .size=w}, .type=1, .value={.ptrchar=term_adc_string[adc_loop].str, .ptrbool=&adc_params[adc_loop].enabled}, .hint={.y=hint_line, .str=term_hint_adc_str[0]}, .defval={.y=hint_def_line, .ptrbool=&adc_enabled_default[x_loop]}};}
+            tmp_line++;
+
+            //adc type identifier
+            #ifdef ALLOW_EXT_ADC
+                if (adc_fd_valid[adc_loop]){
+                    int term_type_esc_col = adc_init_err[adc_loop] < -1 ? term_esc_col_error : term_esc_col_normal;
+                    x = term_left + 5;
+                    fprintf(stdout, "\e[%d;%dH\e[%dmtype:--- %s\e[0m", tmp_line, x - 5, term_type_esc_col, adc_init_err_str[-adc_init_err[adc_loop]]);
+                    term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tmp_line, .size=3}, .type=0, .value={.min=0, .max=adc_type_count-1, .ptrint=&adc_type[adc_loop], .ptrbool=&adc_settings_update_reload}, .defval={.y=hint_def_line, .ptrint=&adc_type_default[adc_loop]}, .hint={.y=hint_line, .str=term_hint_adc_type_str}};
+                    tmp_line++;
+                }
+            #endif
+
+            //map, invert, output
+            x = term_left + 8;
+            term_adc_output[adc_loop].x = term_right - 4; term_adc_output[adc_loop].y = tmp_line; term_adc_output[adc_loop].w = 4;
+            fprintf(stdout, "\e[%d;%dH\e[%dmmapping:---\e[0m", tmp_line, x - 8, term_esc_col);
+            fprintf(stdout, "\e[%d;%dH\e[%dmoutput:----\e[0m", tmp_line, term_adc_output[adc_loop].x - 7, term_esc_col);
+            if (adc_enabled){term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tmp_line, .size=3}, .type=0, .value={.min=-1, .max=3, .ptrint=&adc_map[adc_loop], .ptrbool=&adc_settings_update_reload}, .defval={.y=hint_def_line, .ptrint=&adc_map_default[adc_loop]}, .hint={.y=hint_line, .str=term_hint_adc_str[4]}};}
+            tmp_line+=2;
+
+            //limits
+            x = term_right - 17; x1 = term_right - 6;
+            fprintf(stdout, "\e[%d;%dH\e[%dmlimits\e[0m", tmp_line, term_left, term_esc_col);
+            fprintf(stdout, "\e[%d;%dH\e[%dmmin:------\e[0m", tmp_line, x - 4, term_esc_col);
+            fprintf(stdout, "\e[%d;%dH\e[%dmmax:------\e[0m", tmp_line, x1 - 4, term_esc_col);
+            if (adc_enabled){
+                term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tmp_line, .size=6}, .type=0, .value={.max=adc_params[adc_loop].res_limit, .force_update=true, .ptrint=&adc_params[adc_loop].min, .ptrbool=&adc_settings_update}, .defval={.y=hint_def_line, .ptrint=&adc_params_default[adc_loop].min}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+                term_select[select_limit++] = (term_select_t){.position={.x=x1, .y=tmp_line, .size=6}, .type=0, .value={.max=adc_params[adc_loop].res_limit, .force_update=true, .ptrint=&adc_params[adc_loop].max, .ptrbool=&adc_settings_update}, .defval={.y=hint_def_line, .ptrint=&adc_params_default[adc_loop].max}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+            }
+            tmp_line++;
+
+            //raw min/max
+            x = term_left + 7; x1 = term_right - 17; x2 = term_right - 6;
+            term_adc_raw[adc_loop].x = term_left + 4; term_adc_raw[adc_loop].y = tmp_line; term_adc_raw[adc_loop].w = 6;
+            fprintf(stdout, "\e[%d;%dH\e[%dmraw:------\e[0m", tmp_line, term_adc_raw[adc_loop].x - 4, term_esc_col);
+            fprintf(stdout, "\e[%d;%dH\e[%dmmin:------\e[0m", tmp_line, x1 - 4, term_esc_col);
+            fprintf(stdout, "\e[%d;%dH\e[%dmmax:------\e[0m", tmp_line, x2 - 4, term_esc_col);
+            if (adc_enabled){
+                term_select[select_limit++] = (term_select_t){.position={.x=x1, .y=tmp_line, .size=6}, .type=1, .value={.force_update=true, .ptrbool=&adc_use_raw_min[adc_loop], .ptrint=&adc_params[adc_loop].raw_min}, .hint={.y=hint_line, .str=term_hint_adc_str[2]}};
+                term_select[select_limit++] = (term_select_t){.position={.x=x2, .y=tmp_line, .size=6}, .type=1, .value={.force_update=true, .ptrbool=&adc_use_raw_max[adc_loop], .ptrint=&adc_params[adc_loop].raw_max}, .hint={.y=hint_line, .str=term_hint_adc_str[3]}};
+            }
+            tmp_line++;//=2;
+
+            //flat, fuzz
+            x = term_left + 8; x1 = x + 9; x2 = term_right - 5;
+            fprintf(stdout, "\e[%d;%dH\e[%dmflat-in:--- -out:---\e[0m", tmp_line, x - 8, term_esc_col);
+            fprintf(stdout, "\e[%d;%dH\e[%dmfuzz:-----\e[0m", tmp_line, x2 - 5, term_esc_col);
+            if (adc_enabled){
+                term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tmp_line, .size=3}, .type=0, .value={.min=0, .max=35, .ptrint=&adc_params[adc_loop].flat_in, .ptrbool=&adc_settings_update}, .defval={.y=hint_def_line, .ptrint=&adc_params_default[adc_loop].flat_in}, .hint={.y=hint_line, .str=term_hint_adc_str[5]}};
+                term_select[select_limit++] = (term_select_t){.position={.x=x1, .y=tmp_line, .size=3}, .type=0, .value={.min=0, .max=35, .ptrint=&adc_params[adc_loop].flat_out, .ptrbool=&adc_settings_update}, .defval={.y=hint_def_line, .ptrint=&adc_params_default[adc_loop].flat_out}, .hint={.y=hint_line, .str=term_hint_adc_str[5]}};
+                term_select[select_limit++] = (term_select_t){.position={.x=x2, .y=tmp_line, .size=5}, .type=0, .value={.min=0, .max=adc_params[adc_loop].res_limit/2, .ptrint=&adc_params[adc_loop].fuzz}, .defval={.y=hint_def_line, .ptrint=&adc_params_default[adc_loop].fuzz}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+            }
+            tmp_line++;
+
+            //autocenter, invert
+            x = term_left + 11; x1 = term_right - 1;
+            fprintf(stdout, "\e[%d;%dH\e[%dmautocenter:-\e[0m", tmp_line, x - 11, term_esc_col);
+            fprintf(stdout, "\e[%d;%dH\e[%dminvert:-\e[0m", tmp_line, x1 - 7, term_esc_col);
+            if (adc_enabled){
+                term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tmp_line, .size=3}, .type=2, .value={.ptrbool=&adc_params[adc_loop].autocenter}, .defval={.y=hint_def_line, .ptrbool=&adc_params_default[adc_loop].autocenter}, .hint={.y=hint_line, .str=term_hint_adc_str[6]}};
+                term_select[select_limit++] = (term_select_t){.position={.x=x1, .y=tmp_line, .size=1}, .type=2, .value={.ptrbool=&adc_params[adc_loop].reversed}, .defval={.y=hint_def_line, .ptrbool=&adc_params_default[adc_loop].reversed}, .hint={.y=hint_line, .str=term_hint_adc_str[1]}};
+            }
+*/
+
+            tmp_line+=3; axis_loop++;
+        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    //footer
+    fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[0], 20)) / 2, term_hint_nav_str[0]); //nav hint
+
+    //buttons
+    term_pos_button_t term_footer_buttons[] = {
+        {.str="Back", .ptrbool=&term_go_screen_main, .ptrhint="Go to main menu"},
+    };
+    int term_footer_buttons_count = sizeof(term_footer_buttons) / sizeof(term_footer_buttons[0]);
+    int term_buttons_pad = (tty_last_width - term_footer_buttons_width * term_footer_buttons_count) / (term_footer_buttons_count + 1);
+    for (int i=0; i<term_footer_buttons_count; i++){
+        int x = term_buttons_pad + (term_footer_buttons_width + term_buttons_pad) * i;
+        array_pad(term_footer_buttons[i].str, strlen(term_footer_buttons[i].str), term_footer_buttons_width, ' ', 0);
+        term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tty_last_height-1, .size=term_footer_buttons_width}, .type=1, .disabled=term_footer_buttons[i].disabled, .value={.ptrchar=term_footer_buttons[i].str, .ptrbool=term_footer_buttons[i].ptrbool}, .hint={.y=hint_line, .str=term_footer_buttons[i].ptrhint}};
+    }
+
+    if (debug){fprintf(stdout, "\e[1;%dH\e[100mselect_limit:%d\e[0m", tty_last_width-17, select_limit);}
+    assert(select_limit <= select_max); //failsafe
+
+    while (!kill_requested){
+        ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
+
+        term_user_input(&term_input); //handle terminal user input
+        term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height); //update selectible elements
+
+        if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
+
+        fprintf(stdout, "\e[0;0H\n"); //force tty update
+        usleep (1000000/30); //limit to 30hz max to limit risk of i2c colision if driver is running
+    }
+
+    diag_first_run = false; //disable first run mode
+    funct_end:; //jump point for fast exit
+    free(term_select);
+}
+
+
+
+
+
 
 /*
 void term_screen_generic(int tty_line, int tty_last_width, int tty_last_height){

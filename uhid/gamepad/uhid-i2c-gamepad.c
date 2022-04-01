@@ -6,6 +6,8 @@ Current version is mainly meant to be used with FreeplayTech gen2 device (embedd
 
 Notes when using Pi Zero 2 W and willing to use WiringPi for interrupt:
 You may need to clone and compile for unofficial github repository as official WiringPi ended developpement, please refer to: https://github.com/PinkFreud/WiringPi
+
+During driver start, hold [START] to run setup/diagnostic program, [SELECT] to do the same but in "first run" mode to ease ADCs setup.
 */
 
 #include <unistd.h>
@@ -499,22 +501,30 @@ int init_adc(){ //init adc data, return 0 on success, -1 on resolution read fail
         int_constrain(&adc_map[i], -1, 3); //avoid overflow
         mcu_adc_enabled[i] = (mcu_adc_config_old >> (i+4)) & 0b1; //mcu adc enabled
         if (adc_map[i] > -1 || diag_mode){
+            #ifdef DIAG_PROGRAM
+                if (diag_first_run){adc_map[i] = -1; adc_params[i].enabled = true;} //set adcs in a "default" state for "first run" mode
+            #endif
+
             if (!adc_fd_valid[i]){ //external adc not used
-#ifdef ALLOW_EXT_ADC
-                adc_init_err[i] = -1;
-#endif
+                #ifdef ALLOW_EXT_ADC
+                    adc_init_err[i] = -1;
+                #endif
                 adc_params[i].res = tmp_adc_res; //mcu adc resolution
                 if (!mcu_adc_enabled[i]){adc_params[i].enabled = false; //mcu adc fully disable
                 } else if (adc_params[i].enabled){mcu_adc_config_new |= 1U << i; mcu_adc_used[i] = true;} //mcu adc used
             }
-#ifdef ALLOW_EXT_ADC
-            else { //external
-                int_constrain(&adc_type[i], 0, adc_type_count-1); //avoid overflow
-                if (adc_type_funct_init[adc_type[i]](adc_fd[i], &adc_params[i]) < 0){adc_init_err[i] = -3; //init external adc failed
-                } else if (!adc_params[i].enabled){adc_init_err[i] = -1; //not enabled
-                } else {adc_init_err[i] = 0;} //ok
-            }
-#endif
+            #ifdef ALLOW_EXT_ADC
+                else { //external
+                    int_constrain(&adc_type[i], 0, adc_type_count-1); //avoid overflow
+                    if (adc_type_funct_init[adc_type[i]](adc_fd[i], &adc_params[i]) < 0){adc_init_err[i] = -3; //init external adc failed
+                    } else if (!adc_params[i].enabled){adc_init_err[i] = -1; //not enabled
+                    } else {adc_init_err[i] = 0;} //ok
+                }
+            #endif
+
+            #ifdef DIAG_PROGRAM
+                if (diag_first_run){adc_params[i].min = 0; adc_params[i].max = adc_params[i].res;} //set adcs in a "default" state for "first run" mode
+            #endif
         } else {adc_params[i].enabled = false;} //disable adc because map is invalid
         *js_values[i] = (uint16_t)0x7FFF; //reset uhid axis value, mainly used in diag part
 
@@ -759,7 +769,7 @@ static void program_usage (char* program){
     fprintf(stdout, "Dev: %s\n\n", dev_webpage);
     fprintf(stdout, "Since it needs to access/write to system device, program needs to run as root.\n\n");
 
-    #if defined(ALLOW_MCU_SEC_I2C) || defined(USE_SHM_REGISTERS) || defined(ALLOW_EXT_ADC) || defined(USE_POLL_IRQ_PIN)/*defined(USE_PIGPIO_IRQ) || defined(USE_WIRINGPI_IRQ)*/
+    #if defined(ALLOW_MCU_SEC_I2C) || defined(USE_SHM_REGISTERS) || defined(ALLOW_EXT_ADC) || defined(USE_POLL_IRQ_PIN)
         fprintf(stdout, "Enabled feature(s) (at compilation time):\n"
         #ifdef ALLOW_MCU_SEC_I2C
             "\t-MCU secondary features, on-the-fly I2C address update, backlight control, ...\n"
@@ -777,10 +787,10 @@ static void program_usage (char* program){
         );
     #endif
 
+    //fprintf(stdout, "Example : %s -configset debug=1\n", program);
+    fprintf(stdout, "Arguments:\n\t-h or -help: show arguments list.\n");
     #ifndef DIAG_PROGRAM
-        fprintf(stdout, "Example : %s -configset debug=1\n", program);
-        fprintf(stdout, "Arguments:\n"
-        "\t-h or -help: show arguments list.\n"
+        fprintf(stdout,
         "\t-configreset: reset configuration file to default (*).\n"
         "\t-configset: set custom configuration variable with specific variable, format: 'VAR=VALUE' (e.g. debug=1) (*).\n"
         "\t-configlist: list all configuration variables (*).\n"
@@ -789,16 +799,18 @@ static void program_usage (char* program){
         "(*): close program after function executed (incl failure).\n"
         );
     #else
-        fprintf(stdout, "Setup/diagnostic program doesn't have any arguments\n");
+        fprintf(stdout,
+        "\t"diag_first_run_command": allow easier detection of analog settings, does discard ADC mapping and min/max values.\n"
+        );
+        //fprintf(stdout, "Setup/diagnostic program doesn't have any arguments\n");
     #endif
 }
 
 int main(int argc, char** argv){
     program_start_time = get_time_double(); //program start time, used for detailed outputs
-    if (getuid() != 0 || (argc > 1 && (strcmp(argv[1],"-help") == 0 || strcmp(argv[1],"-h") == 0))){program_usage(argv[0]); return 0;} //help argument requested or not running as root
-    //if (getuid() != 0) {print_stderr("FATAL: this program needs to run as root, current user:%d\n", getuid()); return EXIT_FAILURE;} //not running as root
+    if (getuid() != 0){program_usage(argv[0]); return EXIT_FAILURE;} //show help if not running as root
 
-    int main_return = EXIT_SUCCESS; //rpogram retunr
+    int main_return = EXIT_SUCCESS; //program return
 
     program_get_path(argv, program_path); //get current program path
     sprintf(config_path, "%s/%s", program_path, cfg_filename); //convert config relative to full path
@@ -814,10 +826,11 @@ int main(int argc, char** argv){
         }
     #endif
 
-    #ifndef DIAG_PROGRAM
-        //program arguments parse
-        for(int i=1; i<argc; ++i){
-            if (strcmp(argv[i],"-configreset") == 0){return config_save(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true); //reset config file
+    //program arguments parse
+    for(int i=1; i<argc; ++i){
+        if (strcmp(argv[i],"-h") == 0 || strcmp(argv[i],"-help") == 0){program_usage(argv[0]); return EXIT_SUCCESS;}
+        #ifndef DIAG_PROGRAM
+            else if (strcmp(argv[i],"-configreset") == 0){return config_save(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true); //reset config file
             } else if (strcmp(argv[i],"-configset") == 0){ //set custom config var
                 if (++i<argc){return config_set(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true, argv[i]);
                 } else {
@@ -829,11 +842,18 @@ int main(int argc, char** argv){
             } else if (strcmp(argv[i],"-noi2c") == 0){i2c_disabled = true; //disable i2c, pollrate, garbage data to uhid for benchmark
             } else if (strcmp(argv[i],"-nouhid") == 0){uhid_disabled = true; //disable irq, uhid for benchmark
             }
-        }
-    #endif
+        #else
+            else if (strcmp(argv[i],diag_first_run_command) == 0){diag_first_run = true;} //force first run mode
+        #endif
+    }
 
-    config_parse(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid); //parse config file, create if needed
-    shm_init(true); //init shm path and files
+    {
+        int tmp_ret = config_parse(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid); //parse config file, create if needed
+        if (tmp_ret < 0){print_stderr("failed to parse config file, errno:%d (%s)\n", -tmp_ret, strerror(-tmp_ret)); return EXIT_FAILURE;
+        } else if (tmp_ret == 1){diag_first_run = true;} //config didn't exist
+        
+        shm_init(true); //init shm path and files
+    }
 
     //tty signal handling
     signal(SIGINT, tty_signal_handler); //ctrl-c
@@ -861,18 +881,6 @@ int main(int argc, char** argv){
             }
         }
 
-/*
-        #ifdef ALLOW_MCU_SEC_I2C
-            if (i2c_open_dev(&mcu_fd_sec, i2c_bus, mcu_addr_sec) != 0){print_stderr("Failed to open MCU secondary address\n");} //secondary failed
-            if ((mcu_fd < 0 || mcu_fd_sec < 0) && !diag_mode){
-                int tmp_addr_main = 0,  tmp_addr_sec = 0;
-                mcu_search_i2c_addr(i2c_bus, &tmp_addr_main, &tmp_addr_sec); //search for mcu address
-                if (mcu_fd < 0){diag_mode_init = true;} //disable additionnal prints
-            }
-        #endif
-
-        if (mcu_fd < 0 && !diag_mode){return EXIT_FAILURE;}
-*/
         print_stdout("MCU detected registers: adc_conf_bits:0x%02X, adc_res:0x%02X, config0:0x%02X\n", mcu_i2c_register_adc_conf, mcu_i2c_register_adc_res, mcu_i2c_register_config0);
 
         if (mcu_check_manufacturer() < 0 && !diag_mode){return EXIT_FAILURE;} //invalid manufacturer
@@ -911,7 +919,7 @@ int main(int argc, char** argv){
         shm_init(false); //init shm i2c things
         
         //uhdi defs
-        if (!uhid_disabled){ //don't create uhid device is -nouhid set
+        if (!uhid_disabled && !diag_first_run){ //don't create uhid device is -nouhid set
             uhid_fd = open(uhid_device_path, O_RDWR | O_CLOEXEC);
             if (uhid_fd < 0){print_stderr("failed to open uhid-cdev %s, errno:%d (%m)\n", uhid_device_path, -uhid_fd); return EXIT_FAILURE;}
             print_stdout("uhid-cdev %s opened\n", uhid_device_path);
@@ -922,7 +930,7 @@ int main(int argc, char** argv){
         }
 
         //interrupt
-        if (irq_gpio >= 0 && irq_enable){
+        if (irq_gpio >= 0 && irq_enable && !diag_first_run){
             irq_enable = false;
             #ifdef USE_POLL_IRQ_PIN
                 #define WIRINGPI_CODES 1 //allow error code return
@@ -942,11 +950,27 @@ int main(int argc, char** argv){
     if (i2c_poll_rate < 1){i2c_poll_rate_disable = true;} else {i2c_poll_rate_time = 1. / i2c_poll_rate;} //disable pollrate limit, poll interval in sec
     if (i2c_adc_poll < 1){i2c_adc_poll = 1;} i2c_adc_poll_loop = i2c_adc_poll;
 
-    //todo (github desktop test)
-
     i2c_poll_joystick(true);
 
     #ifndef DIAG_PROGRAM
+        { //redirect to diag program if needed
+            bool diag_run = false;
+            if ((gamepad_report.buttons15to8 >> 3) & 0b1){diag_run = true;} //start button pressed -> diag
+            if ((gamepad_report.buttons15to8 >> 2) & 0b1){diag_first_run = true;} //select button pressed -> diag "first run" mode
+            if (diag_run || diag_first_run){
+                char diag_program_path[strlen(program_path) + strlen(diag_program_filename) + 2];
+                sprintf(diag_program_path, "%s/%s", program_path, diag_program_filename); //build full path to diag program
+                struct stat file_stat = {0};
+                if (stat(diag_program_path, &file_stat) == 0){
+                    program_close(); //cleanup as driver will stay on until diag program closes
+                    print_stdout("starting setup/diagnostic program\n");
+                    int tmp_ret = execl(diag_program_path, diag_program_path, diag_first_run ? "-init" : "", NULL);
+                    if (tmp_ret != 0){print_stderr("something went wrong, errno:%d (%s)\n", tmp_ret, strerror(tmp_ret));}
+                    return tmp_ret; 
+                } else {print_stderr("can't start setup/diagnostic, program is missing:\n%s\n", diag_program_path);}
+            }
+        }
+        
         fprintf(stdout, "Press '^C' to gracefully close driver\n");
     
         if (!i2c_poll_rate_disable){

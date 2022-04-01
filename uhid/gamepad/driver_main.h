@@ -75,7 +75,8 @@ int irq_gpio = def_irq_gpio; //gpio pin used for IRQ, limited to 31 for pigpio, 
 char program_path[PATH_MAX] = {'\0'}; //full path to this program
 bool kill_requested = false, already_killed = false; //allow clean close
 double program_start_time = 0.;
-bool diag_mode_init = false;
+bool diag_mode_init = false; //used mainly to disable print_stderr and print_stdout output in diag mode
+bool diag_first_run = false; //running in "first run" mode, used to ease ADCs setup
 
 //UHID related
 int uhid_fd = -1;

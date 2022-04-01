@@ -84,7 +84,7 @@ void term_screen_adc(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_he
 void term_screen_digital(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 void term_screen_save(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 void term_screen_advanced(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //"ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
-
+void term_screen_firstrun(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 
 
 //extern funct
@@ -126,8 +126,8 @@ int select_index_current = 0, select_index_last = -1; //current element selected
 int term_screen_current = 0, term_screen_last = -1; //start "screen", last screen
 int term_screen_update = false; //"screen" require update
 
-void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_screen_i2c, term_screen_adc, term_screen_digital, term_screen_save, term_screen_advanced}; //pointer to screen functions
-enum term_screen {SCREEN_MAIN, SCREEN_I2C, SCREEN_ADC, SCREEN_DIGITAL, SCREEN_SAVE, SCREEN_ADVANCED};
+void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_screen_i2c, term_screen_adc, term_screen_digital, term_screen_save, term_screen_advanced, term_screen_firstrun}; //pointer to screen functions
+enum term_screen {SCREEN_MAIN, SCREEN_I2C, SCREEN_ADC, SCREEN_DIGITAL, SCREEN_SAVE, SCREEN_ADVANCED, SCREEN_FIRSTRUN};
 
 struct winsize ws; //terminal size
 term_input_t term_input = {0}; //contain user inputs
@@ -151,6 +151,7 @@ extern bool debug, debug_adv;  //enable debug output
 extern const char dev_webpage[]; //developer webpage
 extern char* js_axis_names[]; //joystick axis names, virtually start at index -1
 extern char config_path[]; //full path to config file
+extern bool diag_first_run; //running in "first run" mode, used to ease ADCs setup
 
 //i2c
 bool i2c_bus_failed = false, i2c_failed = false; //i2c failure
