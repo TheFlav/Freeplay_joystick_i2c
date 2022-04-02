@@ -5,9 +5,14 @@ This program sets up a gamepad device in the sytem using UHID-kernel interface.
 Current version is mainly meant to be used with FreeplayTech gen2 device (embedded ATTINY controller for IO/ADC management).
 
 Notes when using Pi Zero 2 W and willing to use WiringPi for interrupt:
-You may need to clone and compile for unofficial github repository as official WiringPi ended developpement, please refer to: https://github.com/PinkFreud/WiringPi
+You may need to clone and compile for unofficial github repository as official WiringPi ended development, please refer to: https://github.com/PinkFreud/WiringPi
 
-During driver start, hold [START] to run setup/diagnostic program, [SELECT] to do the same but in "first run" mode to ease ADCs setup.
+Notes about ADCs (MCU or external), comments relative to current state of development, may change in the future:
+- Driver/Diagnostic program are designed to only handle unsigned ADC values.
+- Driver should be able to work upto 32bits(unsigned) ADC resolution.
+- Diagnostic program is limited to 16bits(unsigned) because of terminal size limitations (mainly thinked to work on 640x480 screen, 80 cols by 30 lines).
+
+During driver start sequence, hold (START) button to run setup/diagnostic program, (SELECT) to do the same but in "first run" mode to ease ADCs setup.
 */
 
 #include <unistd.h>
@@ -523,7 +528,11 @@ int init_adc(){ //init adc data, return 0 on success, -1 on resolution read fail
             #endif
 
             #ifdef DIAG_PROGRAM
-                if (diag_first_run){adc_params[i].min = 0; adc_params[i].max = adc_params[i].res;} //set adcs in a "default" state for "first run" mode
+                if (diag_first_run){ //set adcs in a "default" state for "first run" mode
+                    adc_params[i].res_limit = 0xFFFFFFFF >> (32 - adc_params[i].res); //compute adc limit
+                    adc_params[i].min = 0;
+                    adc_params[i].max = adc_params[i].res_limit;
+                }
             #endif
         } else {adc_params[i].enabled = false;} //disable adc because map is invalid
         *js_values[i] = (uint16_t)0x7FFF; //reset uhid axis value, mainly used in diag part
@@ -967,7 +976,10 @@ int main(int argc, char** argv){
                     int tmp_ret = execl(diag_program_path, diag_program_path, diag_first_run ? "-init" : "", NULL);
                     if (tmp_ret != 0){print_stderr("something went wrong, errno:%d (%s)\n", tmp_ret, strerror(tmp_ret));}
                     return tmp_ret; 
-                } else {print_stderr("can't start setup/diagnostic, program is missing:\n%s\n", diag_program_path);}
+                } else {
+                    print_stderr("can't start setup/diagnostic, program is missing:\n%s\n", diag_program_path);
+                    return EXIT_FAILURE;
+                }
             }
         }
         

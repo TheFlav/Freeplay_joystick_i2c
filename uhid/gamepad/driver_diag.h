@@ -65,7 +65,7 @@ static void str_trim_whitespace(char** /*ptr*/); //update pointer to skip leadin
 static int strcpy_noescape(char* /*dest*/, char* /*src*/, int /*limit*/); //strcpy "clone" that ignore terminal escape code, set dest=src or dest=NULL to only return "noescape" char array length. Current limitations:defined limit of escape code (w/o "\e["). warnings: no size check, broken if badly formated escape, only check for h,l,j,m ending
 
 static void term_user_input(term_input_t* /*input*/); //process terminal key inputs
-static void term_select_update(term_select_t* /*store*/, int* /*index*/, int* /*index_last*/, int /*index_limit*/, term_input_t* /*input*/, int /*tty_width*/, int /*tty_height*/); //update selectible elements
+static void term_select_update(term_select_t* /*store*/, int* /*index*/, int* /*index_last*/, int /*index_limit*/, term_input_t* /*input*/, int /*tty_width*/, int /*tty_height*/, bool /*update*/); //update selectible elements
 
 static int term_print_path_multiline(char* /*str*/, int /*line*/, int /*col*/, int /*width_limit*/, int /*esc_color*/); //print a multiple line if needed, return no of lines
 
@@ -75,7 +75,7 @@ int program_diag_mode(void); //main diag mode function
 //void vars_main_default(void); //reset all main config vars to default
 void vars_i2c_default(void); //reset all i2c config vars to default
 void vars_digital_default(void); //reset all digital config vars to default
-void vars_adc_default(void); //reset all adc config vars to default
+void vars_adc_default(int /*index*/, bool /*all*/); //reset all adc config vars to default. "index" to -1 for full reset, "all" to false to only reset enabled,min,max,reverse
 void vars_cfg_reload(void); //reload config file
 
 void term_screen_main(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
@@ -86,13 +86,12 @@ void term_screen_save(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_h
 void term_screen_advanced(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //"ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
 void term_screen_firstrun(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 
+void term_splash_save(int /*tty_last_width*/, int /*tty_last_height*/); //save new configuration file splash
 
 //extern funct
 extern void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
 extern void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value
 extern int int_digit_count(int /*num*/); //number of digit of a integer, negative sign is consider as a digit
-extern void vars_main_default(void); //reset all main config vars to default
-extern void vars_adc_default(void); //reset all adc config vars to default
 
 extern int i2c_check_bus(int /*bus*/); //check I2C bus, return 0 on success, -1:addr
 extern int i2c_open_dev(int* /*fd*/, int /*bus*/, int /*addr*/); //open I2C device, return 0 on success, -1:bus, -2:addr, -3:generic error
@@ -135,8 +134,8 @@ term_input_t term_input = {0}; //contain user inputs
 char* term_hint_nav_str[]={
     "\e[1m[TAB]\e[0m,\e[1m[UP]\e[0m,\e[1m[DOWN]\e[0m to navigate",
     "\e[1m[LEFT]\e[0m,\e[1m[RIGHT]\e[0m to change value, \e[1m[-]\e[0m,\e[1m[+]\e[0m for plus/minus 50",
-    "\e[1m[ENTER]\e[0m to toogle",
-    "\e[1mPress any key to continue\e[0m",
+    "\e[1m[ENTER]\e[0m/\e[1m(A)\e[0m to toogle",
+    "\e[1m[ENTER]\e[0m/\e[1m(A)\e[0m to continue\e[0m",
 };
 
 char* buttons_dpad_names[] = {"Dpad_UP", "Dpad_DOWN", "Dpad_LEFT", "Dpad_RIGHT"};
@@ -154,6 +153,7 @@ extern char config_path[]; //full path to config file
 extern bool diag_first_run; //running in "first run" mode, used to ease ADCs setup
 
 //i2c
+bool i2c_safelock = true; //disable ability to change i2c address
 bool i2c_bus_failed = false, i2c_failed = false; //i2c failure
 int i2c_bus_err = 121, i2c_main_err = 121; //backup detected i2c errors
 extern int mcu_fd; //mcu i2c fd
