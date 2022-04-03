@@ -71,6 +71,9 @@ static int term_print_path_multiline(char* /*str*/, int /*line*/, int /*col*/, i
 int term_init(void); //init terminal related vars
 int program_diag_mode(void); //main diag mode function
 
+static int in_array_int16(int16_t* /*arr*/, int16_t /*value*/, int /*arr_size*/); //search in value in int16 array, return index or -1 on failure
+
+
 //void vars_main_default(void); //reset all main config vars to default
 void vars_i2c_default(void); //reset all i2c config vars to default
 void vars_digital_default(void); //reset all digital config vars to default
@@ -176,6 +179,11 @@ extern uint8_t mcu_signature, mcu_id, mcu_version; //device device signature, id
 extern int digital_debounce; //debounce filtering to mitigate possible pad false contact, default:5, max:7, 0 to disable
 extern bool mcu_adc_enabled[]; //adc enabled on mcu, set during runtime
 extern bool mcu_adc_read[]; //read mcu adc0-1/2-3 during poll, used here for benchmark
+int term_read_mcu_inputs[6] = {0}; //button position into mcu_input_map: dpad up,down,left,right, a, b
+double term_read_mcu_left_hold_start = -1.;
+double term_read_mcu_right_hold_start = -1.;
+double term_read_mcu_start = -1.;
+
 
 #ifdef ALLOW_MCU_SEC_I2C
     extern struct i2c_secondary_address_register_struct i2c_secondary_registers;

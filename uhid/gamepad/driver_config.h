@@ -13,10 +13,12 @@
 #include <stdbool.h>
 #include <linux/input-event-codes.h>
 
-//default settings/values
+//setup/diagnostic specific
 #define diag_program_filename "uhid-i2c-gamepad-diag" //has to match actual setup/diagnostic program name, used to start diag if config missing to setup ADCs
 #define diag_first_run_command "-init" //argument used to set setup/diagnostic program into 'first run' mode to setup ADCs
+#define diag_input_mcu_read_interval 0.1 //interval to process MCU digital inputs for menu navigation, may have to be finetuned as overshot happen very quickly
 
+//driver default settings/values
 #define def_debug false //enable debug output
 #define def_debug_adv false //enable advanced debug output, benchmark
 
