@@ -38,7 +38,6 @@ typedef struct term_select_struct { //selectible terminal elements data
 } term_select_t;
 
 typedef struct term_input_struct {bool up, down, left, right, plus, minus, tab, enter, enter_hold, escape;} term_input_t; //terminal key input structure
-extern term_input_t term_input;
 
 typedef struct term_pos_generic_struct { //generic terminal position pointer structure
     int x, y, w; //col, line, width
@@ -84,7 +83,8 @@ void term_screen_adc(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_he
 void term_screen_digital(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 void term_screen_save(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 void term_screen_advanced(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //"ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
-void term_screen_firstrun(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
+void term_screen_firstrun(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //resizing this screen will fully reset it
+void term_screen_debug(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 
 void term_splash_save(int /*tty_last_width*/, int /*tty_last_height*/); //save new configuration file splash
 
@@ -105,9 +105,9 @@ extern int init_adc(void); //init adc data, return 0 on success, -1 on resolutio
 extern void uhid_joystick_swap(void); //uhid joystick/axis swap
 
 extern void i2c_poll_joystick(bool /*force_update*/); //poll data from i2c device
-
 extern void adc_data_compute(int /*adc_index*/); //compute adc max value, flat in/out, offset
-
+extern int uhid_send_event(int /*fd*/); //send event to uhid device, send to /dev/null in diag program
+extern bool io_fd_valid(int /*fd*/); //check if a file descriptor is valid
 
 //diagnostic part
 int term_esc_col_normal = 97; //normal color escape code
@@ -122,11 +122,11 @@ int term_adc_vertspacing = 9; //vertical spacing between each horizontal ADC ele
 
 int select_index_current = 0, select_index_last = -1; //current element selected, last selected
 
-int term_screen_current = 0, term_screen_last = -1; //start "screen", last screen
-int term_screen_update = false; //"screen" require update
+void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_screen_i2c, term_screen_adc, term_screen_digital, term_screen_save, term_screen_advanced, term_screen_firstrun, term_screen_debug}; //pointer to screen functions
+enum term_screen {SCREEN_MAIN, SCREEN_I2C, SCREEN_ADC, SCREEN_DIGITAL, SCREEN_SAVE, SCREEN_ADVANCED, SCREEN_FIRSTRUN, SCREEN_DEBUG};
 
-void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_screen_i2c, term_screen_adc, term_screen_digital, term_screen_save, term_screen_advanced, term_screen_firstrun}; //pointer to screen functions
-enum term_screen {SCREEN_MAIN, SCREEN_I2C, SCREEN_ADC, SCREEN_DIGITAL, SCREEN_SAVE, SCREEN_ADVANCED, SCREEN_FIRSTRUN};
+int term_screen_current = SCREEN_MAIN, term_screen_last = -1; //start "screen", last screen
+int term_screen_update = false; //"screen" require update
 
 struct winsize ws; //terminal size
 term_input_t term_input = {0}; //contain user inputs
@@ -175,6 +175,7 @@ extern struct i2c_joystick_register_struct i2c_joystick_registers;
 extern uint8_t mcu_signature, mcu_id, mcu_version; //device device signature, id, version
 extern int digital_debounce; //debounce filtering to mitigate possible pad false contact, default:5, max:7, 0 to disable
 extern bool mcu_adc_enabled[]; //adc enabled on mcu, set during runtime
+extern bool mcu_adc_read[]; //read mcu adc0-1/2-3 during poll, used here for benchmark
 
 #ifdef ALLOW_MCU_SEC_I2C
     extern struct i2c_secondary_address_register_struct i2c_secondary_registers;
@@ -213,6 +214,9 @@ adc_data_t adc_params_default[4] = {
 };
 
 bool adc_enabled_back[] = {def_adc0_enabled, def_adc1_enabled, def_adc2_enabled, def_adc3_enabled};
+
+//pollrate
+extern double poll_clock_start;
 
 
 //irq

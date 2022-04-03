@@ -80,8 +80,8 @@ double get_time_double(void){ //get time in double (seconds)
 //UHID related functions
 #ifndef DIAG_PROGRAM
 static int uhid_create(int fd){ //create uhid device
+    if (!io_fd_valid(fd)){return -EIO;}
     struct uhid_event ev;
-
     memset(&ev, 0, sizeof(ev));
     ev.type = UHID_CREATE2;
     strcpy((char*)ev.u.create2.name, uhid_device_name); //ev.u.create.rd_data = hid_descriptor;
@@ -96,9 +96,10 @@ static int uhid_create(int fd){ //create uhid device
     return uhid_write(fd, &ev);
 }
 
+
 static void uhid_destroy(int fd){ //close uhid devic
     //TODO EmulationStation looks to crash from time to time when closing driver
-    if (fd < 0) return; //already closed
+    if (!io_fd_valid(fd)){return;} //already closed
     struct uhid_event ev; memset(&ev, 0, sizeof(ev));
     ev.type = UHID_DESTROY;
     int ret = uhid_write(fd, &ev);
@@ -107,6 +108,7 @@ static void uhid_destroy(int fd){ //close uhid devic
 }
 
 static int uhid_write(int fd, const struct uhid_event* ev){ //write data to uhid device
+    if (!io_fd_valid(fd)){return -EIO;}
     ssize_t ret = write(fd, ev, sizeof(*ev));
     if (ret < 0){print_stderr("write to uhid device failed with errno:%d (%m)\n", -ret);
     } else if (ret != sizeof(*ev)){
@@ -115,10 +117,11 @@ static int uhid_write(int fd, const struct uhid_event* ev){ //write data to uhid
     }
     return ret;
 }
+#endif
 
-static int uhid_send_event(int fd){ //send event to uhid device
+int uhid_send_event(int fd){ //send event to uhid device
     if (uhid_disabled){return 0;}
-    if (uhid_fd < 0){return -EIO;}
+    if (!io_fd_valid(fd)){return -EIO;}
 
     struct uhid_event ev;
     memset(&ev, 0, sizeof(ev));
@@ -139,16 +142,21 @@ static int uhid_send_event(int fd){ //send event to uhid device
     ev.u.input2.data[index++] = gamepad_report.buttonsmisc; //digital misc
 
     ev.u.input2.size = index;
-    return uhid_write(fd, &ev);
+
+    #ifndef DIAG_PROGRAM
+        return uhid_write(fd, &ev);
+    #else
+        return write(fd, &ev, sizeof(ev));
+    #endif
 }
-#endif
+
 
 //I2C related
 int i2c_check_bus(int bus){ //check I2C bus, return 0 on success, -1:addr
     if (bus < 0){print_stderr("invalid I2C bus:%d\n", bus); errno = ENOENT; return -1;} //invalid bus
     char fd_path[strlen(def_i2c_bus_path_format)+4]; sprintf(fd_path, def_i2c_bus_path_format, bus);
     int fd = open(fd_path, O_RDWR);
-    if (fd < 0){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -fd); return -1; //invalid bus
+    if (!io_fd_valid(fd)){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -fd); return -1; //invalid bus
     } else {print_stdout("I2C bus '%s' found\n", fd_path);}
     close(fd);
     return 0;
@@ -160,7 +168,7 @@ int i2c_open_dev(int* fd, int bus, int addr){ //open I2C device, return 0 on suc
 
     char fd_path[strlen(def_i2c_bus_path_format)+4]; sprintf(fd_path, def_i2c_bus_path_format, bus);
     close(*fd); *fd = open(fd_path, O_RDWR);
-    if (*fd < 0){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -*fd); *fd = -1; return -1;}
+    if (!io_fd_valid(*fd)){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -*fd); *fd = -1; return -1;}
 
     if (ioctl(*fd, i2c_ignore_busy ? I2C_SLAVE_FORCE : I2C_SLAVE, addr) < 0){ //invalid address
         close(*fd); *fd = -1;
@@ -284,7 +292,7 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
                 if (mcu_adc_read[1]){read_limit += 3;}
             }
         }
-
+        
         if (read_limit > 0){
             if (i2c_smbus_read_i2c_block_data(mcu_fd, mcu_registers_ptr - (uint8_t*)&i2c_joystick_registers, read_limit, mcu_registers_ptr) < 0){
                 i2c_errors_count++; i2c_allerrors_count++;
@@ -378,7 +386,7 @@ int mcu_search_i2c_addr(int bus, int* addr_main, int* addr_sec){ //search mcu on
     if (bus < 0){print_stderr("invalid I2C bus:%d\n", bus); return -1;} //invalid bus
     char fd_path[strlen(def_i2c_bus_path_format)+4]; sprintf(fd_path, def_i2c_bus_path_format, bus);
     int fd = open(fd_path, O_RDWR);
-    if (fd < 0){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -fd); return -1;}
+    if (!io_fd_valid(fd)){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -fd); return -1;}
 
     int tmp_reg_manuf_main = offsetof(struct i2c_joystick_register_struct, manuf_ID) / sizeof(uint8_t); //main register manuf_ID
     #ifdef ALLOW_MCU_SEC_I2C
@@ -464,7 +472,7 @@ int mcu_update_config0(){ //read/update config0 register, return 0 on success, -
 }
 
 int mcu_update_register(int* fd, uint8_t reg, uint8_t value, bool check){ //update and check register, return 0 on success, -1 on error
-    if(*fd < 0){return -1;}
+    if(!io_fd_valid(*fd)){return -1;}
     int ret = i2c_smbus_write_byte_data(*fd, reg, value);
     if (ret < 0){
         i2c_allerrors_count++;
@@ -744,6 +752,13 @@ int int_digit_count(int num){ //number of digit of a integer, negative sign is c
     return strlen(buffer);
 }
 
+//IO specific
+bool io_fd_valid(int fd){ //check if a file descriptor is valid
+    int errno_back = errno; //backup previous errno
+    bool valid = fcntl(fd, F_GETFD) >= 0 || errno != EBADF;
+    errno = errno_back; //restore errno to avoid bad descriptor on all errors
+    return valid;
+}
 
 //Generic functions
 static void program_close(void){ //regroup all close functs
@@ -884,7 +899,7 @@ int main(int argc, char** argv){
         if (mcu_failed && !diag_mode){
             int tmp_addr_main = 0,  tmp_addr_sec = 0;
             mcu_search_i2c_addr(i2c_bus, &tmp_addr_main, &tmp_addr_sec); //search for mcu address
-            if (mcu_fd < 0){
+            if (!io_fd_valid(mcu_fd)){
                 diag_mode_init = true; //disable additionnal prints
                 return EXIT_FAILURE;
             }
@@ -905,7 +920,7 @@ int main(int argc, char** argv){
 
         #ifdef ALLOW_MCU_SEC_I2C
             //advanced features if mcu secondary address valid
-            //if (mcu_fd_sec >= 0){;}
+            //if (io_fd_valid(mcu_fd_sec)){;}
         #endif
     }
 
@@ -930,12 +945,12 @@ int main(int argc, char** argv){
         //uhdi defs
         if (!uhid_disabled && !diag_first_run){ //don't create uhid device is -nouhid set
             uhid_fd = open(uhid_device_path, O_RDWR | O_CLOEXEC);
-            if (uhid_fd < 0){print_stderr("failed to open uhid-cdev %s, errno:%d (%m)\n", uhid_device_path, -uhid_fd); return EXIT_FAILURE;}
-            print_stdout("uhid-cdev %s opened\n", uhid_device_path);
+            if (!io_fd_valid(uhid_fd)){print_stderr("failed to open uhid device '%s', errno:%d (%m)\n", uhid_device_path, errno); return EXIT_FAILURE;}
+            print_stdout("uhid device '%s' opened\n", uhid_device_path);
 
             int ret = uhid_create(uhid_fd);
             if (ret < 0){return EXIT_FAILURE;}
-            print_stdout("uhid device created\n");
+            print_stdout("new uhid device created\n");
         }
 
         //interrupt
@@ -956,7 +971,7 @@ int main(int argc, char** argv){
     #endif
 
     //initial poll
-    if (i2c_poll_rate < 1){i2c_poll_rate_disable = true;} else {i2c_poll_rate_time = 1. / i2c_poll_rate;} //disable pollrate limit, poll interval in sec
+    if (i2c_poll_rate < 1 || debug_adv){i2c_poll_rate_disable = true;} else {i2c_poll_rate_time = 1. / i2c_poll_rate;} //disable pollrate limit, poll interval in sec
     if (i2c_adc_poll < 1){i2c_adc_poll = 1;} i2c_adc_poll_loop = i2c_adc_poll;
 
     i2c_poll_joystick(true);

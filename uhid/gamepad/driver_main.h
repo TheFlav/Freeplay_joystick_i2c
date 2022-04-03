@@ -39,20 +39,22 @@ int mcu_update_config0(void); //read/update config0 register, return 0 on succes
 int init_adc(void); //init adc data, return 0 on success, -1 on resolution read fail, -2 on adc conf
 int mcu_search_i2c_addr(int /*bus*/, int* /*addr_main*/, int* /*addr_sec*/); //search mcu on given i2c bus, return -1 on failure, 0 on success
 
+int uhid_send_event(int /*fd*/); //send event to uhid device, send to /dev/null in diag program
+
+bool io_fd_valid(int /*fd*/); //check if a file descriptor is valid
+
 #ifndef ALLOW_MCU_SEC_I2C
     #undef USE_SHM_REGISTERS //can't use shm register "bridge" with MCU secondary feature
 #endif
 
 #ifndef DIAG_PROGRAM
-    static int uhid_create (int /*fd*/); //create uhid device
-    static void uhid_destroy (int /*fd*/); //close uhid device
-    static int uhid_write (int /*fd*/, const struct uhid_event* /*ev*/); //write data to uhid device
-    static int uhid_send_event (int /*fd*/); //send event to uhid device
-
-    static int file_write (char* /*path*/, char* /*content*/); //write file
-    static void shm_update (void); //update registers/files linked to shm things
+    static int uhid_create(int /*fd*/); //create uhid device
+    static void uhid_destroy(int /*fd*/); //close uhid device
+    static int uhid_write(int /*fd*/, const struct uhid_event* /*ev*/); //write data to uhid device
+    static int file_write(char* /*path*/, char* /*content*/); //write file
+    static void shm_update(void); //update registers/files linked to shm things
     #ifdef USE_SHM_REGISTERS
-        static int file_read (char* /*path*/, char* /*bufferptr*/, int /*buffersize*/); //read file
+        static int file_read(char* /*path*/, char* /*bufferptr*/, int /*buffersize*/); //read file
     #endif
     #define diag_mode false
 #else
