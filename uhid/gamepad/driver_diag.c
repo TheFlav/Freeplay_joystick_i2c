@@ -202,8 +202,6 @@ static void term_user_input(term_input_t* input){ //process terminal key inputs 
     if(io_fd_valid(mcu_fd) && memcmp(input, &term_input_empty, sizeof(term_input_t)) == 0){ //no terminal input, process mcu digital inputs
         double read_start = get_time_double(); //limit pollrate
         if ((read_start - term_read_mcu_start > diag_input_mcu_read_interval) && i2c_smbus_read_i2c_block_data(mcu_fd, 0, input_registers_count, (uint8_t *)&i2c_joystick_registers) >= 0){
-            term_read_mcu_start = read_start;
-            
             uint32_t inputs = (i2c_joystick_registers.input2 << 16) + (i2c_joystick_registers.input1 << 8) + i2c_joystick_registers.input0; //merge to ease work
             bool* input_ptr[] = {&input->up, &input->down, &input->left, &input->right, &input->enter, &input->escape}; //ptr to term input struct
             for (int i=0; i<6; i++){if(term_read_mcu_inputs[i] >= 0){*input_ptr[i] = ~(inputs >> term_read_mcu_inputs[i]) & 0b1;}} //check mcu buttons
@@ -218,6 +216,8 @@ static void term_user_input(term_input_t* input){ //process terminal key inputs 
                 if (term_read_mcu_right_hold_start < 0){term_read_mcu_right_hold_start = read_start; //hold start
                 } else if (read_start - term_read_mcu_right_hold_start > 2.){input->right = false; input->plus = true;} //hold over 2sec, big increment
             } else {term_read_mcu_right_hold_start = -1.;} //released
+
+            if (memcmp(input, &term_input_empty, sizeof(term_input_t)) != 0){term_read_mcu_start = read_start;} //some inputs
         }
     }
 
