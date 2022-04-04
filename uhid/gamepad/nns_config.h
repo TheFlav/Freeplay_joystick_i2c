@@ -36,5 +36,5 @@ int config_search_name (cfg_vars_t* /*cfg*/, unsigned int /*cfg_size*/, char* /*
 int config_save (cfg_vars_t* /*cfg*/, unsigned int /*cfg_size*/, char* /*filename*/, int /*uid*/, int /*gid*/, bool /*reset*/); //save config file
 int config_set (cfg_vars_t* /*cfg*/, unsigned int /*cfg_size*/, char* /*filename*/, int /*uid*/, int /*gid*/, bool /*readcfg*/, char* /*var_value*/); //update var in config file
 bool config_type_parse (cfg_vars_t* /*cfg*/, unsigned int /*cfg_size*/, int /*index*/, int /*type*/, char* /*var*/, char* /*value*/); //parse config var with specific type
-void config_parse (cfg_vars_t* /*cfg*/, unsigned int /*cfg_size*/, char* /*filename*/, int /*uid*/, int /*gid*/); //parse/create program config file
+int config_parse (cfg_vars_t* /*cfg*/, unsigned int /*cfg_size*/, char* /*filename*/, int /*uid*/, int /*gid*/); //parse/create program config file, return -errno on failure, 0 on success, 1 if new config created
 void config_list (cfg_vars_t* /*cfg*/, unsigned int /*cfg_size*/); //print all config vars

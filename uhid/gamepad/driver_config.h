@@ -13,7 +13,12 @@
 #include <stdbool.h>
 #include <linux/input-event-codes.h>
 
-//default values
+//setup/diagnostic specific
+#define diag_program_filename "uhid-i2c-gamepad-diag" //has to match actual setup/diagnostic program name, used to start diag if config missing to setup ADCs
+#define diag_first_run_command "-init" //argument used to set setup/diagnostic program into 'first run' mode to setup ADCs
+#define diag_input_mcu_read_interval 0.15 //interval to process MCU digital inputs for menu navigation, may have to be finetuned as overshot happen very quickly
+
+//driver default settings/values
 #define def_debug false //enable debug output
 #define def_debug_adv false //enable advanced debug output, benchmark
 
@@ -47,9 +52,9 @@
 #define uhid_buttons_count 15 //HID gamepad buttons count, limited to 16 by driver design, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 #define uhid_buttons_misc_count 4 //HID multiaxis buttons count (BTN_num), limited to 8 by driver design, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 static int16_t mcu_input_map[input_registers_size] = { //driver v11 input register used to remap MCU output to proper ev order, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
-	-127, -127, -127, -127, BTN_START, BTN_SELECT, BTN_A, BTN_B, //input0
-	BTN_MODE, BTN_THUMBR, BTN_TL2, BTN_TR2, BTN_X, BTN_Y, BTN_TL, BTN_TR, //input1. 4xDpad, BTN_TL2/TR2 shared with serial TX/RX, BTN_Z shared with nINT
-	BTN_THUMBL, -127, BTN_C, BTN_Z, BTN_0, BTN_1, BTN_2, BTN_3, //input2. BTN_0-3 are part of Multiaxis
+    -127, -127, -127, -127, BTN_START, BTN_SELECT, BTN_A, BTN_B, //input0
+    BTN_MODE, BTN_THUMBR, BTN_TL2, BTN_TR2, BTN_X, BTN_Y, BTN_TL, BTN_TR, //input1. 4xDpad, BTN_TL2/TR2 shared with serial TX/RX, BTN_Z shared with nINT
+    BTN_THUMBL, -127, BTN_C, BTN_Z, BTN_0, BTN_1, BTN_2, BTN_3, //input2. BTN_0-3 are part of Multiaxis
 };
 
 #define def_digital_debounce 5 //debounce filtering to mitigate possible pad false contact, default:5, max:7, 0 to disable
