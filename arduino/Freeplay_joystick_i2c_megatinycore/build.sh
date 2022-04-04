@@ -1,1 +1,1 @@
-bin/arduino-cli compile -v -b megaTinyCore:megaavr:atxy7:chip=1627,clock=10internal,bodvoltage=1v8,bodmode=disabled,eesave=enable,millis=enabled,resetpin=UPDI,startuptime=0 --output-dir ./Freeplay_joystick_i2c_megatinycore_build/
+make compile

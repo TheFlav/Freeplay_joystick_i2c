@@ -10,4 +10,12 @@ raspi-gpio set 11 op dh
 
 echo "Requires pymcuprog from https://pypi.org/project/pymcuprog/"
 
-pymcuprog -d attiny1627 -t uart -u /dev/ttyAMA0 ping
+if [ ${CHIP} != 817 ]; then
+  CHIP=1627
+  echo Setting CHIP as ${CHIP}
+else
+  echo Using CHIP as ${CHIP}
+fi
+
+
+pymcuprog -d attiny${CHIP} -t uart -u /dev/ttyAMA0 ping
