@@ -764,7 +764,7 @@ void setup_gpio(void)
 
 //#define PINA_MASK (0b00001110) for ADC
   //PORTA_PIN0CTRL = PORT_PULLUPEN_bm;    //PA0 is UPDI
-  //PORTA_PIN1CTRL = PORT_PULLUPEN_bm;    //PA1 is used for analog input (DPAD)
+  //PORTA_PIN1CTRL = PORT_PULLUPEN_bm;    //PA1 is an output (select for mux)
   //PORTA_PIN2CTRL = PORT_PULLUPEN_bm;    //PA2 = Poweroff Out _OUTPUT_
   //PORTA_PIN3CTRL = PORT_PULLUPEN_bm;    //PA3 = nINT _OUTPUT_
 
@@ -982,6 +982,9 @@ void read_digital_inputs(void)
 #if defined(USE_STATUS_LED_PB2)
   input2 |= (1 << 2);
 #endif
+
+  //the low nibble of adc_conf_bits bits are 1 if the ADC is turned on.
+  input2 |= (i2c_joystick_registers.adc_conf_bits & 0xF0) & (i2c_joystick_registers.adc_conf_bits << 4);  //set all BTN_0, BTN_1, BTN_2, BTN_3 to 1 for any input that has an ADC turned on (can't "press" those buttons)
 
 #ifdef USE_DIGITAL_BUTTON_DEBOUNCING
   debounce_inputs(&input0, &input1, &input2);
