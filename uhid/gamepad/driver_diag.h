@@ -63,7 +63,7 @@ static int array_pad(char* /*arr*/, int /*arr_len*/, int /*size*/, char /*pad*/,
 static void str_trim_whitespace(char** /*ptr*/); //update pointer to skip leading pointer, set first trailing space to null char
 static int strcpy_noescape(char* /*dest*/, char* /*src*/, int /*limit*/); //strcpy "clone" that ignore terminal escape code, set dest=src or dest=NULL to only return "noescape" char array length. Current limitations:defined limit of escape code (w/o "\e["). warnings: no size check, broken if badly formated escape, only check for h,l,j,m ending
 
-static void term_user_input(term_input_t* /*input*/); //process terminal key inputs
+static void term_user_input(term_input_t* /*input*/, bool /*blocking*/, bool* /*wanted_input*/); //process terminal key inputs and digital inputs, blocking to true to set blocking mode waiting any inputs if wanted_bool set to NULL and a specific one
 static void term_select_update(term_select_t* /*store*/, int* /*index*/, int* /*index_last*/, int /*index_limit*/, term_input_t* /*input*/, int /*tty_width*/, int /*tty_height*/, bool /*update*/); //update selectible elements
 
 static int term_print_path_multiline(char* /*str*/, int /*line*/, int /*col*/, int /*width_limit*/, int /*esc_color*/); //print a multiple line if needed, return no of lines
