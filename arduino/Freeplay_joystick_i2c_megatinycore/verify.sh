@@ -8,7 +8,7 @@ raspi-gpio set 14 a0
 raspi-gpio set 15 a0 pu
 raspi-gpio set 11 op dh
 
-if [ ${CHIP} != 817 ]; then
+if [ "${CHIP}" != "817" ]; then
   CHIP=1627
   echo Setting CHIP as ${CHIP}
 else

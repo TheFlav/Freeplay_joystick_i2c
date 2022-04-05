@@ -10,6 +10,14 @@ if [ "${FPJSMAGIC}" != "0xed" ] || [ "${FPJS2NDMAGIC}" != "0xed" ]; then
 	#echo "FAILED FPJSMAGIC=${FPJSMAGIC}, FPJS2NDMAGIC=${FPJS2NDMAGIC}"
 	echo "Freeplay i2c Joystick device not found on i2c-1!"
 
+	#cd /home/pi/Freeplay/Freeplay_joystick_i2c/arduino/Freeplay_joystick_i2c_megatinycore
+        #./verify.sh
+	#if [ $? == 0 ]; then
+	#	echo "It seems like you have the proper Firmware installed, but the Freeplay i2c Joystick is not found on the i2c bus."
+	#	echo "Check the ribbon cable and retry or run 'i2cdetect -y 1' to troubleshoot."
+	#	exit 0
+	#fi
+
 	# prepare the pin
 	if [ ! -d /sys/class/gpio/gpio${GPIO} ]; then
 	  echo "${GPIO}" > /sys/class/gpio/export
