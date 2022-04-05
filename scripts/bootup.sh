@@ -1,5 +1,5 @@
 #!/bin/bash
-FPJSMAGIC=`i2cget -y 1 0x30 0x0E`
+FPJSMAGIC=`i2cget -y 1 0x30 0x0D`
 FPJS2NDMAGIC=`i2cget -y 1 0x40 0x0D`
 
 #power button GPIO pin
