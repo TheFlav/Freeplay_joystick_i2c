@@ -79,6 +79,7 @@ bool kill_requested = false, already_killed = false; //allow clean close
 double program_start_time = 0.;
 bool diag_mode_init = false; //used mainly to disable print_stderr and print_stdout output in diag mode
 bool diag_first_run = false; //running in "first run" mode, used to ease ADCs setup
+bool allow_diag_run = true; //avoid diag loop at driver start
 
 //UHID related
 int uhid_fd = -1;

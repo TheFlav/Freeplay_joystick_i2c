@@ -879,7 +879,11 @@ int main(int argc, char** argv){
     signal(SIGABRT, tty_signal_handler); //failure
 
     atexit(program_close); at_quick_exit(program_close); //run on program exit
-    
+  
+    #ifndef DIAG_PROGRAM
+        driver_start:; //jump point once diag part close if started from driver
+    #endif
+
     //open i2c devices
     if (!i2c_disabled){
         bool mcu_failed = false;
@@ -971,7 +975,7 @@ int main(int argc, char** argv){
     i2c_poll_joystick(true);
 
     #ifndef DIAG_PROGRAM
-        { //redirect to diag program if needed
+        if (allow_diag_run){ //redirect to diag program if needed
             bool diag_run = false;
             if ((gamepad_report.buttons15to8 >> 3) & 0b1){diag_run = true;} //start button pressed -> diag
             if ((gamepad_report.buttons15to8 >> 2) & 0b1){diag_first_run = true;} //select button pressed -> diag "first run" mode
@@ -984,20 +988,17 @@ int main(int argc, char** argv){
                     print_stdout("starting setup/diagnostic program\n");
 
                     //build program command
-                    //char* cmd_format = "sudo setsid sh -c 'exec %s %s <> %s >&0 2>&1'"; //
-                    char* cmd_format = "exec %s %s <> %s >&0 2>&1"; //
+                    char* cmd_format = "exec %s %s <> %s >&0 2>&1"; //sudo setsid sh -c 'exec %s %s <> %s >&0 2>&1'
                     char* tty_curr = (ttyname(STDIN_FILENO)!=NULL) ? ttyname(STDIN_FILENO):"/dev/tty1"; //redirect to pts0 if get tty failed, mainly because running as a daemon or from rc.local
                     char diag_command[strlen(cmd_format) + strlen(diag_program_path) + strlen(tty_curr) + strlen (diag_first_run_command) + 2];
                     sprintf(diag_command, cmd_format, diag_program_path, diag_first_run ? "-init" : "", tty_curr);
 
-                    int tmp_ret = system(diag_command)/*execl(diag_command, "", NULL)*/; //start diag program
+                    int tmp_ret = system(diag_command); //start diag program
                     
                     if (tmp_ret != 0){print_stderr("something went wrong, errno:%d (%s)\n", tmp_ret, strerror(tmp_ret));}
-                    return tmp_ret; 
-                } else {
-                    print_stderr("can't start setup/diagnostic, program is missing:\n%s\n", diag_program_path);
-                    return EXIT_FAILURE;
-                }
+                } else {print_stderr("can't start setup/diagnostic, program is missing:\n%s\n", diag_program_path);}
+                allow_diag_run = diag_first_run = false;
+                goto driver_start;
             }
         }
         
