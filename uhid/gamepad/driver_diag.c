@@ -174,51 +174,57 @@ static int in_array_int16(int16_t* arr, int16_t value, int arr_size){ //search i
 }
 
 
-
 //terminal functs
-static void term_user_input(term_input_t* input){ //process terminal key inputs and digital inputs
+static void term_user_input(term_input_t* input, bool blocking, bool* wanted_input){ //process terminal key inputs and digital inputs, blocking to true to set blocking mode waiting any inputs if wanted_bool set to NULL and a specific one
     char term_read_char; char last_key[32] = {'\0'}; //debug, last char used
     memset(input, 0, sizeof(term_input_t)); //reset input struct
-
-    if (read(STDIN_FILENO, &term_read_char, 1) > 0){ //terminal input
-        if (term_read_char == '\n'){input->enter = true;}
-        else if (term_read_char == '\t'){input->tab = true;}
-        else if (term_read_char == '-'){input->minus = true;}
-        else if (term_read_char == '+'){input->plus = true;}
-        else if (term_read_char == '\e'){ //escape
-            if (read(STDIN_FILENO, &term_read_char, 1) > 0){
-                if (term_read_char == '[' && read(STDIN_FILENO, &term_read_char, 1) > 0){ //escape sequence
-                    if (term_read_char == 'A'){input->up = true;} //up key
-                    else if (term_read_char == 'B'){input->down = true;} //down key
-                    else if (term_read_char == 'D'){input->left = true;} //left key
-                    else if (term_read_char == 'C'){input->right = true;} //right key
-                }
-            } else {input->escape = true;} //esc key
-        } else if (debug){sprintf(last_key, "'%c'(%d), no used", term_read_char, term_read_char);} //debug
-        ioctl(STDIN_FILENO, TCFLSH, 2); //flush stdin
-    }
-
     term_input_t term_input_empty = {0}; //empty input for no terminal input check
-    if(io_fd_valid(mcu_fd) && memcmp(input, &term_input_empty, sizeof(term_input_t)) == 0){ //no terminal input, process mcu digital inputs
-        double read_start = get_time_double(); //limit pollrate
-        if ((read_start - term_read_mcu_start > diag_input_mcu_read_interval) && i2c_smbus_read_i2c_block_data(mcu_fd, 0, input_registers_count, (uint8_t *)&i2c_joystick_registers) >= 0){
-            uint32_t inputs = (i2c_joystick_registers.input2 << 16) + (i2c_joystick_registers.input1 << 8) + i2c_joystick_registers.input0; //merge to ease work
-            bool* input_ptr[] = {&input->up, &input->down, &input->left, &input->right, &input->enter, &input->escape}; //ptr to term input struct
-            for (int i=0; i<6; i++){if(term_read_mcu_inputs[i] >= 0){*input_ptr[i] = ~(inputs >> term_read_mcu_inputs[i]) & 0b1;}} //check mcu buttons
 
-            //check for dpad right or left hold over 2secs
-            if (input->left){ //dpad left
-                if (term_read_mcu_left_hold_start < 0){term_read_mcu_left_hold_start = read_start; //hold start
-                } else if (read_start - term_read_mcu_left_hold_start > 2.){input->left = false; input->minus = true;} //hold over 2sec, big decrement
-            } else {term_read_mcu_left_hold_start = -1.;} //released
-
-            if (input->right){ //dpad right
-                if (term_read_mcu_right_hold_start < 0){term_read_mcu_right_hold_start = read_start; //hold start
-                } else if (read_start - term_read_mcu_right_hold_start > 2.){input->right = false; input->plus = true;} //hold over 2sec, big increment
-            } else {term_read_mcu_right_hold_start = -1.;} //released
-
-            if (memcmp(input, &term_input_empty, sizeof(term_input_t)) != 0){term_read_mcu_start = read_start;} //some inputs
+    while (true){
+        if (read(STDIN_FILENO, &term_read_char, 1) > 0){ //terminal input
+            if (term_read_char == '\n'){input->enter = true;}
+            else if (term_read_char == '\t'){input->tab = true;}
+            else if (term_read_char == '-'){input->minus = true;}
+            else if (term_read_char == '+'){input->plus = true;}
+            else if (term_read_char == '\e'){ //escape
+                if (read(STDIN_FILENO, &term_read_char, 1) > 0){
+                    if (term_read_char == '[' && read(STDIN_FILENO, &term_read_char, 1) > 0){ //escape sequence
+                        if (term_read_char == 'A'){input->up = true;} //up key
+                        else if (term_read_char == 'B'){input->down = true;} //down key
+                        else if (term_read_char == 'D'){input->left = true;} //left key
+                        else if (term_read_char == 'C'){input->right = true;} //right key
+                    }
+                } else {input->escape = true;} //esc key
+            } else if (debug){sprintf(last_key, "'%c'(%d), no used", term_read_char, term_read_char);} //debug
+            ioctl(STDIN_FILENO, TCFLSH, 2); //flush stdin
         }
+
+        if(io_fd_valid(mcu_fd) && memcmp(input, &term_input_empty, sizeof(term_input_t)) == 0){ //no terminal input, process mcu digital inputs
+            double read_start = get_time_double(); //limit pollrate
+            if ((read_start - term_read_mcu_start > diag_input_mcu_read_interval) && i2c_smbus_read_i2c_block_data(mcu_fd, 0, input_registers_count, (uint8_t *)&i2c_joystick_registers) >= 0){
+                uint32_t inputs = (i2c_joystick_registers.input2 << 16) + (i2c_joystick_registers.input1 << 8) + i2c_joystick_registers.input0; //merge to ease work
+                bool* input_ptr[] = {&input->up, &input->down, &input->left, &input->right, &input->enter, &input->escape}; //ptr to term input struct
+                for (int i=0; i<6; i++){if(term_read_mcu_inputs[i] >= 0){*input_ptr[i] = ~(inputs >> term_read_mcu_inputs[i]) & 0b1;}} //check mcu buttons
+
+                //check for dpad right or left hold over 2secs
+                if (input->left){ //dpad left
+                    if (term_read_mcu_left_hold_start < 0){term_read_mcu_left_hold_start = read_start; //hold start
+                    } else if (read_start - term_read_mcu_left_hold_start > 2.){input->left = false; input->minus = true;} //hold over 2sec, big decrement
+                } else {term_read_mcu_left_hold_start = -1.;} //released
+
+                if (input->right){ //dpad right
+                    if (term_read_mcu_right_hold_start < 0){term_read_mcu_right_hold_start = read_start; //hold start
+                    } else if (read_start - term_read_mcu_right_hold_start > 2.){input->right = false; input->plus = true;} //hold over 2sec, big increment
+                } else {term_read_mcu_right_hold_start = -1.;} //released
+
+                if (memcmp(input, &term_input_empty, sizeof(term_input_t)) != 0){term_read_mcu_start = read_start;} //some inputs
+            }
+        }
+
+        if (!blocking){break; //non blocking
+        } else if (memcmp(input, &term_input_empty, sizeof(term_input_t)) != 0 && (wanted_input == NULL || *wanted_input)){break;} //blocking but input or wanted input
+
+        usleep (1000000/30); //limit speed
     }
 
     if (debug){
@@ -468,7 +474,7 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-        term_user_input(&term_input); //handle terminal user input
+        term_user_input(&term_input, false, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
         if (term_input.escape){select_index_current = select_limit-1;} //escape key pressed, move cursor to last selectible element
@@ -658,7 +664,7 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-        term_user_input(&term_input); //handle terminal user input
+        term_user_input(&term_input, false, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
         if (default_requested){vars_i2c_default(); term_screen_update = true; goto funct_end;} //reset vars to default
@@ -713,11 +719,13 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
             
             fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
             usleep(1000000/2); //wait half a sec
-
+            term_user_input(&term_input, true, &term_input.enter); //wait for user input
+/*
             fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK); //set stdin to blocking
             ioctl(STDIN_FILENO, TCFLSH, 2); //flush stdin
             fgetc(stdin); //wait user to press any key, TODO input implement
             fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
+*/
             term_screen_update = true; goto funct_end; //force update screen
         }
 
@@ -896,7 +904,7 @@ void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
         
         i2c_poll_joystick(true);
 
-        term_user_input(&term_input); //handle terminal user input
+        term_user_input(&term_input, false, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
         
         if (term_pollrate_string.w != 0 && i2c_adc_poll != i2c_adc_poll_last){ //update displayed adc pollrate
@@ -1034,7 +1042,7 @@ void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-        term_user_input(&term_input); //handle terminal user input
+        term_user_input(&term_input, false, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
         if (default_requested){vars_digital_default(); term_screen_update = true; goto funct_end;} //reset vars to default
@@ -1114,7 +1122,7 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-        term_user_input(&term_input); //handle terminal user input
+        term_user_input(&term_input, false, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
         if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
@@ -1165,11 +1173,13 @@ void term_splash_save(int tty_last_width, int tty_last_height){ //save new confi
 
     fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
     usleep(1000000/2); //wait half a sec
-
+    term_user_input(&term_input, true, &term_input.enter); //wait for user input
+/*
     fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK); //set stdin to blocking
     ioctl(STDIN_FILENO, TCFLSH, 2); //flush stdin
     fgetc(stdin); //wait user to press any key, TODO input implement
     fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
+    */
 }
 
 
@@ -1283,7 +1293,7 @@ void term_splash_save(int tty_last_width, int tty_last_height){ //save new confi
         while (!kill_requested){
             ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-            term_user_input(&term_input); //handle terminal user input
+            term_user_input(&term_input, false, NULL); //handle terminal user input
             term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
             if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
@@ -1341,11 +1351,13 @@ void term_splash_save(int tty_last_width, int tty_last_height){ //save new confi
                         
                         fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
                         usleep (1000000/2); //wait half a sec
-
+                        term_user_input(&term_input, true, &term_input.enter); //wait for user input
+/*
                         fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK); //set stdin to blocking
                         ioctl(STDIN_FILENO, TCFLSH, 2); //flush stdin
                         fgetc(stdin); //wait user to press any key, TODO input implement
                         fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
+                        */
                         select_index_current = 0;
                         term_screen_update = true; goto funct_end; //force update screen
                     }
@@ -1503,7 +1515,7 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
 
         i2c_poll_joystick(true);
 
-        term_user_input(&term_input); //handle terminal user input
+        term_user_input(&term_input, false, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, term_force_update); //update selectible elements
         term_force_update = false;
 
@@ -1661,7 +1673,7 @@ void term_screen_debug(int tty_line, int tty_last_width, int tty_last_height){ /
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-        term_user_input(&term_input); //handle terminal user input
+        term_user_input(&term_input, false, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, term_force_update); //update selectible elements
         term_force_update = false;
 
@@ -1754,7 +1766,7 @@ void term_screen_generic(int tty_line, int tty_last_width, int tty_last_height){
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-        term_user_input(&term_input); //handle terminal user input
+        term_user_input(&term_input, false, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
         if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu

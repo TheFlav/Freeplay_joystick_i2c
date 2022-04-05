@@ -108,7 +108,7 @@ static void uhid_destroy(int fd){ //close uhid devic
 }
 
 static int uhid_write(int fd, const struct uhid_event* ev){ //write data to uhid device
-    if (!io_fd_valid(fd)){return -EIO;}
+    //if (!io_fd_valid(fd)){return -EIO;} //already done in uhid_send_event()
     ssize_t ret = write(fd, ev, sizeof(*ev));
     if (ret < 0){print_stderr("write to uhid device failed with errno:%d (%m)\n", -ret);
     } else if (ret != sizeof(*ev)){
@@ -168,7 +168,7 @@ int i2c_open_dev(int* fd, int bus, int addr){ //open I2C device, return 0 on suc
 
     char fd_path[strlen(def_i2c_bus_path_format)+4]; sprintf(fd_path, def_i2c_bus_path_format, bus);
     close(*fd); *fd = open(fd_path, O_RDWR);
-    if (!io_fd_valid(*fd)){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -*fd); *fd = -1; return -1;}
+    if (!io_fd_valid(*fd)){print_stderr("failed to open '%s', errno:%d (%s)\n", fd_path, -*fd, strerror(-*fd)); *fd = -1; return -1;}
 
     if (ioctl(*fd, i2c_ignore_busy ? I2C_SLAVE_FORCE : I2C_SLAVE, addr) < 0){ //invalid address
         close(*fd); *fd = -1;
@@ -281,8 +281,7 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
             }
         #endif
 
-        if (mcu_input_update_digital_prev && !update_digital){update_digital = true;} //force update for safety
-        if (force_update || i2c_adc_poll_loop == i2c_adc_poll || i2c_poll_rate_disable){update_adc = true; i2c_adc_poll_loop = 0;}
+        if ((mcu_adc_read[0] || mcu_adc_read[1]) && (force_update || i2c_adc_poll_loop == i2c_adc_poll || i2c_poll_rate_disable)){update_adc = true; i2c_adc_poll_loop = 0;}
 
         if (update_adc){
             if (update_digital){
@@ -312,7 +311,6 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
         for (int i=0; i<=input_registers_count+6; i++){((uint8_t *)&i2c_joystick_registers)[i] = tmp;} //write data to registers struct
     }
     
-    mcu_input_update_digital_prev = update_digital;
     if (update_digital){
         //dpad
         const uint8_t dpad_lookup[16] = {0/*0:none*/, 1/*1:up*/, 5/*2:down*/, 1/*3:up+down*/, 7/*4:left*/, 2/*5:up+left*/, 6/*6:down+left*/, 1/*7:up+down+left*/, 3/*8:right*/, 2/*9:up+right*/, 4/*10:down+right*/, 1/*11:up+down+right*/, 7/*12:left+right*/, 1/*13:up+left+right*/, 5/*14:down+left+right*/, 0/*15:up+down+left+right*/};
@@ -386,7 +384,7 @@ int mcu_search_i2c_addr(int bus, int* addr_main, int* addr_sec){ //search mcu on
     if (bus < 0){print_stderr("invalid I2C bus:%d\n", bus); return -1;} //invalid bus
     char fd_path[strlen(def_i2c_bus_path_format)+4]; sprintf(fd_path, def_i2c_bus_path_format, bus);
     int fd = open(fd_path, O_RDWR);
-    if (!io_fd_valid(fd)){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -fd); return -1;}
+    if (!io_fd_valid(fd)){print_stderr("failed to open '%s', errno:%d (%s)\n", fd_path, -fd, strerror(-fd)); return -1;}
 
     int tmp_reg_manuf_main = offsetof(struct i2c_joystick_register_struct, manuf_ID) / sizeof(uint8_t); //main register manuf_ID
     #ifdef ALLOW_MCU_SEC_I2C
@@ -813,21 +811,19 @@ static void program_usage (char* program){
 
     //fprintf(stdout, "Example : %s -configset debug=1\n", program);
     fprintf(stdout, "Arguments:\n\t-h or -help: show arguments list.\n");
-    #ifndef DIAG_PROGRAM
-        fprintf(stdout,
-        "\t-configreset: reset configuration file to default (*).\n"
-        "\t-configset: set custom configuration variable with specific variable, format: 'VAR=VALUE' (e.g. debug=1) (*).\n"
-        "\t-configlist: list all configuration variables (*).\n"
-        "\t-noi2c: disable IRQ, I2C polls and pollrate, generate garbage data for UHID, mainly used for benchmark. (can crash EV monitoring softwares).\n"
-        "\t-nouhid: disable IRQ, UHID reports and pollrate, mainly used for benchmark. (can crash EV monitoring softwares).\n"
-        "(*): close program after function executed (incl failure).\n"
-        );
-    #else
-        fprintf(stdout,
-        "\t"diag_first_run_command": allow easier detection of analog settings, does discard ADC mapping and min/max values.\n"
-        );
-        //fprintf(stdout, "Setup/diagnostic program doesn't have any arguments\n");
-    #endif
+#ifndef DIAG_PROGRAM
+    fprintf(stdout,
+    "(*): close program after function executed (incl failure).\n"
+    "\t-configreset: reset configuration file to default (*).\n"
+    "\t-configset: set custom configuration variable with specific variable, format: 'VAR=VALUE' (e.g. debug=1) (*).\n"
+    "\t-configlist: list all configuration variables (*).\n"
+    "\t-noi2c: disable IRQ, I2C polls and pollrate, generate garbage data for UHID, mainly used for benchmark. (can crash EV monitoring softwares).\n"
+    "\t-nouhid: disable IRQ, UHID reports and pollrate, mainly used for benchmark. (can crash EV monitoring softwares).\n"
+    );
+#endif
+    fprintf(stdout,
+    "\t"diag_first_run_command": allow easier detection of analog settings, does discard ADC mapping and min/max values.\n"
+    );
 }
 
 int main(int argc, char** argv){
@@ -852,23 +848,21 @@ int main(int argc, char** argv){
 
     //program arguments parse
     for(int i=1; i<argc; ++i){
-        if (strcmp(argv[i],"-h") == 0 || strcmp(argv[i],"-help") == 0){program_usage(argv[0]); return EXIT_SUCCESS;}
-        #ifndef DIAG_PROGRAM
-            else if (strcmp(argv[i],"-configreset") == 0){return config_save(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true); //reset config file
-            } else if (strcmp(argv[i],"-configset") == 0){ //set custom config var
-                if (++i<argc){return config_set(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true, argv[i]);
-                } else {
-                    print_stderr("FATAL: -configset defined with invalid argument, format: -configset VAR=VALUE\n");
-                    print_stderr("Run program with -h or -help for usage\n");
-                    return -EPERM;
-                }
-            } else if (strcmp(argv[i],"-configlist") == 0){config_list(cfg_vars, cfg_vars_arr_size); return 0; //list config vars
-            } else if (strcmp(argv[i],"-noi2c") == 0){i2c_disabled = true; //disable i2c, pollrate, garbage data to uhid for benchmark
-            } else if (strcmp(argv[i],"-nouhid") == 0){uhid_disabled = true; //disable irq, uhid for benchmark
+        if (strcmp(argv[i],"-h") == 0 || strcmp(argv[i],"-help") == 0){program_usage(argv[0]); return EXIT_SUCCESS;
+#ifndef DIAG_PROGRAM
+        } else if (strcmp(argv[i],"-configreset") == 0){return config_save(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true); //reset config file
+        } else if (strcmp(argv[i],"-configset") == 0){ //set custom config var
+            if (++i<argc){return config_set(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true, argv[i]);
+            } else {
+                print_stderr("FATAL: -configset defined with invalid argument, format: -configset VAR=VALUE\n");
+                print_stderr("Run program with -h or -help for usage\n");
+                return -EPERM;
             }
-        #else
-            else if (strcmp(argv[i],diag_first_run_command) == 0){diag_first_run = true;} //force first run mode
-        #endif
+        } else if (strcmp(argv[i],"-configlist") == 0){config_list(cfg_vars, cfg_vars_arr_size); return 0; //list config vars
+        } else if (strcmp(argv[i],"-noi2c") == 0){i2c_disabled = true; //disable i2c, pollrate, garbage data to uhid for benchmark
+        } else if (strcmp(argv[i],"-nouhid") == 0){uhid_disabled = true; //disable irq, uhid for benchmark
+#endif
+        } else if (strcmp(argv[i],diag_first_run_command) == 0){diag_first_run = true;} //force first run mode
     }
 
     {
@@ -945,7 +939,7 @@ int main(int argc, char** argv){
         //uhdi defs
         if (!uhid_disabled && !diag_first_run){ //don't create uhid device is -nouhid set
             uhid_fd = open(uhid_device_path, O_RDWR | O_CLOEXEC);
-            if (!io_fd_valid(uhid_fd)){print_stderr("failed to open uhid device '%s', errno:%d (%m)\n", uhid_device_path, errno); return EXIT_FAILURE;}
+            if (!io_fd_valid(uhid_fd)){print_stderr("failed to open uhid device '%s', errno:%d (%s)\n", uhid_device_path, -uhid_fd, strerror(-uhid_fd)); return EXIT_FAILURE;}
             print_stdout("uhid device '%s' opened\n", uhid_device_path);
 
             int ret = uhid_create(uhid_fd);
@@ -988,7 +982,16 @@ int main(int argc, char** argv){
                 if (stat(diag_program_path, &file_stat) == 0){
                     program_close(); //cleanup as driver will stay on until diag program closes
                     print_stdout("starting setup/diagnostic program\n");
-                    int tmp_ret = execl(diag_program_path, diag_program_path, diag_first_run ? "-init" : "", NULL);
+
+                    //build program command
+                    //char* cmd_format = "sudo setsid sh -c 'exec %s %s <> %s >&0 2>&1'"; //
+                    char* cmd_format = "exec %s %s <> %s >&0 2>&1"; //
+                    char* tty_curr = (ttyname(STDIN_FILENO)!=NULL) ? ttyname(STDIN_FILENO):"/dev/tty1"; //redirect to pts0 if get tty failed, mainly because running as a daemon or from rc.local
+                    char diag_command[strlen(cmd_format) + strlen(diag_program_path) + strlen(tty_curr) + strlen (diag_first_run_command) + 2];
+                    sprintf(diag_command, cmd_format, diag_program_path, diag_first_run ? "-init" : "", tty_curr);
+
+                    int tmp_ret = system(diag_command)/*execl(diag_command, "", NULL)*/; //start diag program
+                    
                     if (tmp_ret != 0){print_stderr("something went wrong, errno:%d (%s)\n", tmp_ret, strerror(tmp_ret));}
                     return tmp_ret; 
                 } else {

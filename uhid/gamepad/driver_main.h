@@ -83,8 +83,7 @@ bool diag_first_run = false; //running in "first run" mode, used to ease ADCs se
 //UHID related
 int uhid_fd = -1;
 int mcu_input_map_size = sizeof(mcu_input_map)/sizeof(mcu_input_map[0]);
-uint32_t mcu_input_digital_prev = 0xFFFF; //last digital inputs
-bool mcu_input_update_digital_prev = false; //last update digital inputs
+uint32_t mcu_input_digital_prev = 0xFFFFFFFF; //last digital inputs
 
 struct gamepad_report_t {
     int8_t hat0;
