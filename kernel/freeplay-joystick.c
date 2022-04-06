@@ -28,7 +28,6 @@
 
 //#define DEBUG
 
-
 #define FREEPLAY_JOY_REGISTER_DIGITAL_INDEX		0x00
 #define FREEPLAY_JOY_REGISTER_ANALOG_INDEX      0x04
 #define FREEPLAY_JOY_REGISTER_ADC_CONF_INDEX	0x09
@@ -37,7 +36,9 @@
 
 #define FREEPLAY_JOY_REGISTER_CONFIG0_THUMB_ON (1<<7)
 
-#define FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL 3
+#define FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL1 1
+#define FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL2 2
+#define FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL3 3
 #define FREEPLAY_JOY_REGISTER_POLL_SIZE_SINGLE_ANALOG 3
 #define FREEPLAY_JOY_REGISTER_POLL_SIZE_DUAL_ANALOG 6
 
@@ -67,65 +68,118 @@ static unsigned int button_codes[FREEPLAY_MAX_DIGITAL_BUTTONS] = {BTN_A, BTN_B, 
 #define BTN_INDEX_TR2 10
 #define BTN_INDEX_THUMBL 11
 #define BTN_INDEX_THUMBR 12
-#define BTN_INDEX_2 13
-#define BTN_INDEX_3 14
+#define BTN_INDEX_C 13
+#define BTN_INDEX_Z 14
 #define BTN_INDEX_0 15
 #define BTN_INDEX_1 16
 
-#define INPUT0_BTN_X      (1 << 0)      //IO0_0
-#define INPUT0_BTN_Y      (1 << 1)      //IO0_1
-#define INPUT0_BTN_START  (1 << 2)      //IO0_2
-#define INPUT0_BTN_SELECT (1 << 3)      //IO0_3
-#define INPUT0_BTN_TL     (1 << 4)      //IO0_4
-#define INPUT0_BTN_TR     (1 << 5)      //IO0_5
-#define INPUT0_BTN_A      (1 << 6)      //IO0_6
-#define INPUT0_BTN_B      (1 << 7)      //IO0_7
 
-#define INPUT1_DPAD_UP    (1 << 0)      //IO1_0
-#define INPUT1_DPAD_DOWN  (1 << 1)      //IO1_1
-#define INPUT1_DPAD_LEFT  (1 << 2)      //IO1_2
-#define INPUT1_DPAD_RIGHT (1 << 3)      //IO1_3
-#define INPUT1_BTN_TL2    (1 << 4)      //IO1_4
-#define INPUT1_BTN_TR2    (1 << 5)      //IO1_5
-#define INPUT1_BTN_MODE   (1 << 6)      //IO1_6
+/*
+ * digital inputs
+ *
+ * input0
+ *
+ * PC0 = IO0_0 = DPAD_UP
+ * PC1 = IO0_1 = DPAD_DOWN
+ * PC2 = IO0_2 = DPAD_LEFT
+ * PC3 = IO0_3 = DPAD_RIGHT
+ * PC4 = IO0_4 = BTN_START
+ * PC5 = IO0_5 = BTN_SELECT
+ * PB6 = IO0_6 = BTN_A
+ * PB7 = IO0_7 = BTN_B
+ *
+ * input1
+ *
+ * PB5 = IO1_0 = BTN_POWER (AKA BTN_MODE)
+ * PC1 = IO1_1 = BTN_THUMBR
+ * PC2 = IO1_2 = BTN_TL2
+ * PC3 = IO1_3 = BTN_TR2
+ * PC4 = IO1_4 = BTN_X
+ * PC5 = IO1_5 = BTN_Y
+ * PB6 = IO1_6 = BTN_TL
+ * PB7 = IO1_7 = BTN_TR
+ *
+ * input2       EXTENDED DIGITAL INPUT REGISTER
+ *
+ * PC0 = IO2_0 = BTN_THUMBL
+ * ??? = IO2_1 =
+ * PB2 = IO2_2 = BTN_C (when no Serial debugging)
+ * PB3 = IO2_3 = BTN_Z (when no Serial debugging)
+ * PA4 = IO2_4 = BTN_0 (when ADC0 not used)
+ * PA5 = IO2_5 = BTN_1 (when ADC1 not used)
+ * PA6 = IO2_6 = BTN_2 (when ADC2 not used)
+ * PA7 = IO2_7 = BTN_3 (when ADC3 not used)
+ *
+ *
+ *
+ * PA2 =         POWEROFF_OUT
+ * PB4 =         nINT OUT
+ * PA3 =         PWM Backlight OUT
+ *
+ */
 
-#define INPUT2_BTN_THUMBL (1 << 0)      //IO2_0
-#define INPUT2_BTN_THUMBR (1 << 1)      //IO2_1
-                                        //IO2_2
-                                        //IO2_3
-#define INPUT2_BTN_0      (1 << 4)      //IO2_4
-#define INPUT2_BTN_1      (1 << 5)      //IO2_5
-#define INPUT2_BTN_2      (1 << 6)      //IO2_6
-#define INPUT0_BTN_3      (1 << 7)      //IO2_7
+struct input0_bit_struct
+{
+    uint8_t dpad_u : 1;
+    uint8_t dpad_d : 1;
+    uint8_t dpad_l : 1;
+    uint8_t dpad_r : 1;
+    uint8_t btn_start : 1;
+    uint8_t btn_select : 1;
+    uint8_t btn_a : 1;
+    uint8_t btn_b : 1;
+};
+
+struct input1_bit_struct
+{
+    uint8_t btn_mode : 1;
+    uint8_t btn_thumbr : 1;
+    uint8_t btn_tl2 : 1;
+    uint8_t btn_tr2 : 1;
+    uint8_t btn_x : 1;
+    uint8_t btn_y : 1;
+    uint8_t btn_tl : 1;
+    uint8_t btn_tr : 1;
+};
+
+struct input2_bit_struct
+{
+    uint8_t btn_thumbl : 1;
+    uint8_t unused1 : 1;
+    uint8_t btn_c : 1;
+    uint8_t btn_z : 1;
+    uint8_t btn_0 : 1;
+    uint8_t btn_1 : 1;
+    uint8_t btn_2 : 1;
+    uint8_t btn_3 : 1;
+};
 
 
+struct a1a0_lsb_struct
+{
+    uint8_t a0_lsb : 4;
+    uint8_t a1_lsb : 4;
+};
 
-//the chip returns 0 for pressed, so "invert" bits
-#define INPUT0_IS_PRESSED_BTN_A(i0) ((i0 & INPUT0_BTN_A) != INPUT0_BTN_A)
-#define INPUT0_IS_PRESSED_BTN_B(i0) ((i0 & INPUT0_BTN_B) != INPUT0_BTN_B)
-#define INPUT0_IS_PRESSED_BTN_X(i0) ((i0 & INPUT0_BTN_X) != INPUT0_BTN_X)
-#define INPUT0_IS_PRESSED_BTN_Y(i0) ((i0 & INPUT0_BTN_Y) != INPUT0_BTN_Y)
-#define INPUT0_IS_PRESSED_BTN_START(i0) ((i0 & INPUT0_BTN_START) != INPUT0_BTN_START)
-#define INPUT0_IS_PRESSED_BTN_SELECT(i0) ((i0 & INPUT0_BTN_SELECT) != INPUT0_BTN_SELECT)
-#define INPUT0_IS_PRESSED_BTN_TL(i0) ((i0 & INPUT0_BTN_TL) != INPUT0_BTN_TL)
-#define INPUT0_IS_PRESSED_BTN_TR(i0) ((i0 & INPUT0_BTN_TR) != INPUT0_BTN_TR)
+struct a3a2_lsb_struct
+{
+    uint8_t a2_lsb : 4;
+    uint8_t a3_lsb : 4;
+};
 
-#define INPUT1_IS_PRESSED_DPAD_UP(i1) ((i1 & INPUT1_DPAD_UP) != INPUT1_DPAD_UP)
-#define INPUT1_IS_PRESSED_DPAD_DOWN(i1) ((i1 & INPUT1_DPAD_DOWN) != INPUT1_DPAD_DOWN)
-#define INPUT1_IS_PRESSED_DPAD_LEFT(i1) ((i1 & INPUT1_DPAD_LEFT) != INPUT1_DPAD_LEFT)
-#define INPUT1_IS_PRESSED_DPAD_RIGHT(i1) ((i1 & INPUT1_DPAD_RIGHT) != INPUT1_DPAD_RIGHT)
+void unused_function(void)
+{
+    BUILD_BUG_ON( sizeof(struct input0_bit_struct) != sizeof(u8) );//ERMERM
+    BUILD_BUG_ON( sizeof(struct input1_bit_struct) != sizeof(u8) );//ERMERM
+    BUILD_BUG_ON( sizeof(struct input2_bit_struct) != sizeof(u8) );//ERMERM
+    BUILD_BUG_ON( sizeof(struct a1a0_lsb_struct) != sizeof(u8) );//ERMERM
+    BUILD_BUG_ON( sizeof(struct a3a2_lsb_struct) != sizeof(u8) );//ERMERM
+}
 
-#define INPUT1_IS_PRESSED_BTN_TL2(i1) ((i1 & INPUT1_BTN_TL2) != INPUT1_BTN_TL2)
-#define INPUT1_IS_PRESSED_BTN_TR2(i1) ((i1 & INPUT1_BTN_TR2) != INPUT1_BTN_TR2)
-#define INPUT1_IS_PRESSED_BTN_MODE(i1) ((i1 & INPUT1_BTN_MODE) != INPUT1_BTN_MODE)
+#define BUTTON_PRESSED 0        //0 means pressed, 1 means unpressed
+#define IS_PRESSED(btn) (btn == BUTTON_PRESSED)
 
-#define INPUT2_IS_PRESSED_BTN_THUMBL(i0) ((i0 & INPUT2_BTN_THUMBL) != INPUT2_BTN_THUMBL)
-#define INPUT2_IS_PRESSED_BTN_THUMBR(i0) ((i0 & INPUT2_BTN_THUMBR) != INPUT2_BTN_THUMBR)
 
-#define INPUT2_IS_PRESSED_BTN_0(i0) ((i0 & INPUT2_BTN_0) != INPUT2_BTN_0)
-#define INPUT2_IS_PRESSED_BTN_1(i0) ((i0 & INPUT2_BTN_1) != INPUT2_BTN_1)
-#define INPUT2_IS_PRESSED_BTN_2(i0) ((i0 & INPUT2_BTN_2) != INPUT2_BTN_2)
-#define INPUT2_IS_PRESSED_BTN_3(i0) ((i0 & INPUT0_BTN_3) != INPUT0_BTN_3)
 
 
 struct joystick_params_struct
@@ -172,15 +226,15 @@ struct freeplay_joy {
 
 struct freeplay_i2c_register_struct
 {
-    u8 input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
-    u8 input1;          // Reg: 0x01 - INPUT port 1 (digital buttons/dpad)
-    u8 input2;          // Reg: 0x03 - INPUT port 2 (extended digital buttons)     BTN_Z and BTN_C among other things
+    struct input0_bit_struct input0;          // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
+    struct input1_bit_struct input1;          // Reg: 0x01 - INPUT port 1 (digital buttons/dpad)
+    struct input2_bit_struct input2;          // Reg: 0x03 - INPUT port 2 (extended digital buttons)     BTN_Z and BTN_C among other things
     u8 a0_msb;          // Reg: 0x04 - ADC0 most significant 8 bits
     u8 a1_msb;          // Reg: 0x05 - ADC1 most significant 8 bits
-    u8 a1a0_lsb;        // Reg: 0x06 - high nibble is a1 least significant 4 bits, low nibble is a0 least significant 4 bits
+    struct a1a0_lsb_struct a1a0_lsb;        // Reg: 0x06 - high nibble is a1 least significant 4 bits, low nibble is a0 least significant 4 bits
     u8 a2_msb;          // Reg: 0x07 - ADC2 most significant 8 bits
     u8 a3_msb;          // Reg: 0x08 - ADC2 most significant 8 bits
-    u8 a3a2_lsb;        // Reg: 0x09 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
+	struct a3a2_lsb_struct a3a2_lsb;        // Reg: 0x09 - high nibble is a3 least significant 4 bits, low nibble is a2 least significant 4 bits
     u8 adc_conf_bits;   // Reg: 0x09 - R/W
     //             High Nibble is read-only.  ADC PRESENT = It tells which ADCs are available.
     //             Low Nibble is read/write.  ADC ON/OFF = The system can read/write what ADCs are sampled and used for a#_msb and lsb above
@@ -194,7 +248,7 @@ struct freeplay_i2c_register_struct
     u8 version_ID;      // Reg: 0x0F -
 };
 
-void fpjoy_report_digital_inputs(struct input_dev *input, u8 num_digitalbuttons, u8 num_dpads, u8 input0, u8 input1, u8 input2, bool sync_when_done)
+void fpjoy_report_digital_inputs(struct input_dev *input, u8 num_digitalbuttons, u8 num_dpads, struct input0_bit_struct input0, struct input1_bit_struct input1, struct input2_bit_struct input2, bool sync_when_done)
 {
     bool dpad_l, dpad_r, dpad_u, dpad_d;
     bool button_states[FREEPLAY_MAX_DIGITAL_BUTTONS];
@@ -202,28 +256,28 @@ void fpjoy_report_digital_inputs(struct input_dev *input, u8 num_digitalbuttons,
 
 
     
-    //digital input0
-    button_states[BTN_INDEX_A] = INPUT0_IS_PRESSED_BTN_A(input0);
-    button_states[BTN_INDEX_B] = INPUT0_IS_PRESSED_BTN_B(input0);
-    button_states[BTN_INDEX_X] = INPUT0_IS_PRESSED_BTN_X(input0);
-    button_states[BTN_INDEX_Y] = INPUT0_IS_PRESSED_BTN_Y(input0);
-    button_states[BTN_INDEX_START] = INPUT0_IS_PRESSED_BTN_START(input0);
-    button_states[BTN_INDEX_SELECT] = INPUT0_IS_PRESSED_BTN_SELECT(input0);
-    button_states[BTN_INDEX_TL] = INPUT0_IS_PRESSED_BTN_TL(input0);
-    button_states[BTN_INDEX_TR] = INPUT0_IS_PRESSED_BTN_TR(input0);
+    //digital input0 (which includes 4 dpad digital inputs)
+    button_states[BTN_INDEX_START] 	= IS_PRESSED(input0.btn_start);
+    button_states[BTN_INDEX_SELECT] = IS_PRESSED(input0.btn_select);
+    button_states[BTN_INDEX_A] 		= IS_PRESSED(input0.btn_a);
+    button_states[BTN_INDEX_B] 		= IS_PRESSED(input0.btn_b);
 
     //digital input1
-    button_states[BTN_INDEX_TL2]  = INPUT1_IS_PRESSED_BTN_TL2(input1);
-    button_states[BTN_INDEX_TR2]  = INPUT1_IS_PRESSED_BTN_TR2(input1);
-    button_states[BTN_INDEX_MODE] = INPUT1_IS_PRESSED_BTN_MODE(input1);
+    button_states[BTN_INDEX_MODE] 	= IS_PRESSED(input1.btn_mode);
+    button_states[BTN_INDEX_THUMBR] = IS_PRESSED(input1.btn_thumbr);
+    button_states[BTN_INDEX_TL2]  	= IS_PRESSED(input1.btn_tl2);
+    button_states[BTN_INDEX_TR2]  	= IS_PRESSED(input1.btn_tr2);
+    button_states[BTN_INDEX_X] 		= IS_PRESSED(input1.btn_x);
+    button_states[BTN_INDEX_Y] 		= IS_PRESSED(input1.btn_y);
+    button_states[BTN_INDEX_TL] 	= IS_PRESSED(input1.btn_tl);
+    button_states[BTN_INDEX_TR] 	= IS_PRESSED(input1.btn_tr);
 
     //digital input2
-    button_states[BTN_INDEX_THUMBL]  = INPUT2_IS_PRESSED_BTN_THUMBL(input2);
-    button_states[BTN_INDEX_THUMBR]  = INPUT2_IS_PRESSED_BTN_THUMBR(input2);
-    button_states[BTN_INDEX_0]       = INPUT2_IS_PRESSED_BTN_0(input2);
-    button_states[BTN_INDEX_1]       = INPUT2_IS_PRESSED_BTN_1(input2);
-    button_states[BTN_INDEX_2]       = INPUT2_IS_PRESSED_BTN_2(input2);
-    button_states[BTN_INDEX_3]       = INPUT2_IS_PRESSED_BTN_3(input2);
+    button_states[BTN_INDEX_THUMBL] = IS_PRESSED(input2.btn_thumbl);
+    button_states[BTN_INDEX_C]      = IS_PRESSED(input2.btn_c);
+    button_states[BTN_INDEX_Z]      = IS_PRESSED(input2.btn_z);
+    button_states[BTN_INDEX_0]      = IS_PRESSED(input2.btn_0);
+    button_states[BTN_INDEX_1]      = IS_PRESSED(input2.btn_1);
 
     for(button_index = 0; button_index < num_digitalbuttons; button_index++)
     {
@@ -233,10 +287,10 @@ void fpjoy_report_digital_inputs(struct input_dev *input, u8 num_digitalbuttons,
     
     if(num_dpads > 0)
     {
-        dpad_u = INPUT1_IS_PRESSED_DPAD_UP(input1);
-        dpad_d = INPUT1_IS_PRESSED_DPAD_DOWN(input1);
-        dpad_l = INPUT1_IS_PRESSED_DPAD_LEFT(input1);
-        dpad_r = INPUT1_IS_PRESSED_DPAD_RIGHT(input1);
+        dpad_u = IS_PRESSED(input0.dpad_u);
+        dpad_d = IS_PRESSED(input0.dpad_d);
+        dpad_l = IS_PRESSED(input0.dpad_l);
+        dpad_r = IS_PRESSED(input0.dpad_r);
 
         input_report_abs(input, ABS_HAT0X, dpad_r - dpad_l);
         input_report_abs(input, ABS_HAT0Y, dpad_u - dpad_d);
@@ -263,15 +317,34 @@ static irqreturn_t fpjoy_irq(int irq, void *irq_data)
     //	struct i2c_client *client = priv->client;
     struct input_dev *input = priv->dev;
     struct freeplay_i2c_register_struct regs;
+    u8 poll_size;
+
 
     int err;
     
-    err = i2c_smbus_read_i2c_block_data(priv->client, FREEPLAY_JOY_REGISTER_DIGITAL_INDEX,
-                                        FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL, (u8 *)&regs);       //only poll the FREEPLAY_JOY_REGISTER_POLL_SIZE
-    
-    if (err != FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL)      //don't use the registers past FREEPLAY_JOY_REGISTER_POLL_SIZE for polling
+    if(priv->num_digitalbuttons <= 4)
     {
-        dev_err(&priv->client->dev, "Freeplay i2c Joystick, fpjoy_irq: i2c_smbus_read_i2c_block_data returned %d\n", err);
+        //if we're only using/reporting 8 buttons (or less) AND we're not using the dpad inputs, then we only grab input0
+        poll_size = FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL1;
+        //regs.input1 = 0xFF;
+        //regs.input2 = 0xFF;
+    }
+    else if(priv->num_digitalbuttons <= 12)
+    {
+        //if we're only using/reporting 12 buttons (or less), then we only grab input0 and input1 (not input2)
+        poll_size = FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL2;
+        //regs.input2 = 0xFF;
+    }
+    else
+    {
+        poll_size = FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL3;
+    }
+    
+    err = i2c_smbus_read_i2c_block_data(priv->client, FREEPLAY_JOY_REGISTER_DIGITAL_INDEX, poll_size, (u8 *)&regs);       //only poll the neded input0-2
+    
+    if (err != poll_size)      //don't use the registers past FREEPLAY_JOY_REGISTER_POLL_SIZE for polling
+    {
+        dev_err(&priv->client->dev, "Freeplay i2c Joystick, fpjoy_irq: i2c_smbus_read_i2c_block_data returned %d (requested %d)\n", err, poll_size);
         return IRQ_NONE;
     }
     
@@ -295,7 +368,7 @@ static void freeplay_i2c_get_and_report_inputs(struct input_dev *input, bool pol
     if(poll_digital)
     {
         poll_base = FREEPLAY_JOY_REGISTER_DIGITAL_INDEX;
-        poll_size = FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL;
+        poll_size = FREEPLAY_JOY_REGISTER_POLL_SIZE_DIGITAL3;
     }
     else
     {
@@ -335,8 +408,8 @@ static void freeplay_i2c_get_and_report_inputs(struct input_dev *input, bool pol
     {
         if(priv->num_analogsticks >= 1)
         {
-            adc0 = (regs.a0_msb << 4) | (regs.a1a0_lsb & 0x0F);
-            adc1 = (regs.a1_msb << 4) | (regs.a1a0_lsb >> 4);
+            adc0 = (regs.a0_msb << 4) | (regs.a1a0_lsb.a0_lsb);
+            adc1 = (regs.a1_msb << 4) | (regs.a1a0_lsb.a1_lsb);
             
 #ifdef DEBUG
             if(adc0 < priv->adc0_detected_min)
@@ -364,14 +437,22 @@ static void freeplay_i2c_get_and_report_inputs(struct input_dev *input, bool pol
             }
 #endif
             
-            input_report_abs(input, ABS_X, adc0);
-            input_report_abs(input, ABS_Y, adc1);
+            if(priv->joy0_swapped_x_y)
+            {
+                input_report_abs(input, ABS_X, adc1);
+                input_report_abs(input, ABS_Y, adc0);
+            }
+            else
+            {
+                input_report_abs(input, ABS_X, adc0);
+                input_report_abs(input, ABS_Y, adc1);
+            }
             
             if(priv->num_analogsticks == 2)
             {
-                adc2 = (regs.a2_msb << 4) | (regs.a3a2_lsb & 0x0F);
-                adc3 = (regs.a3_msb << 4) | (regs.a3a2_lsb >> 4);
-
+                adc2 = (regs.a2_msb << 4) | (regs.a3a2_lsb.a2_lsb);
+                adc3 = (regs.a3_msb << 4) | (regs.a3a2_lsb.a3_lsb);
+                
 #ifdef DEBUG
                 if(adc2 < priv->adc2_detected_min)
                 {
@@ -397,9 +478,17 @@ static void freeplay_i2c_get_and_report_inputs(struct input_dev *input, bool pol
                     dev_info(&priv->client->dev, "Freeplay i2c Joystick, freeplay_i2c_get_and_report_inputs: new adc3 max=0x%02X\n", priv->adc3_detected_max);
                 }
 #endif
-                
-                input_report_abs(input, ABS_RX, adc2);
-                input_report_abs(input, ABS_RY, adc3);
+
+                if(priv->joy1_swapped_x_y)
+                {
+                    input_report_abs(input, ABS_RX, adc3);
+                    input_report_abs(input, ABS_RY, adc2);
+                }
+                else
+                {
+                    input_report_abs(input, ABS_RX, adc2);
+                    input_report_abs(input, ABS_RY, adc3);
+                }
             }
         }
     }
@@ -456,6 +545,7 @@ static int freeplay_probe(struct i2c_client *client)
     u8 adc_mask;
     u8 i;
     u8 new_config0;
+
     
     err = i2c_smbus_read_i2c_block_data(client, FREEPLAY_JOY_REGISTER_BASE_INDEX,
                                         sizeof(regs), (u8 *)&regs);
@@ -623,6 +713,12 @@ static int freeplay_probe(struct i2c_client *client)
     priv->dev->name = "Freeplay i2c Joystick";
     priv->dev->phys = priv->phys;
     input_set_drvdata(priv->dev, priv);
+    
+    if(priv->joy0_swapped_x_y)
+        dev_dbg(&client->dev, "Swapping Joy0 X/Y\n");
+    if(priv->joy1_swapped_x_y)
+        dev_dbg(&client->dev, "Swapping Joy1 X/Y\n");
+
     
     //left analog stick
     if(priv->num_analogsticks >= 1)
