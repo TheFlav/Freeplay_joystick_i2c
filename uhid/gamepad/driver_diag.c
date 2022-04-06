@@ -13,6 +13,7 @@ void vars_i2c_default(){ //reset all i2c config vars to default
     //debug = def_debug;
     //debug_adv = def_debug_adv;
 
+    mcu_search = def_mcu_search;
     i2c_bus = def_i2c_bus;
     mcu_addr = def_mcu_addr;
     #ifdef ALLOW_MCU_SEC_I2C
@@ -164,13 +165,6 @@ static int strcpy_noescape(char* dest, char* src, int limit){ //strcpy "clone" t
         ret++;
     }
     return ret;
-}
-
-
-//Generic functs
-static int in_array_int16(int16_t* arr, int16_t value, int arr_size){ //search in value in int16 array, return index or -1 on failure
-    for (int i=0; i < arr_size; i++) {if (arr[i] == value) {return i;}}
-    return -1;
 }
 
 
@@ -515,6 +509,12 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
     fprintf(stdout, "\e[%d;%dH\e[%dmWarning:\e[0m", tty_line++, tmp_col, term_esc_col_error);
     fprintf(stdout, "\e[%d;%dH\e[%dm- Changing bus or main address can/will break digital input menu navigation.\e[0m", tty_line++, tmp_col, term_esc_col_error);
     fprintf(stdout, "\e[%d;%dH\e[%dm- Update value(s) ONLY if you know what you are doing.\e[0m", tty_line, tmp_col, term_esc_col_error);
+    tty_line+=2;
+
+    //mcu search
+    bool mcu_search_def = def_mcu_search;
+    fprintf(stdout, "\e[%d;%dH\e[%dmMCU search:_ (search MCU address if provided one fails, driver only)\e[0m", tty_line, tmp_col, tmp_esc_col);
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+11, .y=tty_line, .size=1}, .type=2, .value={.ptrbool=&mcu_search}, .defval={.ptrbool=&mcu_search_def, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[2]}};
     tty_line+=2;
 
     //safelock

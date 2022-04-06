@@ -39,7 +39,7 @@ unsigned char hid_descriptor[] = {
         */
         0x05, 0x01, // USAGE_PAGE (Generic Desktop)
         0x09, 0x39, // USAGE (Hat switch)
-        0x09, 0x39, // USAGE (Hat switch)
+        //0x09, 0x39, // USAGE (Hat switch)
         0x15, 0x01, // LOGICAL_MINIMUM (1)
         0x25, 0x08, // LOGICAL_MAXIMUM (8)
         0x75, 0x04, // REPORT_SIZE (4)

@@ -27,6 +27,7 @@
 #define i2c_ignore_busy true //allow i2c running on busy address
 #define def_i2c_bus 1 //I2C bus
 #define def_i2c_bus_path_format "/dev/i2c-%d" //path to i2c bus, follow printf format rules
+#define def_mcu_search true //enable search of proper MCU address if provided one fails.
 #define def_mcu_addr 0x30 //main MCU I2C address
 #define def_mcu_addr_sec 0x40 //secondary MCU I2C address, "ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
 
@@ -112,4 +113,14 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc3_flat 10 //percent
 #define def_adc3_reversed false
 #define def_adc3_autocenter false
+
+//program exit codes
+#define EXIT_FAILED_GENERIC -1 //failed to found/connect to MCU
+#define EXIT_FAILED_I2C -2 //failed to found/connect to MCU
+#define EXIT_FAILED_MANUF -3 //invalid MCU manuf
+#define EXIT_FAILED_VERSION -4 //MCU version < program register verion
+#define EXIT_FAILED_CONFIG -5 //failed to read/save configuration
+#define EXIT_FAILED_MCU -6 //generic fail of mcu
+
+
 

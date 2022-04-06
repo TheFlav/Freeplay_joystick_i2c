@@ -30,6 +30,8 @@ static void tty_signal_handler (int /*sig*/); //handle signal func
 void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
 void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value
 int int_digit_count(int /*num*/); //number of digit of a integer, negative sign is consider as a digit
+int in_array_int16(int16_t* /*arr*/, int16_t /*value*/, int /*arr_size*/); //search in value in int16 array, return index or -1 on failure
+
 //static void debug_print_binary_int (int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format
 //static void debug_print_binary_int_term (int /*line*/, int /*col*/, int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format at given term position
 
@@ -101,6 +103,7 @@ char* js_axis_names[5] = {"none", "X1", "Y1", "X2", "Y2"}; //joystick axis names
 
 //I2C related
 int i2c_bus = def_i2c_bus; //I2C bus
+bool mcu_search = def_mcu_search; //enable search of proper MCU address if provided one fails.
 int mcu_addr = def_mcu_addr; //main MCU I2C address
 int mcu_fd = -1;
 bool adc_fd_valid[4] = {0};
@@ -203,6 +206,7 @@ const char adc_pollrate_desc[] = "ADC pollrate (every given poll loop).";
 const char debounce_desc[] = "Debounce filtering to mitigate possible pad false contact, max:7 (0 to disable).";
 
 const char i2c_bus_desc[] = "I2C bus to use.";
+const char mcu_search_desc[] = "Enable search of proper MCU address if provided one fails.";
 const char mcu_addr_desc[] = "MCU I2C address.";
 #ifdef ALLOW_MCU_SEC_I2C
     const char mcu_addr_sec_desc[] = "MCU Secondary I2C address for additionnal features.";
@@ -234,6 +238,7 @@ cfg_vars_t cfg_vars[] = {
     {"irq_gpio", irq_gpio_desc, 0, &irq_gpio},
 
     {"\ni2c_bus", i2c_bus_desc, 0, &i2c_bus},
+    {"mcu_search", mcu_search_desc, 4, &mcu_search},
     {"mcu_address", mcu_addr_desc, 6, &mcu_addr},
 #ifdef ALLOW_MCU_SEC_I2C
     {"mcu_address_sec", mcu_addr_sec_desc, 6, &mcu_addr_sec},

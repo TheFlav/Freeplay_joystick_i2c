@@ -71,7 +71,6 @@ static int term_print_path_multiline(char* /*str*/, int /*line*/, int /*col*/, i
 int term_init(void); //init terminal related vars
 int program_diag_mode(void); //main diag mode function
 
-static int in_array_int16(int16_t* /*arr*/, int16_t /*value*/, int /*arr_size*/); //search in value in int16 array, return index or -1 on failure
 
 
 //void vars_main_default(void); //reset all main config vars to default
@@ -111,6 +110,8 @@ extern void i2c_poll_joystick(bool /*force_update*/); //poll data from i2c devic
 extern void adc_data_compute(int /*adc_index*/); //compute adc max value, flat in/out, offset
 extern int uhid_send_event(int /*fd*/); //send event to uhid device, send to /dev/null in diag program
 extern bool io_fd_valid(int /*fd*/); //check if a file descriptor is valid
+extern int in_array_int16(int16_t* /*arr*/, int16_t /*value*/, int /*arr_size*/); //search in value in int16 array, return index or -1 on failure
+
 
 //diagnostic part
 int term_esc_col_normal = 97; //normal color escape code
@@ -157,6 +158,7 @@ extern bool diag_first_run; //running in "first run" mode, used to ease ADCs set
 
 //i2c
 bool i2c_safelock = true; //disable ability to change i2c address
+extern bool mcu_search; //enable search of proper MCU address if provided one fails.
 bool i2c_bus_failed = false, i2c_failed = false; //i2c failure
 int i2c_bus_err = 121, i2c_main_err = 121; //backup detected i2c errors
 extern int mcu_fd; //mcu i2c fd
