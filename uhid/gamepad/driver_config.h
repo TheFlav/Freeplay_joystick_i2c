@@ -27,6 +27,7 @@
 #define i2c_ignore_busy true //allow i2c running on busy address
 #define def_i2c_bus 1 //I2C bus
 #define def_i2c_bus_path_format "/dev/i2c-%d" //path to i2c bus, follow printf format rules
+#define def_mcu_search true //enable search of proper MCU address if provided one fails.
 #define def_mcu_addr 0x30 //main MCU I2C address
 #define def_mcu_addr_sec 0x40 //secondary MCU I2C address, "ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
 
@@ -50,6 +51,7 @@
 
 #define mcu_input_dpad_start_index 0 //index position in merged input, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 #define uhid_buttons_count 15 //HID gamepad buttons count, limited to 16 by driver design, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
+//#define uhid_buttons_misc_enabled //comment to disable BTN_0 to whatever report
 #define uhid_buttons_misc_count 4 //HID multiaxis buttons count (BTN_num), limited to 8 by driver design, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 static int16_t mcu_input_map[input_registers_size] = { //driver v11 input register used to remap MCU output to proper ev order, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
     -127, -127, -127, -127, BTN_START, BTN_SELECT, BTN_A, BTN_B, //input0
@@ -112,4 +114,14 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc3_flat 10 //percent
 #define def_adc3_reversed false
 #define def_adc3_autocenter false
+
+//program exit codes
+#define EXIT_FAILED_GENERIC -1 //failed to something somewhere
+#define EXIT_FAILED_I2C -2 //failed to found/connect to MCU
+#define EXIT_FAILED_MANUF -3 //invalid MCU manuf
+#define EXIT_FAILED_VERSION -4 //MCU version < program register verion
+#define EXIT_FAILED_CONFIG -5 //failed to read/save configuration
+#define EXIT_FAILED_MCU -6 //generic fail of mcu
+
+
 
