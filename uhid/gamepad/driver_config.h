@@ -51,9 +51,10 @@
 
 #define mcu_input_dpad_start_index 0 //index position in merged input, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 #define uhid_buttons_count 15 //HID gamepad buttons count, limited to 16 by driver design, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
-//#define uhid_buttons_misc_enabled //comment to disable BTN_0 to whatever report
+//#define uhid_buttons_misc_enabled //comment this line to disable multiaxis buttons report. Important note: enabling this will cause input shifting in Retroarch if "input_joypad_driver" (retroarch.cfg) set to "udev". To solve this problem, You will have to set it to "sdl2" but also have to redo EmulationStation input setup if using autoconfig.
 #define uhid_buttons_misc_count 4 //HID multiaxis buttons count (BTN_num), limited to 8 by driver design, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
-static int16_t mcu_input_map[input_registers_size] = { //driver v11 input register used to remap MCU output to proper ev order, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
+
+static int16_t mcu_input_map[input_registers_size] = { //MCU input register mapping used to reorder for proper EVDEV ordering, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING. For reference: https://elixir.bootlin.com/linux/latest/source/include/uapi/linux/input-event-codes.h
     -127, -127, -127, -127, BTN_START, BTN_SELECT, BTN_A, BTN_B, //input0
     BTN_MODE, BTN_THUMBR, BTN_TL2, BTN_TR2, BTN_X, BTN_Y, BTN_TL, BTN_TR, //input1. 4xDpad, BTN_TL2/TR2 shared with serial TX/RX, BTN_Z shared with nINT
     BTN_THUMBL, -127, BTN_C, BTN_Z, BTN_0, BTN_1, BTN_2, BTN_3, //input2. BTN_0-3 are part of Multiaxis
