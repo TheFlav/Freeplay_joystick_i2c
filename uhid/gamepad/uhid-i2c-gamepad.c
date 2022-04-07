@@ -139,7 +139,9 @@ int uhid_send_event(int fd){ //send event to uhid device
     memcpy(&ev.u.input2.data[index+6], &gamepad_report.right_y, adc_size); //y2
     index += adc_size*4;
 
-    ev.u.input2.data[index++] = gamepad_report.buttonsmisc; //digital misc
+    #ifdef uhid_buttons_misc_enabled //defined in driver_config.h
+        ev.u.input2.data[index++] = gamepad_report.buttonsmisc; //digital misc
+    #endif
 
     ev.u.input2.size = index;
 
@@ -317,17 +319,24 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
         gamepad_report.hat0 = dpad_lookup[(uint8_t)(~(inputs >> mcu_input_dpad_start_index) & 0x0F)];
 
         //digital: reorder raw input to ev mapping
-        uint16_t input_report_digital = 0xFFFF; uint8_t input_report_digital_misc = 0xFF;
+        uint16_t input_report_digital = 0xFFFF;
+        #ifdef uhid_buttons_misc_enabled //defined in driver_config.h
+            uint8_t input_report_digital_misc = 0xFF;
+        #endif
         for (int i=0; i<mcu_input_map_size; i++){
             int16_t curr_input = mcu_input_map[i];
             if (curr_input != -127 && ~(inputs >> i) & 0b1){
-                if (curr_input >= BTN_MISC && curr_input < BTN_9 + 1){input_report_digital_misc &= ~(1U << (abs(curr_input - BTN_MISC))); //misc
-                } else if (curr_input >= BTN_GAMEPAD && curr_input < BTN_THUMBR + 1){input_report_digital &= ~(1U << (abs(curr_input - BTN_GAMEPAD)));} //gamepad
+                if (curr_input >= BTN_GAMEPAD && curr_input < BTN_THUMBR + 1){input_report_digital &= ~(1U << (abs(curr_input - BTN_GAMEPAD)));} //gamepad
+                #ifdef uhid_buttons_misc_enabled
+                else if (curr_input >= BTN_MISC && curr_input < BTN_9 + 1){input_report_digital_misc &= ~(1U << (abs(curr_input - BTN_MISC)));} //misc
+                #endif
             }
         }
         gamepad_report.buttons7to0 = ~(input_report_digital & 0xFF);
         gamepad_report.buttons15to8 = ~(input_report_digital >> 8);
-        gamepad_report.buttonsmisc = ~input_report_digital_misc;
+        #ifdef uhid_buttons_misc_enabled
+            gamepad_report.buttonsmisc = ~input_report_digital_misc;
+        #endif
     }
 
     //analog

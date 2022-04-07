@@ -51,6 +51,7 @@
 
 #define mcu_input_dpad_start_index 0 //index position in merged input, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 #define uhid_buttons_count 15 //HID gamepad buttons count, limited to 16 by driver design, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
+//#define uhid_buttons_misc_enabled //comment to disable BTN_0 to whatever report
 #define uhid_buttons_misc_count 4 //HID multiaxis buttons count (BTN_num), limited to 8 by driver design, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 static int16_t mcu_input_map[input_registers_size] = { //driver v11 input register used to remap MCU output to proper ev order, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
     -127, -127, -127, -127, BTN_START, BTN_SELECT, BTN_A, BTN_B, //input0

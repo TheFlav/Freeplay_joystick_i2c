@@ -997,8 +997,10 @@ void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
             char* curr_input_name = NULL; //input name pointer
 
             if ((input_index < mcu_input_dpad_start_index || input_index > mcu_input_dpad_start_index + 3)){
-                if (curr_input >= BTN_MISC && curr_input < BTN_9 + 1){curr_input_name = buttons_misc_names[abs(curr_input - BTN_MISC)]; //misc
-                } else if (curr_input >= BTN_GAMEPAD && curr_input < BTN_THUMBR + 1){curr_input_name = buttons_gamepad_names[abs(curr_input - BTN_GAMEPAD)];} //gamepad
+                if (curr_input >= BTN_GAMEPAD && curr_input < BTN_THUMBR + 1){curr_input_name = buttons_gamepad_names[abs(curr_input - BTN_GAMEPAD)];} //gamepad
+                #ifdef uhid_buttons_misc_enabled //defined in driver_config.h
+                else if (curr_input >= BTN_MISC && curr_input < BTN_9 + 1){curr_input_name = buttons_misc_names[abs(curr_input - BTN_MISC)];} //misc
+                #endif
             } else {curr_input_name = buttons_dpad_names[abs(input_index - mcu_input_dpad_start_index)];} //dpad
 
             if (curr_input_name != NULL){ //valid name

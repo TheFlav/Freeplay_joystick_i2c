@@ -61,16 +61,18 @@ unsigned char hid_descriptor[] = {
         0xc0, // END_COLLECTION
 
         //Misc digital input when ADC0,1,2,3 not used
-        0x09, 0x08, // USAGE (Multiaxis)
-        0xA1, 0x01, // COLLECTION (Application)
-            0x05, 0x09, // USAGE_PAGE (Button)
-            0x19, 0x01, // USAGE_MINIMUM (Button 1)
-            0x29, uhid_buttons_misc_count, // USAGE_MAXIMUM, uhid_buttons_misc_count defined in driver_config.h
-            0x15, 0x00, // LOGICAL_MINIMUM (0)
-            0x25, 0x01, // LOGICAL_MAXIMUM (1)
-            0x75, 0x01, // REPORT_SIZE (1)
-            0x95, 0x08, // REPORT_COUNT (8)
-            0x81, 0x02, // INPUT (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-        0xc0, // END_COLLECTION
+        #ifdef uhid_buttons_misc_enabled //defined in driver_config.h
+            0x09, 0x08, // USAGE (Multiaxis)
+            0xA1, 0x01, // COLLECTION (Application)
+                0x05, 0x09, // USAGE_PAGE (Button)
+                0x19, 0x01, // USAGE_MINIMUM (Button 1)
+                0x29, uhid_buttons_misc_count, // USAGE_MAXIMUM, uhid_buttons_misc_count defined in driver_config.h
+                0x15, 0x00, // LOGICAL_MINIMUM (0)
+                0x25, 0x01, // LOGICAL_MAXIMUM (1)
+                0x75, 0x01, // REPORT_SIZE (1)
+                0x95, 0x08, // REPORT_COUNT (8)
+                0x81, 0x02, // INPUT (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+            0xc0, // END_COLLECTION
+        #endif
     0xC0, // END_COLLECTION
 };
