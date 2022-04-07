@@ -115,7 +115,7 @@ static int16_t mcu_input_map[input_registers_size] = { //driver v11 input regist
 #define def_adc3_autocenter false
 
 //program exit codes
-#define EXIT_FAILED_GENERIC -1 //failed to found/connect to MCU
+#define EXIT_FAILED_GENERIC -1 //failed to something somewhere
 #define EXIT_FAILED_I2C -2 //failed to found/connect to MCU
 #define EXIT_FAILED_MANUF -3 //invalid MCU manuf
 #define EXIT_FAILED_VERSION -4 //MCU version < program register verion

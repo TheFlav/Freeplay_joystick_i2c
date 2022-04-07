@@ -1457,7 +1457,7 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
 
             axis_buttons_index[axis_loop][0] = select_limit;
             fprintf(stdout, "\e[%d;%dH\e[%dmOutput:____\e[0m", tmp_line, term_right-11, term_esc_col_normal);
-            term_select[select_limit++] = (term_select_t){.position={.x=term_right-4, .y=tmp_line, .size=4}, .type=1, .disabled=true, .value={.force_update=true, .ptrbool=&axis_reversed[axis_loop], .ptrint=&axis_output[axis_loop]}, .hint={.y=hint_line, .str=term_hint_axis_str[0]}};
+            term_select[select_limit++] = (term_select_t){.position={.x=term_right-4, .y=tmp_line, .size=4}, .type=1, .value={.force_update=true, .ptrbool=&axis_reversed[axis_loop], .ptrint=&axis_output[axis_loop]}, .hint={.y=hint_line, .str=term_hint_axis_str[0]}};
             tmp_line+=2;
 
             axis_buttons_index[axis_loop][1] = select_limit;
@@ -1468,6 +1468,7 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
             array_fill(buffer, term_col_width-term_axis_start_len-term_axis_reset_len-2, '_');
             fprintf(stdout, "\e[%d;%dH\e[2m%s\e[0m", tmp_line, term_left + term_axis_start_len + 1, buffer);
 
+            //axis_adc[axis_loop] = axis_loop; adc_params[axis_loop].raw_min = adc_params[axis_loop].min = 163; adc_params[axis_loop].raw_max = adc_params[axis_loop].max = 760; adc_data_compute(axis_loop); //debug
             tmp_line+=3; axis_loop++;
         }
     }
@@ -1522,11 +1523,11 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
         for (int i=0; i<4; i++){ //axis loop
             if (axis_start_requested[i] != axis_detection_started[i]){ //start/stop axis detection request
                 for (int j=0; j<select_limit; j++){term_select[j].disabled = axis_start_requested[i];} //disable all selectibles
-                for (int j=0; j<4; j++){term_select[axis_buttons_index[j][0]].disabled = (j==i) ? !axis_start_requested[i] : true;} //disable all output selectibles but current detection axis
-                for (int j=1; j<3; j++){term_select[axis_buttons_index[i][j]].disabled = false;} //enable "start/stop"/"reset" related to current axis
+                //for (int j=0; j<4; j++){term_select[axis_buttons_index[j][0]].disabled = (j==i) ? !axis_start_requested[i] : true;} //disable all output selectibles but current detection axis
+                for (int j=0; j<3; j++){term_select[axis_buttons_index[i][j]].disabled = false;} //enable "output"/"start/stop"/"reset" related to current axis
                 term_select[axis_buttons_index[i][1]].value.ptrchar = axis_start_requested[i]?term_axis_stop_str:term_axis_start_str; //change "start/stop" button text
                 axis_detection_started[i] = axis_reset_requested[i] = axis_start_requested[i]; //start detection and reset axis
-                if (axis_detection_started[i]){select_index_current--;} //move select to output
+                //if (axis_detection_started[i]){select_index_current--;} //move select to output
                 term_force_update = true; //update all selectibles on next loop
             }
 
@@ -1562,14 +1563,13 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
                     sprintf(buffer, "%6d", axis_max[i]);
                 } else {strcpy(buffer, "______");} //max
                 fprintf(stdout, "\e[%d;%dH\e[4;%dm%s\e[0m", term_axis_max[i].y, term_axis_max[i].x, term_esc_col_normal, buffer);
-
-                if (axis_adc[i] != -1){ //update output
-                    adc_params[axis_adc[i]].reversed = axis_reversed[i]; //apply axis reverse to adc
-                    axis_output[i] = (((double)adc_params[axis_adc[i]].value / 0xFFFF) * 202) - 101; //adc position to -101+101
-                    int_constrain(&axis_output[i], -100, 100); //bypass rounding problems
-                } else {axis_output[i] = 0;} //reset ouput
-
                 axis_detection_update[i] = false;
+            }
+
+            if (axis_adc[i] != -1){ //update output
+                adc_params[axis_adc[i]].reversed = axis_reversed[i]; //apply axis reverse to adc
+                axis_output[i] = (((double)adc_params[axis_adc[i]].value / 0xFFFF) * 202) - 101; //adc position to -101+101
+                int_constrain(&axis_output[i], -100, 100); //bypass rounding problems
             } else {axis_output[i] = 0;} //reset ouput
         }
 
