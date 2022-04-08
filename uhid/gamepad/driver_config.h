@@ -14,8 +14,8 @@
 #include <linux/input-event-codes.h>
 
 //setup/diagnostic specific
-#define diag_program_filename "uhid-i2c-gamepad-diag" //has to match actual setup/diagnostic program name, used to start diag if config missing to setup ADCs
-#define diag_first_run_command "-init" //argument used to set setup/diagnostic program into 'first run' mode to setup ADCs
+//#define diag_program_filename "uhid-i2c-gamepad-diag" //has to match actual setup/diagnostic program name, used to start diag if config missing to setup ADCs
+//#define diag_first_run_command "-init" //argument used to set setup/diagnostic program into 'first run' mode to setup ADCs
 #define diag_input_mcu_read_interval 0.15 //interval to process MCU digital inputs for menu navigation, may have to be finetuned as overshot happen very quickly
 
 //driver default settings/values
@@ -123,6 +123,7 @@ static int16_t mcu_input_map[input_registers_size] = { //MCU input register mapp
 #define EXIT_FAILED_VERSION -4 //MCU version < program register verion
 #define EXIT_FAILED_CONFIG -5 //failed to read/save configuration
 #define EXIT_FAILED_MCU -6 //generic fail of mcu
+#define EXIT_FAILED_ALREADY_RUN -7 //program is already running
 
 
 

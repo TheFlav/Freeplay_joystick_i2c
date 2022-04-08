@@ -27,7 +27,7 @@ static int file_write(char* /*path*/, char* /*content*/); //write file
 static int folder_create (char* /*path*/, int /*rights*/, int /*uid*/, int /*gid*/); //create folder(s), set rights/uid/gui if not -1. Return number of folder created, -errno on error
 
 static void program_close (void); //regroup all close functs
-void program_get_path (char** /*args*/, char* /*var*/); //get current program path
+void program_get_path (char** /*args*/, char* /*path*/, char* /*program*/); //get current program path
 static void tty_signal_handler (int /*sig*/); //handle signal func
 void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
 void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value
@@ -75,7 +75,7 @@ bool irq_enable = true; //is set during runtime, do not edit
 int irq_gpio = def_irq_gpio; //gpio pin used for IRQ, limited to 31 for pigpio, set to -1 to disable
 
 //Program related
-char program_path[PATH_MAX] = {'\0'}; //full path to this program
+char program_path[PATH_MAX] = {'\0'}, program_name[PATH_MAX] = {'\0'}; //full path to this program
 bool kill_requested = false, already_killed = false; //allow clean close
 double program_start_time = 0.;
 bool diag_mode_init = false; //used mainly to disable print_stderr and print_stdout output in diag mode
