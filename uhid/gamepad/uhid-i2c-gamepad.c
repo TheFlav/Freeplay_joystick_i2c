@@ -12,7 +12,13 @@ Notes about ADCs (MCU or external), comments relative to current state of develo
 - Driver should be able to work upto 32bits(unsigned) ADC resolution.
 - Diagnostic program is limited to 16bits(unsigned) because of terminal size limitations (mainly thinked to work on 640x480 screen, 80 cols by 30 lines).
 
-During driver start sequence, hold (START) button to run setup/diagnostic program, (SELECT) to do the same but in "first run" mode to ease ADCs setup.
+Notes specific to driver part:
+- At driver start, file shm_path(driver_main.h)/status will be created.
+    This file content will be set to "1" at driver start and "0" when driver closes.
+    If content set to "2" by external program, driver will enter lock state, a last report will set all inputs to "no pressed" (center value for analog).
+    To exit lock state, set back content to "1".
+- Automatically reload configuation file if its modification time changes (doesn't affect I2C related settings).
+
 */
 
 #include <unistd.h>
@@ -248,7 +254,7 @@ static int adc_defuzz(int value, int old_val, int fuzz){ //apply fuzz, based on 
     return value;
 }
 
-static int adc_correct_offset_center(int adc_resolution, int adc_value, int adc_min, int adc_max, int adc_offset, int flat_in, int flat_out){ //apply offset center, expand adc range, inside/ouside flat, flat_in/out are values relative to adc resolution (not percent)
+int adc_correct_offset_center(int adc_resolution, int adc_value, int adc_min, int adc_max, int adc_offset, int flat_in, int flat_out){ //apply offset center, expand adc range, inside/ouside flat, flat_in/out are values relative to adc resolution (not percent)
     int max = adc_resolution / 2, offset = max + adc_offset;
     adc_value -= offset; //center adc value to 0
 
@@ -588,34 +594,31 @@ static void tty_signal_handler(int sig){ //handle signal func
 }
 
 //SHM related functions
-#ifndef DIAG_PROGRAM
-#ifdef USE_SHM_REGISTERS
 static int file_read(char* path, char* bufferptr, int buffersize){ //read file
     int ret = 0;
     FILE *filehandle = fopen(path, "r");
     if (filehandle != NULL) {
         fgets(bufferptr, buffersize, filehandle);
-        if (ferror(filehandle)){print_stderr("failed to read '%s'\n", path); ret = -EFAULT;}
+        if (ferror(filehandle)){if (debug){print_stderr("failed to read '%s'\n", path);} ret = -EFAULT;}
         fclose(filehandle);
-    } else {print_stderr("failed to read '%s'\n", path); return -EFAULT;}
+    } else {if (debug){print_stderr("failed to read '%s'\n", path);} return -EFAULT;}
     return ret;
 };
-#endif
 
 static int file_write(char* path, char* content){ //write file
     FILE *filehandle = fopen(path, "w");
     if (filehandle != NULL) {
         fprintf(filehandle, "%s", content);
         fclose(filehandle);
-    } else {print_stderr("failed to write '%s'\n", path); return -EFAULT;}
+    } else {if (debug){print_stderr("failed to write '%s'\n", path);} return -EFAULT;}
     return 0;
 }
-#endif
 
 static int folder_create(char* path, int rights, int uid, int gid) { //create folder(s), set rights/uid/gui if not -1. Return number of folder created, -errno on error
     int ret, depth = 0; //security
     struct stat file_stat = {0};
     char curr_path[strlen(path)+1], sub_path[strlen(path)+2]; sub_path[0]='\0';
+    int tmp_rights = (rights==-1)?0644:rights;
 
     strcpy(curr_path, path);
     if(curr_path[strlen(curr_path)-1] == '/'){curr_path[strlen(curr_path)-1] = '\0';}
@@ -625,15 +628,13 @@ static int folder_create(char* path, int rights, int uid, int gid) { //create fo
         strcat(sub_path, "/"); strcat(sub_path, tmpPtr);
 
         if (stat(sub_path, &file_stat) == -1){
-            ret = mkdir(sub_path, (rights == -1)?0644:rights);
-            if (ret < 0){print_stderr("failed to create directory '%s', errno:%d (%m)\n", sub_path, -ret); return ret;}
+            ret = mkdir(sub_path, tmp_rights);
+            if (ret < 0){if (debug){print_stderr("failed to create directory '%s', errno:%d (%m)\n", sub_path, -ret);} return ret;}
             print_stderr("directory '%s' created\n", sub_path);
-            if (uid != -1 || gid != -1){
-                if (chown(sub_path, uid, gid) < 0 && debug){print_stderr("failed to set directory '%s' owner, err: %m\n", sub_path);}
-            }
+            if (uid != -1 || gid != -1){if (chown(sub_path, uid, gid) < 0 && debug){print_stderr("failed to set directory '%s' owner, err: %m\n", sub_path);}}
         } else if (debug){print_stderr("directory '%s' already exist\n", sub_path);}
 
-        depth++; if(depth > 10){print_stderr("something gone very wrong, depth:10 hit, break\n"); break;}
+        depth++; if(depth > 10){if (debug){print_stderr("something gone very wrong, depth:10 hit, break\n");} break;}
         tmpPtr = strtok (NULL, "/"); //next sub folder
     }
 
@@ -655,35 +656,31 @@ static void shm_init(bool first){ //init shm related things, folders and files c
     if (first){ //initial run, skip i2c part
         if (folder_create(shm_path, 0666, user_uid, user_gid) < 0){return;} //recursive folder create
 
-        //log file
-        sprintf(curr_path, "%s/driver.log", shm_path);
+        sprintf(curr_path, "%s/driver.log", shm_path); //log file
         logs_fh = fopen(curr_path, "w+");
-        if (logs_fh != NULL) {print_stderr("logs: %s\n", curr_path);
+        if (logs_fh != NULL){print_stderr("logs: %s\n", curr_path);
         } else {print_stderr("failed to open '%s' (%m)\n", curr_path);}
 
         shm_enable=true;
     } else if (shm_enable) {
         #ifndef DIAG_PROGRAM
-            //status file
-            sprintf(curr_path, "%s/status", shm_path);
-            if (file_write (curr_path, "1") == 0){print_stderr("'%s' content set to 1\n", curr_path);
-            }else{return;}
+            if (file_write(shm_status_path_ptr, "1") == 0){print_stderr("'%s' content set to 1\n", shm_status_path_ptr);} //status file
         #endif
 
         //registers to files "bridge"
         #ifdef USE_SHM_REGISTERS
             char buffer[128]; int ret;
-            for (unsigned int i = 0; i < shm_vars_arr_size; i++) {
+            for (unsigned int i = 0; i < shm_vars_arr_size; i++){
                 ret = i2c_smbus_read_byte_data(*(shm_vars[i].i2c_fd), shm_vars[i].i2c_register);
-                if (ret < 0){i2c_allerrors_count++; print_stderr("failed to read register 0x%02X, errno:%d (%m)\n", shm_vars[i].i2c_register, -ret); return;
+                if (ret < 0){i2c_allerrors_count++; print_stderr("failed to read register 0x%02X, errno:%d (%m)\n", shm_vars[i].i2c_register, -ret); continue;
                 } else {
                     *(shm_vars[i].ptr) = (uint8_t) ret; //set register backup value
                     sprintf(shm_vars[i].path, "%s/%s", shm_path, shm_vars[i].file); //set path
                     sprintf(buffer, "%d", ret);
-                    if (file_write (shm_vars[i].path, buffer) == 0){
+                    if (file_write(shm_vars[i].path, buffer) == 0){
                         chown(shm_vars[i].path, (uid_t) user_uid, (gid_t) user_gid);
                         print_stderr("'%s' content set to '%s'\n", shm_vars[i].path, buffer);
-                    }else{return;}
+                    } else {continue;}
                 }
             }
         #endif
@@ -692,51 +689,64 @@ static void shm_init(bool first){ //init shm related things, folders and files c
 
 #ifndef DIAG_PROGRAM
 static void shm_update(void){ //update registers/files linked to shm things
-    #ifdef USE_SHM_REGISTERS
-        if (shm_enable){
+    if (shm_enable){
+        struct stat file_stat = {0};
+
+        //check shm_path/status update
+        if (stat(shm_status_path_ptr, &file_stat) == -1){
+            if (file_write(shm_status_path_ptr, "1") == 0){print_stderr("'%s' content set to 1\n", shm_status_path_ptr);} //recreate missing status file
+        } else {
+            char status_buffer[3]; file_read(shm_status_path_ptr, status_buffer, 2);
+            int shm_status_back = shm_status; if (status_buffer != NULL){shm_status = atoi(status_buffer);}
+            if (shm_status != shm_status_back){driver_lock = (shm_status>1)?true:false;}
+        }
+
+        #ifdef USE_SHM_REGISTERS
             int ret, ret_read;
             char buffer[128];
 
-            for (unsigned int i = 0; i < shm_vars_arr_size; i++) {
-                ret_read = file_read (shm_vars[i].path, buffer, 127);
-                if (ret_read >= 0){ret_read = atoi(buffer);}
+            for (unsigned int i = 0; i < shm_vars_arr_size; i++){
+                if (stat(shm_vars[i].path, &file_stat) == 0){ //file exist
+                    ret_read = file_read(shm_vars[i].path, buffer, 127);
+                    if (ret_read >= 0){ret_read = atoi(buffer);}
 
-                ret = i2c_smbus_read_byte_data(*(shm_vars[i].i2c_fd), shm_vars[i].i2c_register);
-                if (ret < 0){i2c_allerrors_count++; print_stderr("failed to read register 0x%02X, errno:%d (%m)\n", shm_vars[i].i2c_register, -ret); return;
-                } else {
-                    sprintf(buffer, "%d", ret);
-                    if (*(shm_vars[i].ptr) != (uint8_t)ret || ret_read < 0){ //register value have priority over file modification
-                        if (*(shm_vars[i].ptr) != (uint8_t)ret){
-                            if (debug){print_stderr("register 0x%02X changed, stored:'%d', i2c:'%d'\n", shm_vars[i].i2c_register, *(shm_vars[i].ptr), ret);}
-                            *(shm_vars[i].ptr) = (uint8_t)ret; //backup new register value
+                    ret = i2c_smbus_read_byte_data(*(shm_vars[i].i2c_fd), shm_vars[i].i2c_register);
+                    if (ret < 0){i2c_allerrors_count++; print_stderr("failed to read register 0x%02X, errno:%d (%m)\n", shm_vars[i].i2c_register, -ret); continue;
+                    } else {
+                        sprintf(buffer, "%d", ret);
+                        if (*(shm_vars[i].ptr) != (uint8_t)ret || ret_read < 0){ //register value have priority over file modification
+                            if (*(shm_vars[i].ptr) != (uint8_t)ret){
+                                if (debug){print_stderr("register 0x%02X changed, stored:'%d', i2c:'%d'\n", shm_vars[i].i2c_register, *(shm_vars[i].ptr), ret);}
+                                *(shm_vars[i].ptr) = (uint8_t)ret; //backup new register value
+                            }
+                            if (file_write (shm_vars[i].path, buffer) == 0){
+                                chown(shm_vars[i].path, (uid_t) user_uid, (gid_t) user_gid);
+                                if (debug){print_stderr("'%s' content set to '%s' because %s\n", shm_vars[i].path, buffer, (ret_read<0)?"file was missing":"I2C value changed");}
+                            }
+                        } else if (!shm_vars[i].rw && ret_read != ret){
+                            if (file_write (shm_vars[i].path, buffer) == 0){
+                                chown(shm_vars[i].path, (uid_t) user_uid, (gid_t) user_gid);
+                                if (debug){print_stderr("'%s' content restore to '%s' because register 0x%02X is read only\n", shm_vars[i].path, buffer, shm_vars[i].i2c_register);}
+                            }
+                        } else if (shm_vars[i].rw && *(shm_vars[i].ptr) != (uint8_t)ret_read){ //file modification
+                            if (debug){print_stderr("'%s' changed, file:'%d', stored:'%d'\n", shm_vars[i].path, ret_read, *(shm_vars[i].ptr));}
+                            *(shm_vars[i].ptr) = (uint8_t)ret_read; //backup new register value
+                            ret = i2c_smbus_write_byte_data(*(shm_vars[i].i2c_fd), shm_vars[i].i2c_register, (uint8_t)ret_read);
+                            if (ret < 0){i2c_allerrors_count++; print_stderr("failed to update register 0x%02X, errno:%d (%m)\n", shm_vars[i].i2c_register, -ret);
+                            } else {print_stderr("register 0x%02X updated with value:%d\n", shm_vars[i].i2c_register, ret_read);}
                         }
-                        if (file_write (shm_vars[i].path, buffer) == 0){
-                            chown(shm_vars[i].path, (uid_t) user_uid, (gid_t) user_gid);
-                            if (debug){print_stderr("'%s' content set to '%s' because %s\n", shm_vars[i].path, buffer, (ret_read<0)?"file was missing":"I2C value changed");}
-                        }
-                    } else if (!shm_vars[i].rw && ret_read != ret){
-                        if (file_write (shm_vars[i].path, buffer) == 0){
-                            chown(shm_vars[i].path, (uid_t) user_uid, (gid_t) user_gid);
-                            if (debug){print_stderr("'%s' content restore to '%s' because register 0x%02X is read only\n", shm_vars[i].path, buffer, shm_vars[i].i2c_register);}
-                        }
-                    } else if (shm_vars[i].rw && *(shm_vars[i].ptr) != (uint8_t)ret_read){ //file modification
-                        if (debug){print_stderr("'%s' changed, file:'%d', stored:'%d'\n", shm_vars[i].path, ret_read, *(shm_vars[i].ptr));}
-                        *(shm_vars[i].ptr) = (uint8_t)ret_read; //backup new register value
-                        ret = i2c_smbus_write_byte_data(*(shm_vars[i].i2c_fd), shm_vars[i].i2c_register, (uint8_t)ret_read);
-                        if (ret < 0){i2c_allerrors_count++; print_stderr("failed to update register 0x%02X, errno:%d (%m)\n", shm_vars[i].i2c_register, -ret);
-                        } else {print_stderr("register 0x%02X updated with value:%d\n", shm_vars[i].i2c_register, ret_read);}
                     }
                 }
             }
-        }
-    #endif
+        #endif
+    }
 }
 #endif
 
 static void shm_close(void){ //close shm related things
     #ifndef DIAG_PROGRAM
         if (shm_enable){
-            char curr_path[strlen(shm_path)+256]; //current path with additionnal 255 chars for filename
+            char curr_path[strlen(shm_path)+10]; //current path with additionnal 255 chars for filename
             sprintf(curr_path, "%s/status", shm_path); //current path
             if (file_write (curr_path, "0") == 0){print_stderr("'%s' content set to 0\n", curr_path);}
         }
@@ -746,11 +756,11 @@ static void shm_close(void){ //close shm related things
 
 //integer manipulation functs
 void int_rollover(int* val, int min, int max){ //rollover int value between (incl) min and max, work both way
-    if(*val < min){*val = max;} else if(*val > max){*val = min;}
+    if (*val < min){*val = max;} else if (*val > max){*val = min;}
 }
 
 void int_constrain(int* val, int min, int max){ //limit int value to given (incl) min and max value
-    if(*val < min){*val = min;} else if(*val > max){*val = max;}
+    if (*val < min){*val = min;} else if (*val > max){*val = max;}
 }
 
 int int_digit_count(int num){ //number of digit of a integer, negative sign is consider as a digit
@@ -801,7 +811,7 @@ void program_get_path(char** args, char* var){ //get current program path based 
 
 
 //main functions, obviously, no? lool
-static void program_usage (char* program){
+static void program_usage(char* program){
     fprintf(stderr, "Version: %s\n", programversion);
     fprintf(stderr, "MCU register version: %d\n", mcu_version_even);
     fprintf(stderr, "Dev: %s\n\n", dev_webpage);
@@ -839,10 +849,11 @@ static void program_usage (char* program){
     "\t-closeonwarn: close program on major warnings.\n"
     "\t-inputsearch: check MCU input for pressed button, use input-event-codes.h numbering, example for (START) and (SELECT):'-inputsearch 0x13b 0x13a'. Needs to be defined last. Program returns 0 if none pressed, 1 for first input, 2 for second, 3 for both.\n"
     );
-#endif
+#else
     fprintf(stderr,
     "\t"diag_first_run_command": allow easier detection of analog settings, does discard ADC mapping and min/max values.\n"
     );
+#endif
 }
 
 int main(int argc, char** argv){
@@ -852,7 +863,6 @@ int main(int argc, char** argv){
     int main_return = EXIT_SUCCESS; //program return
     bool cfg_no_create = false; //disable creation of config file
     bool program_close_on_warn = false; //close program on major warnings
-
 
     program_get_path(argv, program_path); //get current program path
     sprintf(config_path, "%s/%s", program_path, cfg_filename); //convert config relative to full path
@@ -901,22 +911,21 @@ int main(int argc, char** argv){
                 }
             }
             break;
-#endif
-        } else if (strcmp(argv[i],diag_first_run_command) == 0){diag_first_run = true;} //force first run mode
-    }
-
-    {
-        if (cfg_no_create){
-            struct stat file_stat = {0};
-            if (stat(config_path, &file_stat) != 0){return EXIT_FAILED_CONFIG;} //config file not exist
         }
-
-        int tmp_ret = config_parse(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid); //parse config file, create if needed
-        if (tmp_ret < 0){print_stderr("failed to parse config file, errno:%d (%s)\n", -tmp_ret, strerror(-tmp_ret)); return EXIT_FAILED_CONFIG;
-        } else if (tmp_ret == 1){diag_first_run = true;} //config didn't exist
-        
-        shm_init(true); //init shm path and files
+#else
+        } else if (strcmp(argv[i],diag_first_run_command) == 0){diag_first_run = true;} //force first run mode
+#endif
     }
+
+    //config
+    if (cfg_no_create){struct stat file_stat = {0}; if (stat(config_path, &file_stat) != 0){return EXIT_FAILED_CONFIG;}} //config file not exist
+    int tmp_ret = config_parse(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid); //parse config file, create if needed
+    if (tmp_ret < 0){print_stderr("failed to parse config file, errno:%d (%s)\n", -tmp_ret, strerror(-tmp_ret)); return EXIT_FAILED_CONFIG; //config parse failed
+    } else if (tmp_ret == 1){diag_first_run = true;} //config file created
+    
+    //shm
+    char shm_status_path[strlen(shm_path)+10]; sprintf(shm_status_path, "%s/status", shm_path); shm_status_path_ptr = shm_status_path; //status file path
+    shm_init(true); //init shm path and files
 
     //tty signal handling
     signal(SIGINT, tty_signal_handler); //ctrl-c
@@ -924,11 +933,13 @@ int main(int argc, char** argv){
     signal(SIGABRT, tty_signal_handler); //failure
 
     atexit(program_close); at_quick_exit(program_close); //run on program exit
+
 /*
     #ifndef DIAG_PROGRAM
-        driver_start:; //jump point once diag part close if started from driver
+        driver_start:; //jump point
     #endif
 */
+
     //open i2c devices
     if (!i2c_disabled){
         bool mcu_failed = false;
@@ -979,14 +990,13 @@ int main(int argc, char** argv){
             }
         #endif
 
-        if (mcu_update_config0() != 0 && !diag_mode){return EXIT_FAILED_MCU;} //read/update of config0 register failed
-
         #ifdef ALLOW_EXT_ADC
             for (int i=0; i<4; i++){ //external adcs device loop
                 if (adc_params[i].enabled || diag_mode){adc_fd_valid[i] = (i2c_open_dev(&adc_fd[i], i2c_bus, adc_addr[i]) == 0);}
             }
         #endif
 
+        if (mcu_update_config0() != 0 && !diag_mode){return EXIT_FAILED_MCU;} //read/update of config0 register failed
         if (init_adc() < 0 && !diag_mode){return EXIT_FAILED_MCU;} //init adc data failed
 
         #ifdef ALLOW_MCU_SEC_I2C
@@ -1014,7 +1024,7 @@ int main(int argc, char** argv){
         shm_init(false); //init shm i2c things
         
         //uhdi defs
-        if (!uhid_disabled && !diag_first_run){ //don't create uhid device is -nouhid set
+        if (!uhid_disabled/* && !diag_first_run*/){ //don't create uhid device is -nouhid set
             uhid_fd = open(uhid_device_path, O_RDWR | O_CLOEXEC);
             if (!io_fd_valid(uhid_fd)){print_stderr("failed to open uhid device '%s', errno:%d (%s)\n", uhid_device_path, -uhid_fd, strerror(-uhid_fd)); return EXIT_FAILED_GENERIC;}
             print_stderr("uhid device '%s' opened\n", uhid_device_path);
@@ -1025,7 +1035,7 @@ int main(int argc, char** argv){
         }
 
         //interrupt
-        if (irq_gpio >= 0 && irq_enable && !diag_first_run){
+        if (irq_gpio >= 0 && irq_enable/* && !diag_first_run*/){
             irq_enable = false;
             #ifdef USE_POLL_IRQ_PIN
                 #define WIRINGPI_CODES 1 //allow error code return
@@ -1047,7 +1057,7 @@ int main(int argc, char** argv){
 
     i2c_poll_joystick(true);
 
-    #ifndef DIAG_PROGRAM
+    #ifndef DIAG_PROGRAM //driver program
 /*
         if (allow_diag_run){ //redirect to diag program if needed
             bool diag_run = false;
@@ -1084,30 +1094,68 @@ int main(int argc, char** argv){
             fprintf(stderr, ", adc:%dhz\n", i2c_poll_rate / i2c_adc_poll);
         } else {print_stderr("poll speed not limited\n");}
 
-        while (!kill_requested){
-            i2c_poll_joystick(false);
+        
+        bool driver_lock_back = driver_lock;
+        if (shm_enable){print_stderr("driver can be put in lock state by setting %s to 2, event report will be disabled, restore by setting to 1\n", shm_status_path_ptr);}
 
-            if (shm_clock_start < -0.1) {shm_clock_start = poll_clock_start;} //used for shm interval
-            if (debug_adv && poll_benchmark_clock_start < -0.1) {poll_benchmark_clock_start = poll_clock_start;} //benchmark restart
+        driver_config_reload_jmp:; //jump point after config reload
+        struct stat config_stat = {0}; if (stat(config_path, &config_stat) == 0){config_mtime = config_stat.st_mtim;} //backup config file mtime
+
+        if (config_reload){
+            if (mcu_update_config0() != 0 || init_adc() < 0){print_stderr("critical failure after configuration reload\n"); return EXIT_FAILED_MCU;} //read/update of config0 register or init adc data failed
+            print_stderr("new configuration reloaded\n"); config_reload = false;
+        }
+
+        while (!kill_requested){
+            if (shm_enable && driver_lock != driver_lock_back){
+                driver_lock_back = driver_lock;
+                if (driver_lock){ //driver enter "lock" state
+                    struct gamepad_report_t null_report = {0,0,0,0,0x7FFF,0x7FFF,0x7FFF,0x7FFF}; gamepad_report = null_report; uhid_send_event(uhid_fd); //no input, centered adc report
+                    print_stderr("driver entered lock state, no report will happen until %s to back to 1\n", shm_status_path_ptr);
+                } else {print_stderr("driver lock state reset\n");}
+            }
+
+            if (!driver_lock){
+                i2c_poll_joystick(false); //poll and report if driver not locked
+
+                //check config update
+                if (config_check_start < -0.1){config_check_start = poll_clock_start;} //interval reset
+                if (poll_clock_start - config_check_start > config_check_interval){
+                    if (stat(config_path, &config_stat) == 0 && memcmp(&config_mtime, &config_stat.st_mtim, sizeof(struct timespec)) != 0){ //file modif time changed
+                        config_mtime = config_stat.st_mtim;
+                        kill_requested = config_reload = true;
+                    }
+                    config_check_start = -1.;
+                }
+            } else {poll_clock_start = get_time_double();} //poll start time to avoid locking related thing
+            
+            //shm
+            if (shm_clock_start < -0.1){shm_clock_start = poll_clock_start;} //interval reset
             if (poll_clock_start - shm_clock_start > shm_update_interval){shm_update(); shm_clock_start = -1.;} //shm update
 
-            //pollrate
-            if (kill_requested) break; 
-            //if(debug) print_stderr ("DEBUG: poll_clock_start:%lf, i2c_poll_duration:%lf\n", poll_clock_start, i2c_poll_duration);
+            if (kill_requested){break;}
 
-            if (!i2c_poll_rate_disable){
+            if (!i2c_poll_rate_disable){ //pollrate
                 if (i2c_poll_duration > i2c_poll_duration_warn){print_stderr ("WARNING: extremely long loop duration: %dms\n", (int)(i2c_poll_duration*1000));}
                 if (i2c_poll_duration < 0){i2c_poll_duration = 0;} //hum, how???
                 if (i2c_poll_duration < i2c_poll_rate_time){usleep((useconds_t) ((double)(i2c_poll_rate_time - i2c_poll_duration) * 1000000));} //need to sleep to match poll rate. note: doesn't account for uhid_write_duration as uhid write duration way faster than i2c transaction
             }
 
             if (i2c_poll_rate_disable && debug_adv){ //benchmark mode
+                if (poll_benchmark_clock_start < -0.1){poll_benchmark_clock_start = poll_clock_start;} //interval reset
                 poll_benchmark_loop++;
-                if ((poll_clock_start - poll_benchmark_clock_start) > 2.) { //report every seconds
+                if ((poll_clock_start - poll_benchmark_clock_start) > 2.){ //report every seconds
                     print_stderr("poll loops per sec (2secs samples) : %ld\n", poll_benchmark_loop / 2);
                     poll_benchmark_loop = 0; poll_benchmark_clock_start = -1.;
                 }
             }
+        }
+
+        if (config_reload){ //config file changed
+            kill_requested = false;
+            print_stderr("config file changed, reloading it\n");
+            if (config_parse(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid) < 0){print_stderr("failed to parse new config file\n"); //parse/create config file failed
+            } else {print_stderr("new config file reloaded\n"); goto driver_config_reload_jmp;}
         }
 
         if (i2c_last_error != 0) {print_stderr("last detected I2C error: %d (%s)\n", -i2c_last_error, strerror(i2c_last_error));}
@@ -1122,9 +1170,21 @@ int main(int argc, char** argv){
                 }
             }
         }
-    #else
+    #else //diag program
+        struct stat status_stat = {0}; char status_buffer[3];
+
+        if (stat(shm_status_path_ptr, &status_stat) == 0){ //lock driver
+            file_read(shm_status_path_ptr, status_buffer, 2);
+            if (status_buffer != NULL && atoi(status_buffer) != 0 && file_write(shm_status_path_ptr, "2") == 0){print_stderr("driver locked\n");}
+        }
+
         i2c_poll_rate_disable = true;
         program_diag_mode(); //diagnostic mode
+
+        if (stat(shm_status_path_ptr, &status_stat) == 0){ //unlock driver
+            file_read(shm_status_path_ptr, status_buffer, 2);
+            if (status_buffer != NULL && atoi(status_buffer) == 2 && file_write(shm_status_path_ptr, "1") == 0){print_stderr("driver unlocked\n");}
+        }
     #endif
 
     return main_return;
