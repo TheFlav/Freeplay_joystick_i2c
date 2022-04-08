@@ -30,6 +30,7 @@ Notes specific to driver part:
 #include <stdio.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
@@ -795,7 +796,32 @@ static void program_close(void){ //regroup all close functs
     already_killed = true;
 }
 
-void program_get_path(char** args, char* path, char* program){ //get current program path based on program argv or getcwd if failed
+
+//main functions
+static int program_instances_count(char* path, char* program){ //scan /proc/ to check if program is already running, return number of instances found
+    DIR *proc_ptr; if ((proc_ptr = opendir("/proc/")) == NULL){print_stderr("failed to open folder /proc/\n"); return 0;} //failed to open /proc/
+    char fullpath[strlen(path) + strlen(program) + 2]; sprintf(fullpath, "%s/%s", path, program); //full path to current program
+    struct dirent *dir_entry; struct stat file_stat; int found = 0;
+    while ((dir_entry = readdir(proc_ptr)) != NULL){
+        char* proc_id = dir_entry->d_name; if (!isdigit(proc_id[0])){continue;} //skip any that can't be process id
+        char buffer_path[strlen(proc_id) + 13]; sprintf(buffer_path, "/proc/%s/exe", proc_id); //build full path to potencial exe symlink
+        if (lstat(buffer_path, &file_stat) == 0 && S_ISLNK(file_stat.st_mode)){ //exist and symlink
+            char resolved_path[PATH_MAX] = {'\0'};
+            realpath(buffer_path, resolved_path);
+            if (strlen(resolved_path) > 0){
+                if (strcmp(fullpath, resolved_path) == 0){found++; //matching
+                } else if (strlen(resolved_path) > 11){ //fix for dev, real path ends by " (deleted)" if link "broken" by new compilation
+                    resolved_path[strlen(resolved_path) - 10] = '\0';
+                    if (strcmp(fullpath, resolved_path) == 0){found++;}
+                }
+            }
+        }
+    }
+    closedir(proc_ptr);
+    return found;
+}
+
+static void program_get_path(char** args, char* path, char* program){ //get current program path based on program argv or getcwd if failed
     char tmp_path[PATH_MAX], tmp_subpath[PATH_MAX];
     struct stat file_stat = {0};
     strcpy(tmp_path, args[0]); if (args[0][0]=='.'){strcpy(path, ".\0");}
@@ -812,14 +838,13 @@ void program_get_path(char** args, char* path, char* program){ //get current pro
     if (debug){print_stderr("program path:'%s'\n", path);}
 }
 
-
-//main functions, obviously, no? lool
-static void program_usage(char* program){
+static void program_usage(void){ //display help
     if (!quiet_mode){
-        fprintf(stderr, "Version: %s\n", programversion);
+        fprintf(stderr, "Path: %s\n", program_path);
+        fprintf(stderr, "Version: %s\n", program_version);
         fprintf(stderr, "MCU register version: %d\n", mcu_version_even);
         fprintf(stderr, "Dev: %s\n\n", dev_webpage);
-        fprintf(stderr, "Since it needs to access/write to system device, program needs to run as root.\n\n");
+        fprintf(stderr, "Since it needs to access/write to system device, program has to run as root.\n\n");
 
         #if defined(ALLOW_MCU_SEC_I2C) || defined(USE_SHM_REGISTERS) || defined(ALLOW_EXT_ADC) || defined(USE_POLL_IRQ_PIN)
             fprintf(stderr, "Enabled feature(s) (at compilation time):\n"
@@ -862,43 +887,25 @@ static void program_usage(char* program){
     }
 }
 
+
 int main(int argc, char** argv){
     program_start_time = get_time_double(); //program start time, used for detailed outputs
 
-#ifndef DIAG_PROGRAM
-    if (argc > 0 && (strcmp(argv[argc-1],"--quiet") == 0 || strcmp(argv[argc-1],"-quiet") == 0)){quiet_mode = true;} //no outputs
-#endif
+    #ifndef DIAG_PROGRAM
+        if (argc > 0 && (strcmp(argv[argc-1],"--quiet") == 0 || strcmp(argv[argc-1],"-quiet") == 0)){quiet_mode = true;} //needs to be checked as soon as possible, disable all outputs if set
+    #endif
 
     program_get_path(argv, program_path, program_name); //get current program path and filename
-    if (getuid() != 0){program_usage(program_name); return EXIT_FAILED_GENERIC;} //show help if not running as root
+    if (getuid() != 0){program_usage(); return EXIT_FAILED_GENERIC;} //show help if not running as root
 
-/*
-printf("program_path:'%s'\nprogram_name:'%s'\n", program_path, program_name);
-
-//check if program already running
-{
-char command[12 + strlen(program_name)]; sprintf(command, "pgrep -f %s", program_name); //build command
-int ret = system(command);
-printf("command:'%s'\nret:'%d'\n", command, ret);
-
-
-
-
-
-return 0;
-
-
-
-#define EXIT_FAILED_ALREADY_RUN -7 //program is already running
-}
-*/
-
+    if (program_instances_count(program_path, program_name) > 1){ //check if program already running
+        print_stderr("program is already running\n");
+        return EXIT_FAILED_ALREADY_RUN;
+    }
     
-
     int main_return = EXIT_SUCCESS; //program return
     bool cfg_no_create = false; //disable creation of config file
     bool program_close_on_warn = false; //close program on major warnings
-
 
     sprintf(config_path, "%s/%s", program_path, cfg_filename); //convert config relative to full path
     print_stderr("Config file: %s\n", config_path);
@@ -920,7 +927,7 @@ return 0;
 
     //program arguments parse
     for(int i=1; i<argc; ++i){
-        if (strcmp(argv[i],"-h") == 0 || strcmp(argv[i],"-help") == 0){program_usage(argv[0]); return EXIT_SUCCESS;
+        if (strcmp(argv[i],"-h") == 0 || strcmp(argv[i],"-help") == 0){program_usage(); return EXIT_SUCCESS;
 #ifndef DIAG_PROGRAM
         } else if (strcmp(argv[i],"-confignocreate") == 0){cfg_no_create = true;
         } else if (strcmp(argv[i],"-configreset") == 0){return config_save(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true); //reset config file

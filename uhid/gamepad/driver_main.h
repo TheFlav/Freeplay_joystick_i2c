@@ -5,7 +5,7 @@
 
 #pragma once
 
-const char programversion[] = "0.1d"; //program version
+const char program_version[] = "0.1e"; //program version
 const char dev_webpage[] = "https://github.com/TheFlav/Freeplay_joystick_i2c";
 
 //Prototypes
@@ -27,7 +27,9 @@ static int file_write(char* /*path*/, char* /*content*/); //write file
 static int folder_create (char* /*path*/, int /*rights*/, int /*uid*/, int /*gid*/); //create folder(s), set rights/uid/gui if not -1. Return number of folder created, -errno on error
 
 static void program_close (void); //regroup all close functs
-void program_get_path (char** /*args*/, char* /*path*/, char* /*program*/); //get current program path
+static void program_get_path (char** /*args*/, char* /*path*/, char* /*program*/); //get current program path
+static int program_instances_count(char* /*path*/, char* /*program*/); //scan /proc/ to check if program is already running, return number of instances found
+static void program_usage(void); //display help
 static void tty_signal_handler (int /*sig*/); //handle signal func
 void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
 void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value
