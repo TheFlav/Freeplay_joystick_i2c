@@ -68,6 +68,7 @@ bool io_fd_valid(int /*fd*/); //check if a file descriptor is valid
 bool debug = def_debug; //enable debug output
 bool debug_adv = def_debug_adv; //enable advanced debug output, benchmark
 bool i2c_disabled = false, uhid_disabled = false;
+bool quiet_mode = false;
 
 //IRQ
 bool irq_enable = true; //is set during runtime, do not edit
