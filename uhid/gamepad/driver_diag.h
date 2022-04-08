@@ -108,6 +108,7 @@ extern void uhid_joystick_swap(void); //uhid joystick/axis swap
 
 extern void i2c_poll_joystick(bool /*force_update*/); //poll data from i2c device
 extern void adc_data_compute(int /*adc_index*/); //compute adc max value, flat in/out, offset
+extern int adc_correct_offset_center (int /*adc_resolution*/, int /*adc_value*/, int /*adc_min*/, int /*adc_max*/, int /*adc_offset*/, int /*flat_in*/, int /*flat_out*/); //apply offset center, expand adc range, inside/ouside flat, flat_in/out are values relative to adc resolution (not percent)
 extern int uhid_send_event(int /*fd*/); //send event to uhid device, send to /dev/null in diag program
 extern bool io_fd_valid(int /*fd*/); //check if a file descriptor is valid
 extern int in_array_int16(int16_t* /*arr*/, int16_t /*value*/, int /*arr_size*/); //search in value in int16 array, return index or -1 on failure

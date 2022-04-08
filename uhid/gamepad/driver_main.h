@@ -16,12 +16,14 @@ int i2c_open_dev(int* /*fd*/, int /*bus*/, int /*addr*/); //open I2C device, ret
 void i2c_close_all(void); //close all I2C file
 void adc_data_compute(int /*adc_index*/); //compute adc max value, flat in/out, offset
 static int adc_defuzz(int /*value*/, int /*old_val*/, int /*fuzz*/); //apply fuzz, based on input_defuzz_abs_event(): https://elixir.bootlin.com/linux/latest/source/drivers/input/input.c#L56
-static int adc_correct_offset_center (int /*adc_resolution*/, int /*adc_value*/, int /*adc_min*/, int /*adc_max*/, int /*adc_offset*/, int /*flat_in*/, int /*flat_out*/); //apply offset center, expand adc range, inside/ouside flat, flat_in/out are values relative to adc resolution (not percent)
+int adc_correct_offset_center (int /*adc_resolution*/, int /*adc_value*/, int /*adc_min*/, int /*adc_max*/, int /*adc_offset*/, int /*flat_in*/, int /*flat_out*/); //apply offset center, expand adc range, inside/ouside flat, flat_in/out are values relative to adc resolution (not percent)
 void i2c_poll_joystick (bool /*force_update*/); //poll data from i2c device
 
 static void shm_init (bool /*first*/); //init shm related things, folders and files creation
 static void shm_close (void); //close shm related things
 static int logs_write (const char* /*format*/, ...); //write to log, return chars written or -1 on error
+static int file_read(char* /*path*/, char* /*bufferptr*/, int /*buffersize*/); //read file
+static int file_write(char* /*path*/, char* /*content*/); //write file
 static int folder_create (char* /*path*/, int /*rights*/, int /*uid*/, int /*gid*/); //create folder(s), set rights/uid/gui if not -1. Return number of folder created, -errno on error
 
 static void program_close (void); //regroup all close functs
@@ -53,11 +55,7 @@ bool io_fd_valid(int /*fd*/); //check if a file descriptor is valid
     static int uhid_create(int /*fd*/); //create uhid device
     static void uhid_destroy(int /*fd*/); //close uhid device
     static int uhid_write(int /*fd*/, const struct uhid_event* /*ev*/); //write data to uhid device
-    static int file_write(char* /*path*/, char* /*content*/); //write file
     static void shm_update(void); //update registers/files linked to shm things
-    #ifdef USE_SHM_REGISTERS
-        static int file_read(char* /*path*/, char* /*bufferptr*/, int /*buffersize*/); //read file
-    #endif
     #define diag_mode false
 #else
     extern int program_diag_mode(void); //main diag mode function
@@ -82,6 +80,7 @@ double program_start_time = 0.;
 bool diag_mode_init = false; //used mainly to disable print_stderr and print_stdout output in diag mode
 bool diag_first_run = false; //running in "first run" mode, used to ease ADCs setup
 bool allow_diag_run = true; //avoid diag loop at driver start
+bool driver_lock = false; //lock driver if shm_path/status set to 2, stop i2c poll and uhid update
 
 //UHID related
 int uhid_fd = -1;
@@ -169,7 +168,11 @@ int poll_stress_loop = 0, i2c_adc_poll_loop = 0;
 //SHM related
 FILE *logs_fh;
 bool shm_enable = false; //set during runtime
-double shm_clock_start = -1., shm_update_interval = 0.25; //sec
+char* shm_status_path_ptr; //pointer to shm status path var
+#ifndef DIAG_PROGRAM
+    int shm_status = 1; //shm_path/status content
+    double shm_clock_start = -1., shm_update_interval = 0.25; //sec
+#endif
 
 #ifdef USE_SHM_REGISTERS
     struct shm_vars_t {
@@ -196,6 +199,11 @@ double shm_clock_start = -1., shm_update_interval = 0.25; //sec
 
 //Config related vars
 char config_path[PATH_MAX+11] = {'\0'}; //full path to config file
+#ifndef DIAG_PROGRAM
+    bool config_reload = false; //config reload trigger via shm_path/status set to 2
+    double config_check_start = -1., config_check_interval = 5.; //check config update every 5sec
+    struct timespec config_mtime;
+#endif
 
 const char debug_desc[] = "Enable debug outputs (0:disable, 1:enable).";
 const char debug_adv_desc[] = "Enable debug outputs (0:disable, 1:enable).";

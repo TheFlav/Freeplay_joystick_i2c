@@ -15,19 +15,27 @@ if [ $GAMEPAD_RETURN_CODE -ne 0 ]; then
 		echo "START button detected.  Entering Freeplay i2c Joystick configuration tool."
 		sudo /home/pi/Freeplay/Freeplay_joystick_i2c/uhid/gamepad/uhid-i2c-gamepad-diag
 	fi
-	if [ $GAMEPAD_RETURN_CODE -eq -5 ]; then
+
+	#return code -5 (256 minus 5)
+	if [ $GAMEPAD_RETURN_CODE -eq 251 ]; then
 		echo "Freeplay i2c Joystick not configured.  Entering Freeplay i2c Joystick configuration tool."
 		sudo /home/pi/Freeplay/Freeplay_joystick_i2c/uhid/gamepad/uhid-i2c-gamepad-diag
 	fi
-	if [ $GAMEPAD_RETURN_CODE -eq -4 ]; then
+
+	#return code -4
+	if [ $GAMEPAD_RETURN_CODE -eq 252 ]; then
 		echo "Freeplay i2c Joystick version mismatch.  Firmware update required."
 		JOY_NEEDS_NEW_FIRMWARE=1
 	fi
-	if [ $GAMEPAD_RETURN_CODE -eq -3 ]; then
+
+	#return code -3
+	if [ $GAMEPAD_RETURN_CODE -eq 253 ]; then
 		echo "Freeplay i2c Joystick manufacturer mismatch.  Firmware update required."
 		JOY_NEEDS_NEW_FIRMWARE=1
 	fi
-	if [ $GAMEPAD_RETURN_CODE -eq -2 ]; then
+
+	#return code -2
+	if [ $GAMEPAD_RETURN_CODE -eq 254 ]; then
 		echo "Freeplay i2c Joystick not found on /dev/i2c-1.  Firmware update required or i2c-1 not connected/configured properly."
 		JOY_NEEDS_NEW_FIRMWARE=1
 	fi

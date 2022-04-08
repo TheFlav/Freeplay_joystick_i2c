@@ -584,7 +584,7 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
         fprintf(stdout, "\e[%d;%dH\e[%dmSecond address:_____ (%s)\e[0m", tty_line, tmp_col, tmp_esc_col, buffer);
         term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+15, .y=tty_line++, .size=5}, .type=3, .disabled=i2c_safelock, .value={.min=0, .max=127, .ptrint=&mcu_addr_sec, .ptrbool=&i2c_update}, .defval={.ptrint=&mcu_addr_sec_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
     #else
-        fprintf(stdout, "\e[%d;%dH\e[%dmSecond address was disabled during compilation.\e[0m", tty_line++, tmp_col, term_esc_col_disabled, buffer);
+        fprintf(stdout, "\e[%d;%dH\e[%dmSecond address was disabled during compilation.\e[0m", tty_line++, tmp_col, term_esc_col_disabled);
     #endif
 
     if (!io_fd_valid(mcu_fd) || mcu_sec_failed){
@@ -629,7 +629,7 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
             term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+13, .y=tty_line++, .size=5}, .type=3, .disabled=i2c_safelock, .value={.min=0, .max=127, .ptrint=&adc_addr[i], .ptrbool=&i2c_update}, .defval={.ptrint=&adc_addr_default[i], .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
         }
     #else
-        fprintf(stdout, "\e[%d;%dH\e[%dmExternal ADCs feature was disabled during compilation.\e[0m", tty_line++, tmp_col, term_esc_col_disabled, buffer);
+        fprintf(stdout, "\e[%d;%dH\e[%dmExternal ADCs feature was disabled during compilation.\e[0m", tty_line++, tmp_col, term_esc_col_disabled);
     #endif
     tty_line++;
 
@@ -1407,7 +1407,9 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
 
     term_pos_generic_t term_axis_min[4] = {0}, term_axis_max[4] = {0}, term_axis_adc[4] = {0};
     bool axis_detection_started[4] = {0}, axis_detection_update[4] = {0}, axis_start_requested[4] = {0}, axis_reset_requested[4] = {0};
-    int axis_adc[4]={-1,-1,-1,-1}, axis_min[4] = {0}, axis_max[4] = {0}, axis_output[4] = {0}; bool axis_reversed[4] = {0};
+    int axis_adc[4]={-1,-1,-1,-1};
+    int axis_min[4] = {0}, axis_max[4] = {0}, axis_offset[4] = {0}, axis_flat_in[4] = {0}, axis_flat_out[4] = {0}, axis_output[4] = {0}; bool axis_reversed[4] = {0}; //backup axis data
+
     int axis_buttons_index[4][3] = {0}; //selectible output,start,reset index for each axis
 
     char* term_hint_axis_str[]={
@@ -1549,28 +1551,37 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
                 }
             }
 
+            int adc_index = axis_adc[i];
             if (axis_detection_update[i]){ //update term axis requested
-                if (axis_adc[i] != -1){sprintf(buffer, "ADC%d detected", axis_adc[i]);} else {strcpy(buffer, "ADC not detected");} //adc
+                if (adc_index != -1){sprintf(buffer, "ADC%d detected", adc_index);} else {strcpy(buffer, "ADC not detected");} //adc
                 array_pad(buffer, strlen(buffer), term_col_width-1, ' ', 0);
                 fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", term_axis_adc[i].y, term_axis_adc[i].x, term_esc_col_normal, buffer);
 
-                if (axis_adc[i] != -1){
-                    axis_min[i] = adc_params[axis_adc[i]].min;
+                if (adc_index != -1){
+                    axis_min[i] = adc_params[adc_index].min;
                     sprintf(buffer, "%6d", axis_min[i]);
                 } else {strcpy(buffer, "______");} //min
                 fprintf(stdout, "\e[%d;%dH\e[4;%dm%s\e[0m", term_axis_min[i].y, term_axis_min[i].x, term_esc_col_normal, buffer);
 
-                if (axis_adc[i] != -1){
-                    axis_max[i] = adc_params[axis_adc[i]].max;
+                if (adc_index != -1){
+                    axis_max[i] = adc_params[adc_index].max;
                     sprintf(buffer, "%6d", axis_max[i]);
                 } else {strcpy(buffer, "______");} //max
                 fprintf(stdout, "\e[%d;%dH\e[4;%dm%s\e[0m", term_axis_max[i].y, term_axis_max[i].x, term_esc_col_normal, buffer);
+
+                if (adc_index != -1){
+                    axis_offset[i] = adc_params[adc_index].offset;
+                    axis_flat_in[i] = adc_params[adc_index].flat_in_comp;
+                    axis_flat_out[i] = adc_params[adc_index].flat_out_comp;
+                }
+
                 axis_detection_update[i] = false;
             }
 
-            if (axis_adc[i] != -1){ //update output
-                adc_params[axis_adc[i]].reversed = axis_reversed[i]; //apply axis reverse to adc
-                axis_output[i] = (((double)adc_params[axis_adc[i]].value / 0xFFFF) * 202) - 101; //adc position to -101+101
+            if (adc_index != -1){ //update output
+                axis_output[i] = adc_correct_offset_center(adc_params[adc_index].res_limit, adc_params[adc_index].raw, axis_min[i], axis_max[i], axis_offset[i], axis_flat_in[i], axis_flat_out[i]);
+                axis_output[i] = (((double)axis_output[i] / adc_params[adc_index].res_limit) * 202) - 101; //adc position to -101+101
+                if (axis_reversed[i]){axis_output[i] *= -1;}; //reverse axis
                 int_constrain(&axis_output[i], -100, 100); //bypass rounding problems
             } else {axis_output[i] = 0;} //reset ouput
         }
