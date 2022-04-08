@@ -19,7 +19,7 @@ if [ $GAMEPAD_RETURN_CODE -ne 0 ]; then
 	#return code -5 (256 minus 5)
 	if [ $GAMEPAD_RETURN_CODE -eq 251 ]; then
 		echo "Freeplay i2c Joystick not configured.  Entering Freeplay i2c Joystick configuration tool."
-		sudo /home/pi/Freeplay/Freeplay_joystick_i2c/uhid/gamepad/uhid-i2c-gamepad-diag
+		sudo /home/pi/Freeplay/Freeplay_joystick_i2c/uhid/gamepad/uhid-i2c-gamepad-diag -init
 	fi
 
 	#return code -4
