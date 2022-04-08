@@ -432,7 +432,7 @@ int mcu_search_i2c_addr(int bus, int* addr_main, int* addr_sec){ //search mcu on
     #endif
 
     if (*addr_main == -1 || (mcu_sec_enabled && *addr_sec == -1)){print_stderr("failed to detect MCU address\n"); return -1;
-    } else if (!diag_mode_init){
+    } else if (!diag_mode_init && !quiet_mode){
         print_stderr("detected possible MCU adress, main:0x%02X", *addr_main);
         if (mcu_sec_enabled){fprintf(stderr, ", secondary:0x%02X", *addr_sec);}
         fputc('\n', stderr);
@@ -559,7 +559,7 @@ int init_adc(){ //init adc data, return 0 on success, -1 on resolution read fail
         *js_values[i] = (uint16_t)0x7FFF; //reset uhid axis value, mainly used in diag part
 
         //report
-        if(!diag_mode_init){
+        if(!diag_mode_init && !quiet_mode){
             print_stderr("ADC%d: %s", i, adc_params[i].enabled?"enabled":"disabled");
             fputs(", ", stderr);
             if (mcu_adc_used[i]){fputs("MCU", stderr);
@@ -812,51 +812,58 @@ void program_get_path(char** args, char* var){ //get current program path based 
 
 //main functions, obviously, no? lool
 static void program_usage(char* program){
-    fprintf(stderr, "Version: %s\n", programversion);
-    fprintf(stderr, "MCU register version: %d\n", mcu_version_even);
-    fprintf(stderr, "Dev: %s\n\n", dev_webpage);
-    fprintf(stderr, "Since it needs to access/write to system device, program needs to run as root.\n\n");
+    if (!quiet_mode){
+        fprintf(stderr, "Version: %s\n", programversion);
+        fprintf(stderr, "MCU register version: %d\n", mcu_version_even);
+        fprintf(stderr, "Dev: %s\n\n", dev_webpage);
+        fprintf(stderr, "Since it needs to access/write to system device, program needs to run as root.\n\n");
 
-    #if defined(ALLOW_MCU_SEC_I2C) || defined(USE_SHM_REGISTERS) || defined(ALLOW_EXT_ADC) || defined(USE_POLL_IRQ_PIN)
-        fprintf(stderr, "Enabled feature(s) (at compilation time):\n"
-        #ifdef ALLOW_MCU_SEC_I2C
-            "\t-MCU secondary features, on-the-fly I2C address update, backlight control, ...\n"
+        #if defined(ALLOW_MCU_SEC_I2C) || defined(USE_SHM_REGISTERS) || defined(ALLOW_EXT_ADC) || defined(USE_POLL_IRQ_PIN)
+            fprintf(stderr, "Enabled feature(s) (at compilation time):\n"
+            #ifdef ALLOW_MCU_SEC_I2C
+                "\t-MCU secondary features, on-the-fly I2C address update, backlight control, ...\n"
+            #endif
+            #ifdef USE_SHM_REGISTERS
+                "\t-SHM to MCU bridge, allow to direct update some registers using file system.\n"
+            #endif
+            #ifdef ALLOW_EXT_ADC
+                "\t-External ADCs.\n"
+            #endif
+            #ifdef USE_POLL_IRQ_PIN
+                "\t-MCU digital input interrupt pin poll using WiringPi.\n"
+            #endif
+                "\n"
+            );
         #endif
-        #ifdef USE_SHM_REGISTERS
-            "\t-SHM to MCU bridge, allow to direct update some registers using file system.\n"
-        #endif
-        #ifdef ALLOW_EXT_ADC
-            "\t-External ADCs.\n"
-        #endif
-        #ifdef USE_POLL_IRQ_PIN
-            "\t-MCU digital input interrupt pin poll using WiringPi.\n"
-        #endif
-            "\n"
+
+        //fprintf(stderr, "Example : %s -configset debug=1\n", program);
+        fprintf(stderr, "Arguments:\n\t-h or -help: show arguments list.\n");
+    #ifndef DIAG_PROGRAM
+        fprintf(stderr,
+        "(*): close program after function executed (incl failure).\n"
+        "\t-confignocreate: disable creation of configuration file if not exist, returns specific errno if so.\n"
+        "\t-configreset: reset configuration file to default (*).\n"
+        "\t-configset: set custom configuration variable with specific variable, format: 'VAR=VALUE' (e.g. debug=1) (*).\n"
+        "\t-configlist: list all configuration variables (*).\n"
+        "\t-noi2c: disable IRQ, I2C polls and pollrate, generate garbage data for UHID, mainly used for benchmark. (can crash EV monitoring softwares).\n"
+        "\t-nouhid: disable IRQ, UHID reports and pollrate, mainly used for benchmark. (can crash EV monitoring softwares).\n"
+        "\t-closeonwarn: close program on major warnings.\n"
+        "\t-inputsearch: check MCU input for pressed button, use input-event-codes.h numbering, example for (START) and (SELECT):'-inputsearch 0x13b 0x13a'. Needs to be defined last. Program returns 0 if none pressed, 1 for first input, 2 for second, 3 for both.\n"
+        "\t--quiet : disable all tty outputs.\n"
+        );
+    #else
+        fprintf(stderr,
+        "\t"diag_first_run_command": allow easier detection of analog settings, does discard ADC mapping and min/max values.\n"
         );
     #endif
-
-    //fprintf(stderr, "Example : %s -configset debug=1\n", program);
-    fprintf(stderr, "Arguments:\n\t-h or -help: show arguments list.\n");
-#ifndef DIAG_PROGRAM
-    fprintf(stderr,
-    "(*): close program after function executed (incl failure).\n"
-    "\t-confignocreate: disable creation of configuration file if not exist, returns specific errno if so.\n"
-    "\t-configreset: reset configuration file to default (*).\n"
-    "\t-configset: set custom configuration variable with specific variable, format: 'VAR=VALUE' (e.g. debug=1) (*).\n"
-    "\t-configlist: list all configuration variables (*).\n"
-    "\t-noi2c: disable IRQ, I2C polls and pollrate, generate garbage data for UHID, mainly used for benchmark. (can crash EV monitoring softwares).\n"
-    "\t-nouhid: disable IRQ, UHID reports and pollrate, mainly used for benchmark. (can crash EV monitoring softwares).\n"
-    "\t-closeonwarn: close program on major warnings.\n"
-    "\t-inputsearch: check MCU input for pressed button, use input-event-codes.h numbering, example for (START) and (SELECT):'-inputsearch 0x13b 0x13a'. Needs to be defined last. Program returns 0 if none pressed, 1 for first input, 2 for second, 3 for both.\n"
-    );
-#else
-    fprintf(stderr,
-    "\t"diag_first_run_command": allow easier detection of analog settings, does discard ADC mapping and min/max values.\n"
-    );
-#endif
+    }
 }
 
 int main(int argc, char** argv){
+    #ifndef DIAG_PROGRAM
+        if (argc > 0 && strcmp(argv[argc-1],"--quiet") == 0){quiet_mode = true;} //no outputs
+    #endif
+
     program_start_time = get_time_double(); //program start time, used for detailed outputs
     if (getuid() != 0){program_usage(argv[0]); return EXIT_FAILED_GENERIC;} //show help if not running as root
 
@@ -1086,14 +1093,15 @@ int main(int argc, char** argv){
             }
         }
 */
-        fprintf(stdout, "Press '^C' to gracefully close driver\n");
+        if(!quiet_mode){
+            fprintf(stdout, "Press '^C' to gracefully close driver\n");
     
-        if (!i2c_poll_rate_disable){
-            print_stderr("pollrate: digital:");
-            if (irq_enable){fprintf(stderr, "interrupt");} else {fprintf(stderr, "%dhz", i2c_poll_rate);}
-            fprintf(stderr, ", adc:%dhz\n", i2c_poll_rate / i2c_adc_poll);
-        } else {print_stderr("poll speed not limited\n");}
-
+            if (!i2c_poll_rate_disable){
+                print_stderr("pollrate: digital:");
+                if (irq_enable){fprintf(stderr, "interrupt");} else {fprintf(stderr, "%dhz", i2c_poll_rate);}
+                fprintf(stderr, ", adc:%dhz\n", i2c_poll_rate / i2c_adc_poll);
+            } else {print_stderr("poll speed not limited\n");}
+        }
         
         bool driver_lock_back = driver_lock;
         if (shm_enable){print_stderr("driver can be put in lock state by setting %s to 2, event report will be disabled, restore by setting to 1\n", shm_status_path_ptr);}
