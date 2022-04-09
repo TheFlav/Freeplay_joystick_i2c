@@ -122,7 +122,7 @@ Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. pr
     Program will run in this mode if no configuration file exists.  
 <br>
 
-### Return codes of driver (not Setup/Diag):
+### Return codes of driver (not Setup/Diag program):
   Since driver is meant to run during system boot process, it does return specific (no following common rules) to allow some sort of feedback.  
     
   Theses are in place mainly to allow creation of script(s) to upload/update MCU program and allow user to be redirected to Setup/Diag. program during device first boot.  
@@ -135,25 +135,25 @@ Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. pr
 
 - Return list:  
   (*) Please consider to reflash MCU.  
-  * **0** : Everything is fine.  
+  * ``0`` : Everything is fine.  
     
-  * **-1** : Undefined or generic failure.  
+  * ``-1`` : Undefined or generic failure.  
     
-  * **-2** : I2C failed : This can be linked to multiple thing. Wrong Bus or Adress, Important read/write command failed (*).  
+  * ``-2`` : I2C failed : This can be linked to multiple thing. Wrong Bus or Adress, Important read/write command failed (*).  
     
-  * **-3** : MCU **manuf_ID** register mismatched  **mcu_manuf** variable ([driver_config.h](driver_config.h)) (*).  
+  * ``-3`` : MCU **manuf_ID** register mismatched  **mcu_manuf** variable ([driver_config.h](driver_config.h)) (*).  
     
-  * **-4** : MCU version (**version_ID** register) under **mcu_version_even** variable ([driver_i2c_registers.h](driver_i2c_registers.h)), should be considered as outdated MCU (*).  
+  * ``-4`` : MCU version (**version_ID** register) under **mcu_version_even** variable ([driver_i2c_registers.h](driver_i2c_registers.h)), should be considered as outdated MCU (*).  
     
-  * **-5** : Failed to read, write or parse configuration file.  
+  * ``-5`` : Failed to read, write or parse configuration file.  
   If this happen when ``-confignocreate`` argument used, this mainly mean configuration file doesn't exist.  
   This return code can be used to send user to Setup/Diag program first run mode.  
     
-  * **-6** : Undefined or generic MCU related failure.  
+  * ``-6`` : Undefined or generic MCU related failure.  
   This code is a bit tricky as it is extremely vague.  
   Needs some investigations if it happen.  
     
-  * **-7** : Program is already running.  
+  * ``-7`` : Program is already running.  
   By design, driver or setup/diag program are limited to one instance per program at once.  
 <br>
 
@@ -175,6 +175,7 @@ Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. pr
 - **uhid-i2c-gamepad.c**/**driver_main.h** : Driver files.
 - **driver_diag.c**/**driver_diag.h** : Setup/Diagnostic files.
 - **driver_debug_print.h** : Shared debug output functions.
-- **nns_config.c**/**nns_config.h** : Shared configuration functions.  
-<br>
+- **nns_config.c**/**nns_config.h** : Shared configuration functions.
 - **build-gamepad.sh** : Example compilation script.
+<br>
+
