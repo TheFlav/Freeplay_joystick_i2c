@@ -321,7 +321,12 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
     }
     
     if (update_digital){
-        //dpad
+        //dpad lookup
+        //   U+L   UP    U+R
+        //      8   1   2
+        // LEFT 7   0   3 RIGHT
+        //      6   5   4
+        //   D+L  DOWN   D+R
         const uint8_t dpad_lookup[16] = {0/*0:none*/, 1/*1:up*/, 5/*2:down*/, 1/*3:up+down*/, 7/*4:left*/, 8/*5:up+left*/, 6/*6:down+left*/, 1/*7:up+down+left*/, 3/*8:right*/, 2/*9:up+right*/, 4/*10:down+right*/, 1/*11:up+down+right*/, 7/*12:left+right*/, 1/*13:up+left+right*/, 5/*14:down+left+right*/, 0/*15:up+down+left+right*/};
         gamepad_report.hat0 = dpad_lookup[(uint8_t)(~(inputs >> mcu_input_dpad_start_index) & 0x0F)];
 
