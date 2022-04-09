@@ -30,6 +30,7 @@ Notes specific to driver part:
 #include <stdio.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <ctype.h>
 #include <errno.h>
 #include <limits.h>
@@ -320,8 +321,13 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
     }
     
     if (update_digital){
-        //dpad
-        const uint8_t dpad_lookup[16] = {0/*0:none*/, 1/*1:up*/, 5/*2:down*/, 1/*3:up+down*/, 7/*4:left*/, 2/*5:up+left*/, 6/*6:down+left*/, 1/*7:up+down+left*/, 3/*8:right*/, 2/*9:up+right*/, 4/*10:down+right*/, 1/*11:up+down+right*/, 7/*12:left+right*/, 1/*13:up+left+right*/, 5/*14:down+left+right*/, 0/*15:up+down+left+right*/};
+        //dpad lookup
+        //   U+L   UP    U+R
+        //      8   1   2
+        // LEFT 7   0   3 RIGHT
+        //      6   5   4
+        //   D+L  DOWN   D+R
+        const uint8_t dpad_lookup[16] = {0/*0:none*/, 1/*1:up*/, 5/*2:down*/, 1/*3:up+down*/, 7/*4:left*/, 8/*5:up+left*/, 6/*6:down+left*/, 1/*7:up+down+left*/, 3/*8:right*/, 2/*9:up+right*/, 4/*10:down+right*/, 1/*11:up+down+right*/, 7/*12:left+right*/, 1/*13:up+left+right*/, 5/*14:down+left+right*/, 0/*15:up+down+left+right*/};
         gamepad_report.hat0 = dpad_lookup[(uint8_t)(~(inputs >> mcu_input_dpad_start_index) & 0x0F)];
 
         //digital: reorder raw input to ev mapping
@@ -795,28 +801,55 @@ static void program_close(void){ //regroup all close functs
     already_killed = true;
 }
 
-void program_get_path(char** args, char* var){ //get current program path based on program argv or getcwd if failed
-    char tmp_path[PATH_MAX], tmp_subpath[PATH_MAX];
-    struct stat file_stat = {0};
-    strcpy(tmp_path, args[0]); if (args[0][0]=='.'){strcpy(var, ".\0");}
-    char *tmpPtr = strtok(tmp_path, "/");
-    while (tmpPtr != NULL) {
-        sprintf(tmp_subpath, "%s/%s", var, tmpPtr);
-        if (stat(tmp_subpath, &file_stat) == 0 && S_ISDIR(file_stat.st_mode) != 0){strcpy(var, tmp_subpath);}
-        tmpPtr = strtok(NULL, "/");
+
+//main functions
+static int program_instances_count(char* path, char* program){ //scan /proc/ to check if program is already running, return number of instances found
+    DIR *proc_ptr; if ((proc_ptr = opendir("/proc/")) == NULL){print_stderr("failed to open folder /proc/\n"); return 0;} //failed to open /proc/
+    char fullpath[strlen(path) + strlen(program) + 2]; sprintf(fullpath, "%s/%s", path, program); //full path to current program
+    struct dirent *dir_entry; struct stat file_stat; int found = 0;
+    while ((dir_entry = readdir(proc_ptr)) != NULL){
+        char* proc_id = dir_entry->d_name; if (!isdigit(proc_id[0])){continue;} //skip any that can't be process id
+        char buffer_path[strlen(proc_id) + 13]; sprintf(buffer_path, "/proc/%s/exe", proc_id); //build full path to potencial exe symlink
+        if (lstat(buffer_path, &file_stat) == 0 && S_ISLNK(file_stat.st_mode)){ //exist and symlink
+            char resolved_path[PATH_MAX] = {'\0'};
+            realpath(buffer_path, resolved_path);
+            if (strlen(resolved_path) > 0){
+                if (strcmp(fullpath, resolved_path) == 0){found++; //matching
+                } else if (strlen(resolved_path) > 11){ //fix for dev, real path ends by " (deleted)" if link "broken" by new compilation
+                    resolved_path[strlen(resolved_path) - 10] = '\0';
+                    if (strcmp(fullpath, resolved_path) == 0){found++;}
+                }
+            }
+        }
     }
-    if (strcmp(var, "./.") == 0){getcwd(var, PATH_MAX);}
-    if (debug){print_stderr("program path:'%s'\n", var);}
+    closedir(proc_ptr);
+    return found;
 }
 
+static void program_get_path(char** args, char* path, char* program){ //get current program path based on program argv or getcwd if failed
+    char tmp_path[PATH_MAX], tmp_subpath[PATH_MAX];
+    struct stat file_stat = {0};
+    strcpy(tmp_path, args[0]); if (args[0][0]=='.'){strcpy(path, ".\0");}
+    char *tmpPtr = strtok(tmp_path, "/");
+    while (tmpPtr != NULL) {
+        sprintf(tmp_subpath, "%s/%s", path, tmpPtr);
+        if (stat(tmp_subpath, &file_stat) == 0){
+            if (S_ISDIR(file_stat.st_mode) != 0){strcpy(path, tmp_subpath); //folder
+            } else {strcpy(program, tmpPtr);} //file
+        }
+        tmpPtr = strtok(NULL, "/");
+    }
+    if (strcmp(path, "./.") == 0){getcwd(path, PATH_MAX);}
+    if (debug){print_stderr("program path:'%s'\n", path);}
+}
 
-//main functions, obviously, no? lool
-static void program_usage(char* program){
+static void program_usage(void){ //display help
     if (!quiet_mode){
-        fprintf(stderr, "Version: %s\n", programversion);
+        fprintf(stderr, "Path: %s\n", program_path);
+        fprintf(stderr, "Version: %s\n", program_version);
         fprintf(stderr, "MCU register version: %d\n", mcu_version_even);
         fprintf(stderr, "Dev: %s\n\n", dev_webpage);
-        fprintf(stderr, "Since it needs to access/write to system device, program needs to run as root.\n\n");
+        fprintf(stderr, "Since it needs to access/write to system device, program has to run as root.\n\n");
 
         #if defined(ALLOW_MCU_SEC_I2C) || defined(USE_SHM_REGISTERS) || defined(ALLOW_EXT_ADC) || defined(USE_POLL_IRQ_PIN)
             fprintf(stderr, "Enabled feature(s) (at compilation time):\n"
@@ -840,38 +873,45 @@ static void program_usage(char* program){
         fprintf(stderr, "Arguments:\n\t-h or -help: show arguments list.\n");
     #ifndef DIAG_PROGRAM
         fprintf(stderr,
-        "(*): close program after function executed (incl failure).\n"
-        "\t-confignocreate: disable creation of configuration file if not exist, returns specific errno if so.\n"
-        "\t-configreset: reset configuration file to default (*).\n"
-        "\t-configset: set custom configuration variable with specific variable, format: 'VAR=VALUE' (e.g. debug=1) (*).\n"
-        "\t-configlist: list all configuration variables (*).\n"
-        "\t-noi2c: disable IRQ, I2C polls and pollrate, generate garbage data for UHID, mainly used for benchmark. (can crash EV monitoring softwares).\n"
-        "\t-nouhid: disable IRQ, UHID reports and pollrate, mainly used for benchmark. (can crash EV monitoring softwares).\n"
-        "\t-closeonwarn: close program on major warnings.\n"
-        "\t-inputsearch: check MCU input for pressed button, use input-event-codes.h numbering, example for (START) and (SELECT):'-inputsearch 0x13b 0x13a'. Needs to be defined last. Program returns 0 if none pressed, 1 for first input, 2 for second, 3 for both.\n"
-        "\t--quiet : disable all tty outputs.\n"
+        "(*) : close program after function executed (incl failure).\n"
+        "\t-confignocreate : disable creation of configuration file if not exist, returns specific errno if so.\n"
+        "\t-configreset : reset configuration file to default (*).\n"
+        "\t-configset : set custom configuration variable with specific variable, format: 'VAR=VALUE' (e.g. debug=1) (*).\n"
+        "\t-configlist : list all configuration variables (*).\n"
+        "\t-noi2c : disable IRQ, I2C polls and pollrate, generate garbage data for UHID, mainly used for benchmark. (can crash EV monitoring softwares).\n"
+        "\t-nouhid : disable IRQ, UHID reports and pollrate, mainly used for benchmark. (can crash EV monitoring softwares).\n"
+        "\t-closeonwarn : close program on major warnings.\n"
+        "\t-inputsearch : check MCU input for pressed button, use input-event-codes.h numbering, example for (START) and (SELECT):'-inputsearch 0x13b 0x13a'. Needs to be defined last. Program returns 0 if none pressed, 1 for first input, 2 for second, 3 for both.\n"
+        "\t-quiet or --quiet : disable all tty outputs.\n"
         );
     #else
         fprintf(stderr,
-        "\t"diag_first_run_command": allow easier detection of analog settings, does discard ADC mapping and min/max values.\n"
+        "\t-init : allow easier detection of analog settings, does discard ADC mapping and min/max values.\n"
         );
     #endif
     }
 }
 
+
 int main(int argc, char** argv){
+    program_start_time = get_time_double(); //program start time, used for detailed outputs
+
     #ifndef DIAG_PROGRAM
-        if (argc > 0 && strcmp(argv[argc-1],"--quiet") == 0){quiet_mode = true;} //no outputs
+        if (argc > 0 && (strcmp(argv[argc-1],"--quiet") == 0 || strcmp(argv[argc-1],"-quiet") == 0)){quiet_mode = true;} //needs to be checked as soon as possible, disable all outputs if set
     #endif
 
-    program_start_time = get_time_double(); //program start time, used for detailed outputs
-    if (getuid() != 0){program_usage(argv[0]); return EXIT_FAILED_GENERIC;} //show help if not running as root
+    program_get_path(argv, program_path, program_name); //get current program path and filename
+    if (getuid() != 0){program_usage(); return EXIT_FAILED_GENERIC;} //show help if not running as root
 
+    if (program_instances_count(program_path, program_name) > 1){ //check if program already running
+        print_stderr("program is already running\n");
+        return EXIT_FAILED_ALREADY_RUN;
+    }
+    
     int main_return = EXIT_SUCCESS; //program return
     bool cfg_no_create = false; //disable creation of config file
     bool program_close_on_warn = false; //close program on major warnings
 
-    program_get_path(argv, program_path); //get current program path
     sprintf(config_path, "%s/%s", program_path, cfg_filename); //convert config relative to full path
     print_stderr("Config file: %s\n", config_path);
 
@@ -892,7 +932,7 @@ int main(int argc, char** argv){
 
     //program arguments parse
     for(int i=1; i<argc; ++i){
-        if (strcmp(argv[i],"-h") == 0 || strcmp(argv[i],"-help") == 0){program_usage(argv[0]); return EXIT_SUCCESS;
+        if (strcmp(argv[i],"-h") == 0 || strcmp(argv[i],"-help") == 0){program_usage(); return EXIT_SUCCESS;
 #ifndef DIAG_PROGRAM
         } else if (strcmp(argv[i],"-confignocreate") == 0){cfg_no_create = true;
         } else if (strcmp(argv[i],"-configreset") == 0){return config_save(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, true); //reset config file
@@ -920,7 +960,7 @@ int main(int argc, char** argv){
             break;
         }
 #else
-        } else if (strcmp(argv[i],diag_first_run_command) == 0){diag_first_run = true;} //force first run mode
+        } else if (strcmp(argv[i],"-init") == 0){diag_first_run = true;} //force first run mode
 #endif
     }
 
