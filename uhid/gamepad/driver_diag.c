@@ -169,12 +169,13 @@ static int strcpy_noescape(char* dest, char* src, int limit){ //strcpy "clone" t
 
 
 //terminal functs
-static void term_user_input(term_input_t* input, bool blocking, bool* wanted_input){ //process terminal key inputs and digital inputs, blocking to true to set blocking mode waiting any inputs if wanted_bool set to NULL and a specific one
+static void term_user_input(term_input_t* input, bool blocking, bool* wanted_input, bool* wanted_input_sec){ //process terminal key inputs and digital inputs, blocking to true to set blocking mode waiting any inputs if wanted_bool set to NULL and a specific one
     char term_read_char; char last_key[32] = {'\0'}; //debug, last char used
-    memset(input, 0, sizeof(term_input_t)); //reset input struct
     term_input_t term_input_empty = {0}; //empty input for no terminal input check
 
     while (true){
+        memset(input, 0, sizeof(term_input_t)); //reset input struct
+
         if (read(STDIN_FILENO, &term_read_char, 1) > 0){ //terminal input
             if (term_read_char == '\n'){input->enter = true;}
             else if (term_read_char == '\t'){input->tab = true;}
@@ -214,9 +215,13 @@ static void term_user_input(term_input_t* input, bool blocking, bool* wanted_inp
                 if (memcmp(input, &term_input_empty, sizeof(term_input_t)) != 0){term_read_mcu_start = read_start;} //some inputs
             }
         }
-
+        
         if (!blocking){break; //non blocking
-        } else if (memcmp(input, &term_input_empty, sizeof(term_input_t)) != 0 && (wanted_input == NULL || *wanted_input)){break;} //blocking but input or wanted input
+        } else if (memcmp(input, &term_input_empty, sizeof(term_input_t)) != 0){ //blocking
+            if (wanted_input == NULL && wanted_input_sec == NULL){break; //any input pressed
+            } else if (wanted_input != NULL && *wanted_input){break; //wanted input pressed
+            } else if (wanted_input_sec != NULL && *wanted_input_sec){break;} //wanted input sec pressed
+        }
 
         usleep (1000000/30); //limit speed
     }
@@ -411,9 +416,14 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
     bool mcu_failed = !io_fd_valid(mcu_fd) || mcu_signature != mcu_manuf;
 
     //first run mode
-    char *firstrun_btn_str = " Start ADC to Joystick detection ", *firstrun_hint_str = "\e[91mcurrent ADC mapping, enable, min, max, reverse settings will be reset\e[0m";
-    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(firstrun_btn_str))/2, .y=tty_line, .size=strlen(firstrun_btn_str)}, .type=1, .disabled=mcu_failed, .value={.ptrchar=firstrun_btn_str, .ptrbool=&term_go_screen_firstrun}, .hint={.y=hint_line, .str=firstrun_hint_str}};
-    tty_line+=3;
+    first_run_goto_adc_screen = true; //open adc screen after save/skip if not running in first run mode
+    char *firstrun_btn_str = " Start ADC to Joystick detection ";
+    char *firstrun_hint_str = "\e[91mConfiguration will be reloaded if SKIP chosen, unsaved data will be lost\e[0m";
+    term_select[select_limit++] = (term_select_t){.position={.x=(tty_last_width - strlen(firstrun_btn_str))/2, .y=tty_line++, .size=strlen(firstrun_btn_str)}, .type=1, .disabled=mcu_failed, .value={.ptrchar=firstrun_btn_str, .ptrbool=&term_go_screen_firstrun}, .hint={.y=hint_line, .str=firstrun_hint_str}};
+    char *firstrun_hint1_str = "Allow easier detection of ADC to Joystick mapping";
+    fprintf(stdout, "\e[%d;%dH\e[1;%dm%s\e[0m", tty_line++, (tty_last_width - strlen(firstrun_hint1_str))/2, term_esc_col_normal, firstrun_hint1_str);
+
+    tty_line+=2;
 
     //digital/adc configuration
     term_pos_button_t term_inputs_buttons[] = {
@@ -451,7 +461,7 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
     term_pos_button_t term_footer_buttons[] = {
         {.str="Discard", .ptrbool=&reset_requested, .ptrhint="Reload configuration, unsaved data will be lost"},
         {.str="Save", .ptrbool=&save_requested, .ptrhint="Save new configuration", .disabled=!io_fd_valid(mcu_fd)},
-        {.str="Close", .ptrbool=&kill_requested, .ptrhint="Close without saving"},
+        {.str="Close", .ptrbool=&kill_requested, .ptrhint="Close Setup/Diagnostic program without saving"},
     };
     
     int term_footer_buttons_count = sizeof(term_footer_buttons) / sizeof(term_footer_buttons[0]);
@@ -468,7 +478,7 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-        term_user_input(&term_input, false, NULL); //handle terminal user input
+        term_user_input(&term_input, false, NULL, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
         if (term_input.escape){select_index_current = select_limit-1;} //escape key pressed, move cursor to last selectible element
@@ -480,7 +490,19 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
             if (term_go_screen_advanced){term_screen_current = SCREEN_ADVANCED; goto funct_end;} //go to advanced screen requested
         #endif
         if (term_go_screen_debug){term_screen_current = SCREEN_DEBUG; goto funct_end;} //go to adc screen requested
-        if (reset_requested){vars_cfg_reload(); term_screen_update = true; goto funct_end;} //reload config file
+        if (reset_requested){ //reload config file
+            vars_cfg_reload();
+            i2c_open_dev(&mcu_fd, i2c_bus, mcu_addr); //reopen main address
+            #ifdef ALLOW_MCU_SEC_I2C
+                i2c_open_dev(&mcu_fd_sec, i2c_bus, mcu_addr_sec); //reopen secondary address
+            #endif
+            #ifdef ALLOW_EXT_ADC
+                for (int i=0; i<4; i++){i2c_open_dev(&adc_fd[i], i2c_bus, adc_addr[i]);} //reopen external adc address
+            #endif
+            term_screen_update = true;
+            goto funct_end;
+        }
+
         if (save_requested){term_screen_current = SCREEN_SAVE; goto funct_end;} //go to save screen requested
         fprintf(stdout, "\e[0;0H\n"); //force tty update
         usleep (1000000/30); //limit to 30hz max to limit risk of i2c colision if driver is running
@@ -664,7 +686,7 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-        term_user_input(&term_input, false, NULL); //handle terminal user input
+        term_user_input(&term_input, false, NULL, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
         if (default_requested){vars_i2c_default(); term_screen_update = true; goto funct_end;} //reset vars to default
@@ -719,13 +741,7 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
             
             fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
             usleep(1000000/2); //wait half a sec
-            term_user_input(&term_input, true, &term_input.enter); //wait for user input
-/*
-            fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK); //set stdin to blocking
-            ioctl(STDIN_FILENO, TCFLSH, 2); //flush stdin
-            fgetc(stdin); //wait user to press any key, TODO input implement
-            fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
-*/
+            term_user_input(&term_input, true, &term_input.enter, NULL); //wait for user input
             term_screen_update = true; goto funct_end; //force update screen
         }
 
@@ -904,7 +920,7 @@ void term_screen_adc(int tty_line, int tty_last_width, int tty_last_height){
         
         i2c_poll_joystick(true);
 
-        term_user_input(&term_input, false, NULL); //handle terminal user input
+        term_user_input(&term_input, false, NULL, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
         
         if (term_pollrate_string.w != 0 && i2c_adc_poll != i2c_adc_poll_last){ //update displayed adc pollrate
@@ -1044,7 +1060,7 @@ void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-        term_user_input(&term_input, false, NULL); //handle terminal user input
+        term_user_input(&term_input, false, NULL, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
         if (default_requested){vars_digital_default(); term_screen_update = true; goto funct_end;} //reset vars to default
@@ -1124,7 +1140,7 @@ void term_screen_save(int tty_line, int tty_last_width, int tty_last_height){
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-        term_user_input(&term_input, false, NULL); //handle terminal user input
+        term_user_input(&term_input, false, NULL, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
         if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
@@ -1175,13 +1191,7 @@ void term_splash_save(int tty_last_width, int tty_last_height){ //save new confi
 
     fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
     usleep(1000000/2); //wait half a sec
-    term_user_input(&term_input, true, &term_input.enter); //wait for user input
-/*
-    fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK); //set stdin to blocking
-    ioctl(STDIN_FILENO, TCFLSH, 2); //flush stdin
-    fgetc(stdin); //wait user to press any key, TODO input implement
-    fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
-    */
+    term_user_input(&term_input, true, &term_input.enter, NULL); //wait for user input
 }
 
 
@@ -1295,7 +1305,7 @@ void term_splash_save(int tty_last_width, int tty_last_height){ //save new confi
         while (!kill_requested){
             ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-            term_user_input(&term_input, false, NULL); //handle terminal user input
+            term_user_input(&term_input, false, NULL, NULL); //handle terminal user input
             term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
             if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
@@ -1353,13 +1363,7 @@ void term_splash_save(int tty_last_width, int tty_last_height){ //save new confi
                         
                         fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
                         usleep (1000000/2); //wait half a sec
-                        term_user_input(&term_input, true, &term_input.enter); //wait for user input
-/*
-                        fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) & ~O_NONBLOCK); //set stdin to blocking
-                        ioctl(STDIN_FILENO, TCFLSH, 2); //flush stdin
-                        fgetc(stdin); //wait user to press any key, TODO input implement
-                        fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK); //set stdin to non-blocking
-                        */
+                        term_user_input(&term_input, true, &term_input.enter, NULL); //wait for user input
                         select_index_current = 0;
                         term_screen_update = true; goto funct_end; //force update screen
                     }
@@ -1407,8 +1411,8 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
 
     term_pos_generic_t term_axis_min[4] = {0}, term_axis_max[4] = {0}, term_axis_adc[4] = {0};
     bool axis_detection_started[4] = {0}, axis_detection_update[4] = {0}, axis_start_requested[4] = {0}, axis_reset_requested[4] = {0};
-    int axis_adc[4]={-1,-1,-1,-1};
-    int axis_min[4] = {0}, axis_max[4] = {0}, axis_offset[4] = {0}, axis_flat_in[4] = {0}, axis_flat_out[4] = {0}, axis_output[4] = {0}; bool axis_reversed[4] = {0}; //backup axis data
+    //int axis_adc[4]={-1,-1,-1,-1};
+    //int axis_min[4] = {0}, axis_max[4] = {0}, axis_offset[4] = {0}, axis_flat_in[4] = {0}, axis_flat_out[4] = {0}, axis_output[4] = {0}; bool axis_reversed[4] = {0}; //backup axis data
 
     int axis_buttons_index[4][3] = {0}; //selectible output,start,reset index for each axis
 
@@ -1479,11 +1483,10 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
 
     tty_line = tmp_line;
 
-    bool goto_adc_screen = false; //open adc screen after save/skip
     char* term_axis_skip_close_str = "Open advanced ADC screen after saving/skipping (close program overwise):_";
     int x = (tty_last_width - strlen(term_axis_skip_close_str)) / 2;
     fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tty_line, x, term_esc_col_normal, term_axis_skip_close_str);
-    term_select[select_limit++] = (term_select_t){.position={.x=x+strlen(term_axis_skip_close_str)-1, .y=tty_line, .size=1}, .type=2, .value={.ptrbool=&goto_adc_screen}, .hint={.y=hint_line, .str=term_hint_nav_str[2]}};
+    term_select[select_limit++] = (term_select_t){.position={.x=x+strlen(term_axis_skip_close_str)-1, .y=tty_line, .size=1}, .type=2, .value={.ptrbool=&first_run_goto_adc_screen}, .hint={.y=hint_line, .str=term_hint_nav_str[2]}};
 
     //footer
     fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[0], 20)) / 2, term_hint_nav_str[0]); //nav hint
@@ -1508,6 +1511,18 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
     assert(select_limit <= select_max); //failsafe
 
     bool term_force_update = true;
+
+    //tty resize or screen update fix
+    for (int i=0; i<4; i++){
+        int adc_index = axis_adc[i];
+        if (adc_index != -1){
+            axis_detection_update[i] = true;
+            adc_params[adc_index].min = axis_min[i]; adc_params[adc_index].max = axis_max[i];
+            adc_params[adc_index].offset = axis_offset[i]; adc_params[adc_index].flat_in_comp = axis_flat_in[i]; adc_params[adc_index].flat_out_comp = axis_flat_out[i];
+            adc_data_compute(adc_index);
+        }
+    }
+
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
@@ -1520,7 +1535,7 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
 
         i2c_poll_joystick(true);
 
-        term_user_input(&term_input, false, NULL); //handle terminal user input
+        term_user_input(&term_input, false, NULL, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, term_force_update); //update selectible elements
         term_force_update = false;
 
@@ -1589,28 +1604,81 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
         if (reset_requested){for (int i=0; i<4; i++){axis_reset_requested[i] = true;} reset_requested=false;} //reset all axis
 
         if (skip_requested || save_requested){ //"close/skip" pressed
-            bool adc_axis_used[4] = {0}; //adc that are used by axis
-            for (int i=0; i<4; i++){ //axis loop
-                if (axis_adc[i] != -1){
-                    int adc = axis_adc[i];
-                    adc_map[adc] = i; //adc mapping
-                    adc_params[adc].enabled = adc_axis_used[adc] = true;
-                    adc_params[adc].min = axis_min[i]; adc_params[adc].max = axis_max[i]; //adc limits
-                    adc_params[adc].reversed = axis_reversed[i]; //adc reversed
-                }
-            }
+            if (save_requested){
+                bool adc_axis_used[4] = {0}; //adc used by axis
 
-            for (int i=0; i<4; i++){ //adc loop
-                if (!adc_axis_used[i]){ //reset unused adc to "default"
-                    adc_map[i] = -1;
-                    adc_params[i].enabled = false;
-                    adc_params[i].min = 0; adc_params[i].max = adc_params[i].res_limit;
-                    adc_params[i].reversed = false;
+                for (int i=0; i<4; i++){ //axis loop
+                    if (axis_adc[i] != -1){
+                        int adc = axis_adc[i];
+                        adc_map[adc] = i; //adc mapping
+                        adc_params[adc].enabled = adc_axis_used[adc] = true;
+                        adc_params[adc].min = axis_min[i]; adc_params[adc].max = axis_max[i]; //adc limits
+                        adc_params[adc].reversed = axis_reversed[i]; //adc reversed
+                    }
                 }
-            }
 
-            if (save_requested){term_splash_save(tty_last_width, tty_last_height);} //display save splash
-            if (goto_adc_screen){term_screen_current = SCREEN_ADC; goto funct_end;} else {kill_requested = true;}
+                for (int i=0; i<4; i++){ //adc loop
+                    if (!adc_axis_used[i]){ //reset unused adc to "default"
+                        adc_map[i] = -1;
+                        adc_params[i].enabled = false;
+                        adc_params[i].min = 0; adc_params[i].max = adc_params[i].res_limit;
+                        adc_params[i].reversed = false;
+                    }
+                }
+
+                char buffer1[buffer_size];
+                int tty_line = 2; fprintf(stdout, "\e[0;0H\e[2J\n"); //reset tty
+
+                char* save_confirm_str = "Save confirmation";
+                fprintf(stdout, "\e[%d;%dH\e[%d;4m%s\e[0m\n", tty_line, (tty_last_width - strlen(save_confirm_str)) / 2, term_esc_col_normal, save_confirm_str);
+                tty_line += 2;
+
+                for(int x_loop=0, axis_loop=0; x_loop<2; x_loop++){
+                    int term_left = term_col_pad + (term_col_width + term_col_pad) * x_loop, term_right = term_left + term_col_width - 1; //left/right border of column
+                    tmp_line = tty_line;
+
+                    sprintf(buffer, "%s Joystick", (x_loop==0)?"Left":"Right");
+                    fprintf(stdout, "\e[%d;%dH\e[1;%dm%s\e[0m", tmp_line, term_left + (term_col_width - strlen(buffer)) / 2, term_esc_col_normal, buffer);
+                    tmp_line+=2;
+
+                    for(int y_loop=0; y_loop<2; y_loop++){
+                        int adc_index = axis_adc[axis_loop];
+
+                        sprintf(buffer, "%s Axis", (y_loop==0)?"Horizontal":"Vertical");
+                        array_pad(buffer, strlen(buffer), term_col_width-1, '_', 0);
+                        fprintf(stdout, "\e[%d;%dH\e[1;4;%dm%s\e[0m", tmp_line++, term_left, term_esc_col_normal, buffer);
+
+                        if (adc_index != -1){sprintf(buffer, "ADC%d detected", adc_index);} else {strcpy(buffer, "ADC not detected");} //adc
+                        array_pad(buffer, strlen(buffer), term_col_width-1, ' ', 0);
+                        fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m", tmp_line, term_left, term_esc_col_normal, buffer);
+                        tmp_line++;
+
+                        if (adc_index != -1){
+                            sprintf(buffer, "%6d", axis_min[adc_index]); //min
+                            sprintf(buffer1, "%6d", axis_max[adc_index]); //max
+                        } else {
+                            strcpy(buffer, "______"); //min
+                            strcpy(buffer1, "______"); //max
+                        }
+                        fprintf(stdout, "\e[%d;%dH\e[%dmMin:\e[4m%s\e[24m Max:\e[4m%s\e[0m", tmp_line, term_left, term_esc_col_normal, buffer, buffer1);
+                        fprintf(stdout, "\e[%d;%dH\e[%dmReversed:\e[4m%s\e[0m", tmp_line++, term_right-10, term_esc_col_normal, axis_reversed[adc_index]?"X":" ");
+                        tmp_line+=2; axis_loop++;
+                    }
+                }
+
+                if (!first_run_goto_adc_screen){strcpy(buffer, "Program will be closed once configuration saved");
+                } else {strcpy(buffer, "Advanced ADC settings menu will be shown once configuration saved");}
+                fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tmp_line, (tty_last_width - strlen(buffer)) / 2, buffer);
+
+                fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continue
+                fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[4], 20)) / 2, term_hint_nav_str[4]); //press key to go back
+                usleep(1000000/2); //wait half a sec
+                term_user_input(&term_input, true, &term_input.enter, &term_input.escape); //wait for user input
+
+                if (term_input.escape){term_screen_update = true; goto funct_end; //go back
+                } else {term_splash_save(tty_last_width, tty_last_height);} //display save splash
+            } else if (skip_requested){vars_cfg_reload();} //reload config if skip
+            if (first_run_goto_adc_screen){term_screen_current = SCREEN_ADC; goto funct_end;} else {kill_requested = true;} //go to adc screen or close
         }
 
         fprintf(stdout, "\e[0;0H\n"); //force tty update
@@ -1686,7 +1754,7 @@ void term_screen_debug(int tty_line, int tty_last_width, int tty_last_height){ /
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-        term_user_input(&term_input, false, NULL); //handle terminal user input
+        term_user_input(&term_input, false, NULL, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, term_force_update); //update selectible elements
         term_force_update = false;
 
@@ -1779,7 +1847,7 @@ void term_screen_generic(int tty_line, int tty_last_width, int tty_last_height){
     while (!kill_requested){
         ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
 
-        term_user_input(&term_input, false, NULL); //handle terminal user input
+        term_user_input(&term_input, false, NULL, NULL); //handle terminal user input
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
         if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
