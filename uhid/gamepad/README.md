@@ -1,11 +1,18 @@
 # Freeplay UHID Gamepad driver
 
 ## Introduction:  
-This set of programs does allow to emulate a USB device using UHID device.  
+This set of programs does allow to emulate a USB input device using UHID device.  
   
 Using this method have the benefit to allow faster compilation and debugging (incl. programing on Windows platform without messing with GDB) compared to a kernel driver but comes with some limitations linked to security in place on Linux systems (.e.g needs to run as root to access needed device).  
   
 In its current state, this driver mainly targeting Raspberry Pi boards (additional comments on this later).  
+
+This page does mainly reference 2 programs:
+- ``uhid-i2c-gamepad`` : UHID input driver.
+- ``uhid-i2c-gamepad-diag`` : Setup/Diagnostic program.  
+  Does allow end-user to edit and set most of editable settings.  
+  It doesn't edit any of the .c or .h files.  
+  This program is meant to run on at least 640x480 screen (80 cols x 30 lines TTY).  
 <br>
   
 ## Compilation:
