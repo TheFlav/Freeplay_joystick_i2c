@@ -247,3 +247,6 @@ extern int irq_gpio; //gpio pin used for IRQ, limited to 31 for pigpio, set to -
 extern cfg_vars_t cfg_vars[]; //config store
 extern const unsigned int cfg_vars_arr_size; //config store size
 
+//uhid
+extern int uhid_device_id; //number added after reported name, mainly used if running multiple drivers
+

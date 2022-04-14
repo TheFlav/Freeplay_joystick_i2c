@@ -91,12 +91,16 @@ static int uhid_create(int fd){ //create uhid device
     struct uhid_event ev;
     memset(&ev, 0, sizeof(ev));
     ev.type = UHID_CREATE2;
-    strcpy((char*)ev.u.create2.name, uhid_device_name); //ev.u.create.rd_data = hid_descriptor;
+
+    char buffer[strlen(uhid_device_name) + int_digit_count(uhid_device_id) + 2];
+    sprintf(buffer, "%s %d", uhid_device_name, uhid_device_id);
+    strcpy((char*)ev.u.create2.name, buffer);
+
     memcpy(ev.u.create2.rd_data, hid_descriptor, sizeof(hid_descriptor));
     ev.u.create2.rd_size = sizeof(hid_descriptor);
     ev.u.create2.bus = BUS_USB;
-    ev.u.create2.vendor = 0x15d9;
-    ev.u.create2.product = 0x0a37;
+    ev.u.create2.vendor = hid_vendor;
+    ev.u.create2.product = hid_product;
     ev.u.create2.version = 0;
     ev.u.create2.country = 0;
 
@@ -658,11 +662,11 @@ static int logs_write(const char* format, ...){ //write to log, return chars wri
 }
 
 static void shm_init(bool first){ //init shm related things, folders and files creation
-    char curr_path[strlen(shm_path)+256]; //current path with additionnal 255 chars for filename
     if (first){ //initial run, skip i2c part
-        if (folder_create(shm_path, 0666, user_uid, user_gid) < 0){return;} //recursive folder create
+        if (folder_create(shm_fullpath, 0666, user_uid, user_gid) < 0){return;} //recursive folder create
 
-        sprintf(curr_path, "%s/driver.log", shm_path); //log file
+        char curr_path[strlen(shm_fullpath)+256]; //current path with additionnal 255 chars for filename
+        sprintf(curr_path, "%s/driver.log", shm_fullpath); //log file
         logs_fh = fopen(curr_path, "w+");
         if (logs_fh != NULL){print_stderr("logs: %s\n", curr_path);
         } else {print_stderr("failed to open '%s' (%m)\n", curr_path);}
@@ -681,7 +685,7 @@ static void shm_init(bool first){ //init shm related things, folders and files c
                 if (ret < 0){i2c_allerrors_count++; print_stderr("failed to read register 0x%02X, errno:%d (%m)\n", shm_vars[i].i2c_register, -ret); continue;
                 } else {
                     *(shm_vars[i].ptr) = (uint8_t) ret; //set register backup value
-                    sprintf(shm_vars[i].path, "%s/%s", shm_path, shm_vars[i].file); //set path
+                    sprintf(shm_vars[i].path, "%s/%s", shm_fullpath, shm_vars[i].file); //set path
                     sprintf(buffer, "%d", ret);
                     if (file_write(shm_vars[i].path, buffer) == 0){
                         chown(shm_vars[i].path, (uid_t) user_uid, (gid_t) user_gid);
@@ -752,8 +756,8 @@ static void shm_update(void){ //update registers/files linked to shm things
 static void shm_close(void){ //close shm related things
     #ifndef DIAG_PROGRAM
         if (shm_enable){
-            char curr_path[strlen(shm_path)+10]; //current path with additionnal 255 chars for filename
-            sprintf(curr_path, "%s/status", shm_path); //current path
+            char curr_path[strlen(shm_fullpath)+10]; //current path with additionnal 255 chars for filename
+            sprintf(curr_path, "%s/status", shm_fullpath); //current path
             if (file_write (curr_path, "0") == 0){print_stderr("'%s' content set to 0\n", curr_path);}
         }
     #endif
@@ -803,6 +807,7 @@ static void program_close(void){ //regroup all close functs
 
 
 //main functions
+#ifndef MULTI_INSTANCES
 static int program_instances_count(char* path, char* program){ //scan /proc/ to check if program is already running, return number of instances found
     DIR *proc_ptr; if ((proc_ptr = opendir("/proc/")) == NULL){print_stderr("failed to open folder /proc/\n"); return 0;} //failed to open /proc/
     char fullpath[strlen(path) + strlen(program) + 2]; sprintf(fullpath, "%s/%s", path, program); //full path to current program
@@ -825,6 +830,7 @@ static int program_instances_count(char* path, char* program){ //scan /proc/ to 
     closedir(proc_ptr);
     return found;
 }
+#endif
 
 static void program_get_path(char** args, char* path, char* program){ //get current program path based on program argv or getcwd if failed
     char tmp_path[PATH_MAX], tmp_subpath[PATH_MAX];
@@ -903,16 +909,23 @@ int main(int argc, char** argv){
     program_get_path(argv, program_path, program_name); //get current program path and filename
     if (getuid() != 0){program_usage(); return EXIT_FAILED_GENERIC;} //show help if not running as root
 
-    if (program_instances_count(program_path, program_name) > 1){ //check if program already running
-        print_stderr("program is already running\n");
-        return EXIT_FAILED_ALREADY_RUN;
-    }
-    
+    #ifndef MULTI_INSTANCES
+        if (program_instances_count(program_path, program_name) > 1){ //check if program already running
+            print_stderr("program is already running\n");
+            return EXIT_FAILED_ALREADY_RUN;
+        }
+    #endif
+
     int main_return = EXIT_SUCCESS; //program return
     bool cfg_no_create = false; //disable creation of config file
     bool program_close_on_warn = false; //close program on major warnings
 
-    sprintf(config_path, "%s/%s", program_path, cfg_filename); //convert config relative to full path
+    if (argc > 2 && strcmp(argv[1],"-config") == 0){
+        if (argv[2][0] == '/'){strcpy(config_path, argv[2]); //absolute path
+        } else {sprintf(config_path, "%s/%s", program_path, argv[2]);} //relative path
+    }
+
+    if (strlen(config_path) == 0){sprintf(config_path, "%s/%s", program_path, cfg_filename);} //no custom path, convert default config relative to full path
     print_stderr("Config file: %s\n", config_path);
 
     #ifdef ALLOW_EXT_ADC //build config adc type description based on driver_adc_external.h
@@ -971,7 +984,8 @@ int main(int argc, char** argv){
     } else if (tmp_ret == 1){diag_first_run = true;} //config file created
     
     //shm
-    char shm_status_path[strlen(shm_path)+10]; sprintf(shm_status_path, "%s/status", shm_path); shm_status_path_ptr = shm_status_path; //status file path
+    sprintf(shm_fullpath, "%s%s%d", shm_path, shm_path[strlen(shm_path)-1]=='/'?"":"/", uhid_device_id); //build shm path incl driver id
+    char shm_status_path[strlen(shm_fullpath)+10]; sprintf(shm_status_path, "%s/status", shm_fullpath); shm_status_path_ptr = shm_status_path; //status file path
     shm_init(true); //init shm path and files
 
     //tty signal handling

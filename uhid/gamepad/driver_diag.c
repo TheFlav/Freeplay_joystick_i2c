@@ -26,6 +26,8 @@ void vars_i2c_default(){ //reset all i2c config vars to default
         adc_addr[2] = def_adc2_addr;
         adc_addr[3] = def_adc3_addr;
     #endif
+
+    uhid_device_id = def_uhid_device_id;
 }
 
 void vars_digital_default(){ //reset all digital config vars to default
@@ -107,7 +109,7 @@ void vars_adc_default(int index, bool all){ //reset all adc config vars to defau
 }
 
 void vars_cfg_reload(void){ //reload config file
-    config_parse(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid); //parse config file, create if needed
+    config_parse(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid); //parse config file, create if needed
 
     //reset backup vars
     i2c_bus_back = -1, mcu_addr_back = -1;
@@ -427,7 +429,7 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
 
     //digital/adc configuration
     term_pos_button_t term_inputs_buttons[] = {
-        {.str=" I2C Configuration ", .ptrbool=&term_go_screen_i2c, .ptrhint="Define I2C settings"},
+        {.str=" I2C/UHID Configuration ", .ptrbool=&term_go_screen_i2c, .ptrhint="Define I2C settings"},
         {.str=" Digital Configuration ", .ptrbool=&term_go_screen_digital, .ptrhint="Digital inputs specific settings, display registers state", .disabled=mcu_failed},
         {.str=" Analog Configuration ", .ptrbool=&term_go_screen_adc, .ptrhint="ADC inputs specific settings", .disabled=mcu_failed},
         #ifdef ALLOW_MCU_SEC_I2C
@@ -521,11 +523,18 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
     term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
     int select_limit = 0;
 
-    char* screen_name = "I2C configuration";
-    fprintf(stdout, "\e[%d;%dH\e[1;%dm%s\e[0m", tty_line++, (tty_last_width - strlen(screen_name))/2, term_esc_col_normal, screen_name);
-    tty_line++;
+    char* screen_name = "I2C/UHID configuration";
+    fprintf(stdout, "\e[%d;%dH\e[1;%dm%s\e[0m", tty_line, (tty_last_width - strlen(screen_name))/2, term_esc_col_normal, screen_name);
+    tty_line+=2;
 
     bool i2c_bus_update = false, i2c_update = false, display_i2c_map = false; i2c_failed = false;
+
+    //uhid driver id
+    int uhid_device_id_default = def_uhid_device_id;
+    fprintf(stdout, "\e[%d;%dH\e[%dmID:___ (Added after driver name, mainly used if running multiple drivers)\e[0m", tty_line, tmp_col, term_esc_col_normal);
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+3, .y=tty_line++, .size=3}, .type=0, .value={.min=0, .max=99, .ptrint=&uhid_device_id}, .defval={.ptrint=&uhid_device_id_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+    fprintf(stdout, "\e[%d;%dH\e[%dmWarning: You may have to redo emulators input binding.\e[0m", tty_line, tmp_col, term_esc_col_error);
+    tty_line+=2;
 
     //warning
     fprintf(stdout, "\e[%d;%dH\e[%dmWarning:\e[0m", tty_line++, tmp_col, term_esc_col_error);
@@ -542,8 +551,8 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
     //safelock
     bool i2c_safelock_back = i2c_safelock; //disable ability to change i2c address
     fprintf(stdout, "\e[%d;%dH\e[%dmSafelock:_ (Disable ability to change i2c settings)\e[0m", tty_line, tmp_col, tmp_esc_col);
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+9, .y=tty_line, .size=1}, .type=2, .value={.ptrbool=&i2c_safelock}, .hint={.y=hint_line, .str=term_hint_nav_str[2]}};
-    tty_line+=2;
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+9, .y=tty_line++, .size=1}, .type=2, .value={.ptrbool=&i2c_safelock}, .hint={.y=hint_line, .str=term_hint_nav_str[2]}};
+    //tty_line+=2;
 
     //bus
     int i2c_bus_default = def_i2c_bus;
@@ -656,9 +665,9 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
     tty_line++;
 
     //i2c map
-    char* display_i2c_map_hint = "Display all devices on I2C bus";
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=term_footer_buttons_width}, .type=1, .value={.ptrchar=" I2C map ", .ptrbool=&display_i2c_map}, .hint={.y=hint_line, .str=display_i2c_map_hint}};
-    tty_line+=2;
+    //char* display_i2c_map_hint = "Display all devices on I2C bus";
+    //term_select[select_limit++] = (term_select_t){.position={.x=tmp_col, .y=tty_line, .size=term_footer_buttons_width}, .type=1, .value={.ptrchar=" I2C map ", .ptrbool=&display_i2c_map}, .hint={.y=hint_line, .str=display_i2c_map_hint}};
+    //tty_line+=2;
 
     i2c_failed_jump:; //jump point for i2c failure
     
@@ -668,6 +677,7 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
     //footer buttons
     bool term_go_screen_main = false, default_requested = false;
     term_pos_button_t term_footer_buttons[] = {
+        {.str="I2C map", .ptrbool=&display_i2c_map, .ptrhint="Display all devices on I2C bus", .disabled=i2c_bus_failed},
         {.str="Default", .ptrbool=&default_requested, .ptrhint="Reset values to default"},
         {.str="Back", .ptrbool=&term_go_screen_main, .ptrhint="Return to main menu"},
     };
@@ -1346,7 +1356,7 @@ void term_splash_save(int tty_last_width, int tty_last_height){ //save new confi
                                 } else {
                                     fprintf(stdout, "\e[%d;%dH\e[%dm> Main address (0x%02X) opened\e[0m\n", tty_line++, tmp_col, term_esc_col_success, tmp_addr);
                                     mcu_addr = tmp_addr; sprintf(buffer, "%s=0x%02X", cfg_mcu_addr_name, mcu_addr);
-                                    config_set(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid, false, buffer); //update config file
+                                    config_set(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, false, buffer); //update config file
                                 }
 
                                 tmp_addr = update_mcu_main ? mcu_addr_sec : update_value; //reopen second address
@@ -1356,7 +1366,7 @@ void term_splash_save(int tty_last_width, int tty_last_height){ //save new confi
                                 } else {
                                     fprintf(stdout, "\e[%d;%dH\e[%dm> Secondary address (0x%02X) opened\e[0m\n", tty_line++, tmp_col, term_esc_col_success, tmp_addr);
                                     mcu_addr_sec = tmp_addr; sprintf(buffer, "%s=0x%02X", cfg_mcu_addr_sec_name, mcu_addr_sec);
-                                    config_set(cfg_vars, cfg_vars_arr_size, cfg_filename, user_uid, user_gid, false, buffer); //update config file
+                                    config_set(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, false, buffer); //update config file
                                 }
                             }
                         }
