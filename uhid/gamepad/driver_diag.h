@@ -26,7 +26,7 @@
 #include <termios.h>
 #include <assert.h>
 
-#define buffer_size 1024 //char array buffer size
+#define buffer_size 1024 //char array buffer size, better not changing this as its used everywhere on diag part
 
 typedef struct term_select_struct { //selectible terminal elements data
     struct {int x, y, size;} position; //position pointers
@@ -63,7 +63,7 @@ static int array_pad(char* /*arr*/, int /*arr_len*/, int /*size*/, char /*pad*/,
 static void str_trim_whitespace(char** /*ptr*/); //update pointer to skip leading pointer, set first trailing space to null char
 static int strcpy_noescape(char* /*dest*/, char* /*src*/, int /*limit*/); //strcpy "clone" that ignore terminal escape code, set dest=src or dest=NULL to only return "noescape" char array length. Current limitations:defined limit of escape code (w/o "\e["). warnings: no size check, broken if badly formated escape, only check for h,l,j,m ending
 
-static void term_user_input(term_input_t* /*input*/, bool /*blocking*/, bool* /*wanted_input*/); //process terminal key inputs and digital inputs, blocking to true to set blocking mode waiting any inputs if wanted_bool set to NULL and a specific one
+static void term_user_input(term_input_t* /*input*/, bool /*blocking*/, bool* /*wanted_input*/, bool* /*wanted_input_sec*/); //process terminal key inputs and digital inputs, blocking to true to set blocking mode waiting any inputs if wanted_bool set to NULL and a specific one
 static void term_select_update(term_select_t* /*store*/, int* /*index*/, int* /*index_last*/, int /*index_limit*/, term_input_t* /*input*/, int /*tty_width*/, int /*tty_height*/, bool /*update*/); //update selectible elements
 
 static int term_print_path_multiline(char* /*str*/, int /*line*/, int /*col*/, int /*width_limit*/, int /*esc_color*/); //print a multiple line if needed, return no of lines
@@ -141,6 +141,7 @@ char* term_hint_nav_str[]={
     "\e[1m[LEFT]\e[0m,\e[1m[RIGHT]\e[0m to change value, \e[1m[-]\e[0m,\e[1m[+]\e[0m for plus/minus 50",
     "\e[1m[ENTER]\e[0m/\e[1m(A)\e[0m to toogle",
     "\e[1m[ENTER]\e[0m/\e[1m(A)\e[0m to continue\e[0m",
+    "\e[1m[ESC]\e[0m/\e[1m(B)\e[0m to go back\e[0m",
 };
 
 char* buttons_dpad_names[] = {"Dpad_UP", "Dpad_DOWN", "Dpad_LEFT", "Dpad_RIGHT"};
@@ -225,6 +226,14 @@ adc_data_t adc_params_default[4] = {
 };
 
 bool adc_enabled_back[] = {def_adc0_enabled, def_adc1_enabled, def_adc2_enabled, def_adc3_enabled};
+
+//first run specific
+int axis_adc[4] = {-1,-1,-1,-1};
+int axis_min[4] = {0}, axis_max[4] = {0}, axis_output[4] = {0};
+int axis_offset[4] = {0}, axis_flat_in[4] = {0}, axis_flat_out[4] = {0};
+bool axis_reversed[4] = {0};
+bool first_run_goto_adc_screen = false; //open adc screen after save/skip
+
 
 //pollrate
 extern double poll_clock_start;
