@@ -1,7 +1,9 @@
 ## To install with RetroPie on a new SD card
-Start "Raspberry Pi Imager"
+Start "Raspberry Pi Imager" (download from https://www.raspberrypi.com/software/)
+
 In "Raspberry Pi Imager"
-- Select the RetroPie SD img.gz file
+
+- Select the RetroPie SD img.gz file (download from https://retropie.org.uk/download/)
 - Select your SD card
 - Click the GEAR icon to select settings
 	- Check the "Enable SSH" box and choose "Use password authentication" (unless you prefer to do some key auth)
