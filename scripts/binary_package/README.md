@@ -1,4 +1,6 @@
 ## To install with RetroPie on a new SD card
+Download the latest Freeplay Joystick binary package from https://github.com/TheFlav/Freeplay_joystick_i2c/releases
+
 Start "Raspberry Pi Imager" (download from https://www.raspberrypi.com/software/)
 
 In "Raspberry Pi Imager"
