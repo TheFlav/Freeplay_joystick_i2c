@@ -160,14 +160,17 @@ int config_parse (cfg_vars_t* cfg, unsigned int cfg_size, char* filename, int ui
     FILE *filehandle = fopen(filename, "r");
     if (filehandle != NULL){
         char strBuffer [4096], strTmpBuffer [4096]; //string buffer
-        char *tmpPtr, *tmpPtr1, *pos; //pointers
+        char *tmpPtr, *tmpPtr1, *tmpPtr2, *pos; //pointers
         int cfg_ver=0, line=0;
         while (fgets (strBuffer, 4095, filehandle) != NULL) { //line loop
             line++; //current file line
 
             //clean line from utf8 bom and whitespaces
-            tmpPtr = strBuffer; tmpPtr1 = strTmpBuffer; pos = tmpPtr; //pointers
-            if (strstr (strBuffer,"\xEF\xBB\xBF") != NULL) {tmpPtr += 3;} //remove utf8 bom, overkill security?
+            tmpPtr = strBuffer; tmpPtr1 = strTmpBuffer; pos = tmpPtr;
+            tmpPtr2 = strstr(strBuffer,"\xEF\xBB\xBF");
+            if (tmpPtr2 != NULL){tmpPtr = tmpPtr2 + 3; if(debug){print_stderr("DEBUG: skipping UTF8 BOM\n");}}
+            //if (strstr (strBuffer,"\xEF\xBB\xBF") != NULL){tmpPtr += 3;} //remove utf8 bom, overkill security?
+
             while (*tmpPtr != '\0') { //read all chars, copy if not whitespace
                 if (tmpPtr - pos > 0) {if(*tmpPtr=='/' && *(tmpPtr-1)=='/'){tmpPtr1--; break;}} //break if // comment
                 if(!isspace(*tmpPtr)) {*tmpPtr1++ = *tmpPtr++; //normal char

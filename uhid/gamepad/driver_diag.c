@@ -381,6 +381,13 @@ int program_diag_mode(){ //main diag function
     ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); int tty_last_width = ws.ws_col, tty_last_height = ws.ws_row, tty_start_line = 2; //tty size
     fprintf(stdout, "\e[?25l\e[2J"); //hide cursor, reset tty
 
+    if (diag_postmessagetest){
+        term_splash_post_message(tty_last_width, tty_last_height); //display first run post message
+        ioctl(STDOUT_FILENO, TCFLSH, 2); //flush stdout
+        fprintf(stdout, "\e[0;0H\e[2J\e[?25h"); //reset tty, show cursor
+        return 0;
+    }
+
     int_constrain(&term_screen_current, 0, ((sizeof term_screen_funct_ptr)/sizeof (void*)) - 1); //avoid screen index overflow
 
     if (debug){fprintf(stdout, "\e[1;1H\e[100mtty:%dx%d, screen:%d\e[0m", tty_last_width, tty_last_height, term_screen_current);} //print tty size, 640x480 is 80cols by 30rows
@@ -1205,6 +1212,46 @@ void term_splash_save(int tty_last_width, int tty_last_height){ //save new confi
 }
 
 
+void term_splash_post_message(int tty_last_width, int tty_last_height){ //display first run post message
+    char message_path[strlen(program_path) + strlen(diag_post_init_message_filename) + 2]; //full path to message path
+    sprintf(message_path, "%s/%s", program_path, diag_post_init_message_filename);
+
+    struct stat file_stat; bool read_failed = false;
+    if (stat(message_path, &file_stat) == 0 && S_ISREG(file_stat.st_mode) && file_stat.st_size > 0){ //"valid" post init file
+        FILE *filehandle = fopen(message_path, "r");
+        if (filehandle != NULL){
+            fprintf(stdout, "\e[0;0H\e[2J\n"); int tty_line = 2; //reset tty
+            char strBuffer [4096], strTmpBuffer[4096]; //string buffer
+            while (fgets(strBuffer, 4095, filehandle) != NULL){ //line loop
+                char *tmpPtr = strBuffer, *tmpPtr1 = strTmpBuffer;
+
+                char *tmpPtr2 = strstr(strBuffer, "\xEF\xBB\xBF");
+                if (tmpPtr2 != NULL){tmpPtr = tmpPtr2 + 3;} //skip possible utf8 bom
+                
+                while (*tmpPtr != '\0'){
+                    if (*tmpPtr == '\\'){ //parse escape "char"
+                        if (*(tmpPtr+1) == 'e'){*tmpPtr1++ = '\e'; tmpPtr += 2; // \e
+                        } else if ((tmpPtr2 = strstr(tmpPtr, "033")) != NULL && tmpPtr2==tmpPtr+1){*tmpPtr1++ = '\e'; tmpPtr += 4; // \033
+                        } else {*tmpPtr1++ = *tmpPtr++;}
+                    } else {*tmpPtr1++ = *tmpPtr++;}
+                }
+                *tmpPtr1='\0'; strcpy(strBuffer, strTmpBuffer); //copy cleaned line
+                fprintf(stdout, "\e[%d;%dH\e[%dm%s\e[0m\n", tty_line++, (tty_last_width - strcpy_noescape(NULL, strBuffer, 20)) / 2, term_esc_col_normal, strBuffer);
+            }
+            fclose(filehandle);
+        } else {read_failed = true;}
+    } else {read_failed = true;}
+
+    if (diag_postmessagetest && read_failed){fprintf(stdout, "\e[0;0HFailed to read post message file '%s' (errno:%d, %s)\n", message_path, errno, strerror(errno));}
+
+    if (!read_failed || diag_postmessagetest){
+        fprintf(stdout, "\e[%d;%dH%s\e[0;0H\n", tty_last_height-2, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[3], 20)) / 2, term_hint_nav_str[3]); //press key to continu
+        usleep(1000000/2); //wait half a sec
+        term_user_input(&term_input, true, &term_input.enter, NULL); //wait for user input
+    }
+}
+
+
 #ifdef ALLOW_MCU_SEC_I2C
     void term_screen_advanced(int tty_line, int tty_last_width, int tty_last_height){
         char buffer[buffer_size];
@@ -1688,6 +1735,9 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
                 if (term_input.escape){term_screen_update = true; goto funct_end; //go back
                 } else {term_splash_save(tty_last_width, tty_last_height);} //display save splash
             } else if (skip_requested){vars_cfg_reload();} //reload config if skip
+
+            term_splash_post_message(tty_last_width, tty_last_height); //post message
+
             if (first_run_goto_adc_screen){term_screen_current = SCREEN_ADC; goto funct_end;} else {kill_requested = true;} //go to adc screen or close
         }
 

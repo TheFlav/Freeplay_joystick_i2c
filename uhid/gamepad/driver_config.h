@@ -16,6 +16,7 @@
 //setup/diagnostic specific
 //#define diag_program_filename "uhid-i2c-gamepad-diag" //has to match actual setup/diagnostic program name, used to start diag if config missing to setup ADCs
 //#define diag_first_run_command "-init" //argument used to set setup/diagnostic program into 'first run' mode to setup ADCs
+#define diag_post_init_message_filename "post_init_message.txt" //message to display before setup/diagnostic program into 'first run' mode closes, invalid filename or missing file will skip this step
 #define diag_input_mcu_read_interval 0.15 //interval to process MCU digital inputs for menu navigation, may have to be finetuned as overshot happen very quickly
 
 //driver default settings/values
