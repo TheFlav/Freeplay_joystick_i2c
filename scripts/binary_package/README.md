@@ -17,7 +17,7 @@ In "Raspberry Pi Imager"
 	- In the boot drive, edit the firstrun.sh file with a text editor.
 		- In firstrun.sh, you should find a line that says something like "rm -f /boot/firstrun.sh" near the end of the file.  
 		- Add a new line BEFORE this line that says.
-		- /boot/fpjoy/fpjoy_firstrun.sh
+		  /boot/fpjoy/fpjoy_firstrun.sh
 		- Save the changed file.
 	- Eject the boot drive (SD card).
 	- Pop the SD card into your Freeplay.
