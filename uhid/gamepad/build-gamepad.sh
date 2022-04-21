@@ -6,10 +6,10 @@ rm uhid-i2c-gamepad-diag
 #gcc -march=armv6 -mfpu=vfp -mfloat-abi=hard -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c
 
 #compile with wiringPi IRQ
-gcc -march=armv6 -mfpu=vfp -mfloat-abi=hard -DUSE_POLL_IRQ_PIN -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c -lwiringPi
+gcc -march=armv6 -mfpu=vfp -mfloat-abi=hard -DALLOW_MCU_SEC_I2C -DUSE_POLL_IRQ_PIN -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -l:libi2c.a -lwiringPi
 
 #compile diagnostic program
-gcc -march=armv6 -mfpu=vfp -mfloat-abi=hard -DDIAG_PROGRAM -o uhid-i2c-gamepad-diag nns_config.c driver_diag.c uhid-i2c-gamepad.c -li2c
+gcc -march=armv6 -mfpu=vfp -mfloat-abi=hard -DALLOW_MCU_SEC_I2C -DDIAG_PROGRAM -o uhid-i2c-gamepad-diag nns_config.c driver_diag.c uhid-i2c-gamepad.c -l:libi2c.a
 
 #preprocessor variables
 # ALLOW_MCU_SEC_I2C : MCU secondary features, on-the-fly I2C address update, backlight control, ...

@@ -26,3 +26,6 @@ cp $SOURCE_DIR/../uhid/gamepad/uhid-i2c-gamepad $CONTENTS_DIR
 cp $SOURCE_DIR/../uhid/gamepad/uhid-i2c-gamepad-diag $CONTENTS_DIR
 cp $SOURCE_DIR/../uhid/gamepad/post_init_message.txt $CONTENTS_DIR
 cp $SOURCE_DIR/../uhid/gamepad/README.md $CONTENTS_DIR
+
+cd $BUILD_DIR/..
+zip -r fpjoy_binary_package_$(date +"%Y-%m-%d-%H-%M-%S").zip fpjoy
