@@ -1,16 +1,15 @@
 ## To install with RetroPie on a new SD card
 Start "Raspberry Pi Imager"
 In "Raspberry Pi Imager"
-	- Select the RetroPie SD img.gz file
-	- Select your SD card
-	- Click the GEAR icon to select settings
-		- Check the "Enable SSH" box and choose "Use password authentication" (unless you prefer to do some key auth)
-		- Check the "Set locale settings" box and choose your Time Zone and Keyboard Layout
-		- Uncheck "Eject media when finished"
-		- It may force you to check "Set username and password" so use "pi" and "raspberry" which are the defaults for RetroPie
-		- Click "SAVE" at the bottom
-	- Click the "WRITE" button
-
+- Select the RetroPie SD img.gz file
+- Select your SD card
+- Click the GEAR icon to select settings
+	- Check the "Enable SSH" box and choose "Use password authentication" (unless you prefer to do some key auth)
+	- Check the "Set locale settings" box and choose your Time Zone and Keyboard Layout
+	- Uncheck "Eject media when finished"
+	- It may force you to check "Set username and password" so use "pi" and "raspberry" which are the defaults for RetroPie
+	- Click "SAVE" at the bottom
+- Click the "WRITE" button
 	- When it's done writing, you will want to open the "boot" drive on your computer which is the /boot partition of the newly created SD card.
 	- In this "boot" drive, open the config.txt file and add the "Freeplay Edits" to the end of the file, and save the changes.
 		- If you are using a shell intended for a GBA, then it's recommended to delete the # from the overscan lines below.  This will allow you to use a GBA glass/plastic lens with a smaller viewable area then the full LCD.  You can tweak these lines to your liking.
