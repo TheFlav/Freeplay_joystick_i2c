@@ -1,27 +1,27 @@
 ## To install with RetroPie on a new SD card
 Start "Raspberry Pi Imager"
 In "Raspberry Pi Imager"
-	Select the RetroPie SD img.gz file
-	Select your SD card
-	Click the GEAR icon to select settings
-		Check the "Enable SSH" box and choose "Use password authentication" (unless you prefer to do some key auth)
-		Check the "Set locale settings" box and choose your Time Zone and Keyboard Layout
-		Uncheck "Eject media when finished"
-		It may force you to check "Set username and password" so use "pi" and "raspberry" which are the defaults for RetroPie
-		Click "SAVE" at the bottom
-	Click the "WRITE" button
+	- Select the RetroPie SD img.gz file
+	- Select your SD card
+	- Click the GEAR icon to select settings
+		- Check the "Enable SSH" box and choose "Use password authentication" (unless you prefer to do some key auth)
+		- Check the "Set locale settings" box and choose your Time Zone and Keyboard Layout
+		- Uncheck "Eject media when finished"
+		- It may force you to check "Set username and password" so use "pi" and "raspberry" which are the defaults for RetroPie
+		- Click "SAVE" at the bottom
+	- Click the "WRITE" button
 
-	When it's done writing, you will want to open the "boot" drive on your computer which is the /boot partition of the newly created SD card.
-	In this "boot" drive, open the config.txt file and add the "Freeplay Edits" to the end of the file, and save the changes.
-	Also in the boot drive, copy in the fpjoy_whatever.zip file and unzip it.  It should create a fpjoy directory in the boot drive.
-	In the boot drive, edit the firstrun.sh file with a text editor.
-		In firstrun.sh, you should find a line that says something like "rm -f /boot/firstrun.sh" near the end of the file.  
-		Add a new line BEFORE this line that says.
-		/boot/fpjoy/fpjoy_firstrun.sh
-		Save the changed file.
-	Eject the boot drive (SD card).
-	Pop the SD card into your Freeplay.
-	Boot it up!
+	- When it's done writing, you will want to open the "boot" drive on your computer which is the /boot partition of the newly created SD card.
+	- In this "boot" drive, open the config.txt file and add the "Freeplay Edits" to the end of the file, and save the changes.
+	- Also in the boot drive, copy in the fpjoy_whatever.zip file and unzip it.  It should create a fpjoy directory in the boot drive.
+	- In the boot drive, edit the firstrun.sh file with a text editor.
+		- In firstrun.sh, you should find a line that says something like "rm -f /boot/firstrun.sh" near the end of the file.  
+		- Add a new line BEFORE this line that says.
+		- /boot/fpjoy/fpjoy_firstrun.sh
+		- Save the changed file.
+	- Eject the boot drive (SD card).
+	- Pop the SD card into your Freeplay.
+	- Boot it up!
 
 
 ```
