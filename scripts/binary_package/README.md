@@ -33,14 +33,18 @@ In "Raspberry Pi Imager"
 		- Unzip the fpjoy_binary_package.zip file (double-click on it).
 		- This should create a fpjoy directory in the root of the 'boot' drive.
 		- Open the firstrun.sh file with a text editor.
-			- In firstrun.sh, near the end of the file, you should find a line that says something like ```rm -f /boot/firstrun.sh```
-			- Add a new line **BEFORE** this line that says. ```/boot/fpjoy/fpjoy_firstrun.sh```
+			- In firstrun.sh, near the end of the file, you should find a line that says something like 
+				```
+				rm -f /boot/firstrun.sh
+				```
+			- Add a new line **BEFORE** this line that says.
+				```
+				/boot/fpjoy/fpjoy_firstrun.sh
+				```
 				- You should now have
 				```
-				...
 				/boot/fpjoy/fpjoy_firstrun.sh
 				rm -f /boot/firstrun.sh
-				...
 				```
 			- Save the edited firstrun.sh file and close it.
 	- Eject the boot drive (SD card).
