@@ -125,5 +125,5 @@ audio_pwm_mode=2
 
 
 ## To install in an existing system
-Run ./install_binary_package.sh to install this Freeplay i2c Joystick binary package
+SSH into the system.  Download the latest binary package from https://github.com/TheFlav/Freeplay_joystick_i2c/releases.  Unzip it and run ./fpjoy/install_binary_package.sh to install this Freeplay i2c Joystick binary package
 
