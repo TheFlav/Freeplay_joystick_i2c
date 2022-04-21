@@ -11,10 +11,10 @@ In "Raspberry Pi Imager"
 - Click the GEAR icon to select settings
 	- IMPORTANT
 		- Check the "Set locale settings" box and choose your Time Zone and Keyboard Layout
+		- Check "Set username and password" and use "pi" as the username (without quotes) and the password you prefer.  ("raspberry" is the default password for RetroPie)
 		- Uncheck "Eject media when finished"
 	- RECOMMENDED
 		- Check the "Enable SSH" box and choose "Use password authentication" (unless you prefer to do some key auth)
-		- Check "Set username and password" and use "pi" and the password you prefer.  ("raspberry" is the default password for RetroPie)
 		- Check "Set hostname" and make a hostname that you prefer (if you don't want the default of "retropie")
 	- Click "SAVE" at the bottom
 	![plot](./raspi_imager.jpg)
