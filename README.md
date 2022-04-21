@@ -1,6 +1,9 @@
 # Freeplay_joystick_i2c
         Freeplay i2c joystick firmware, kernel-space driver, and user-space driver        
 
+# Installation into a Freeplay Zero (built after 2022)
+        See https://github.com/TheFlav/Freeplay_joystick_i2c/blob/main/scripts/binary_package/README.md
+
 ## Arduino code
         ./arduino/Freeplay_joystick_i2c_megatinycore/          Arduino sketch for use with megaTinyCore (attiny427, attiny817, attiny1627, etc.)
 
