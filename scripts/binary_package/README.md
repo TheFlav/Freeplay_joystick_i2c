@@ -6,35 +6,43 @@ Start "Raspberry Pi Imager" (download from https://www.raspberrypi.com/software/
 In "Raspberry Pi Imager"
 
 - Select "CHOOSE OS"
-	- RECOMMENDED
+	- **RECOMMENDED** (using the built-in RetroPie from Raspberry Pi Imager)
 		- Under "Emulation and game OS" select RetroPie and choose the one suitable for your Pi
-	- OPTIONAL
+	- OPTIONAL (using a RetroPie image that you download elsewhere)
 		- Select "Use custom" at the bottom of the list.
-		- Select the RetroPie SD img.gz file (download from https://retropie.org.uk/download/)
+		- Select the RetroPie SD image file (recomended to download from https://retropie.org.uk/download/)
 - Select your SD card
 - Click the GEAR icon to select settings
-	- IMPORTANT
+	- **IMPORTANT**
 		- Check the "Set locale settings" box and choose your Time Zone and Keyboard Layout
 		- Check "Set username and password" and use "pi" as the username (without quotes) and the password you prefer.  ("raspberry" is the default password for RetroPie)
 		- Uncheck "Eject media when finished"
-	- RECOMMENDED
-		- Check the "Enable SSH" box and choose "Use password authentication" (unless you prefer to do some key auth)
+	- RECOMMENDED/OPTIONAL
 		- Check "Set hostname" and make a hostname that you prefer (if you don't want the default of "retropie")
+		- Check the "Enable SSH" box and choose "Use password authentication" (unless you prefer to do some key auth)
 	- Click "SAVE" at the bottom
 	![plot](./raspi_imager.jpg) 
 
 - Click the "WRITE" button
-	- When it's done writing, you will want to open the "boot" drive on your computer which is the /boot partition of the newly created SD card.
-	- In this "boot" drive, open the config.txt file and add the "Freeplay Edits" to the end of the file, and save the changes.
-		- If you are using a shell intended for a GBA, then it's recommended to delete the # from the overscan lines below.  This will allow you to use a GBA glass/plastic lens with a smaller viewable area then the full LCD.  You can tweak these lines to your liking.
-	- Copy the the fpjoy_binary_package.zip file (downloaded from https://github.com/TheFlav/Freeplay_joystick_i2c/releases) into the boot drive.
-	- Unzip the fpjoy_binary_package.zip file (double-click on it).
+- When it's done writing, you will want to open the "boot" drive on your computer which is the /boot partition of the newly created SD card.  If you don't see this drive, make sure that Raspberry Pi Imager is done writing.  If it's done writing, you may need to eject the SD card and re-insert it to get the "boot" drive to show up on your machine.
+	- In this "boot" drive you will edit 2 files and add some files.
+		- Open the config.txt file and copy/paste the "Freeplay Edits" to the end of the file
+			- If you are using a plastic shell intended for a GBA, then it's recommended to delete the # from the overscan lines that you just pasted in.  [Note that there are also overscan lines that were already in the file.]  This will allow you to use a GBA glass/plastic lens with a smaller viewable area then the full LCD.  You can tweak these lines to your liking.
+		- Save the changes and close the config.txt file.
+		- Copy the the fpjoy_binary_package.zip file (downloaded from https://github.com/TheFlav/Freeplay_joystick_i2c/releases) into the boot drive.
+		- Unzip the fpjoy_binary_package.zip file (double-click on it).
 		- This should create a fpjoy directory in the root of the 'boot' drive.
-	- In the boot drive, edit the firstrun.sh file with a text editor.
-		- In firstrun.sh, you should find a line that says something like "rm -f /boot/firstrun.sh" near the end of the file.  
-		- Add a new line BEFORE this line that says.
-```		  /boot/fpjoy/fpjoy_firstrun.sh```
-		- Save the changed file.
+		- Open the firstrun.sh file with a text editor.
+			- In firstrun.sh, near the end of the file, you should find a line that says something like ```rm -f /boot/firstrun.sh```
+			- Add a new line **BEFORE** this line that says. ```/boot/fpjoy/fpjoy_firstrun.sh```
+				- You should now have
+				```
+				...
+				/boot/fpjoy/fpjoy_firstrun.sh
+				rm -f /boot/firstrun.sh
+				...
+				```
+			- Save the edited firstrun.sh file and close it.
 	- Eject the boot drive (SD card).
 	- Pop the SD card into your Freeplay.
 	- Boot it up!
