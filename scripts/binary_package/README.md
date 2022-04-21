@@ -45,6 +45,10 @@ dpi_mode=87
 dpi_output_format=0x6f006
 #dpi_output_format=0x6fc06 #disable HSYNC and VSYNC
 dpi_timings=640 0 20 10 10 480 0 10 5 5 0 0 0 60 0 60000000 1
+#overscan_left=32
+#overscan_right=32
+#overscan_top=15
+#overscan_bottom=84
 
 [edid=*]
 #gpio=0-9,12-13,16-17,20-25=ip
