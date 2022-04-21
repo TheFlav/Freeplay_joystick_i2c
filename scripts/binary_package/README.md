@@ -5,8 +5,12 @@ Start "Raspberry Pi Imager" (download from https://www.raspberrypi.com/software/
 
 In "Raspberry Pi Imager"
 
-- Select "CHOOSE OS" and select "Use custom" at the bottom of the list.
-- Select the RetroPie SD img.gz file (download from https://retropie.org.uk/download/)
+- Select "CHOOSE OS"
+	- RECOMMENDED
+		- Under "Emulation and game OS" select RetroPie and choose the one suitable for your Pi
+	- OPTIONAL
+		- Select "Use custom" at the bottom of the list.
+		- Select the RetroPie SD img.gz file (download from https://retropie.org.uk/download/)
 - Select your SD card
 - Click the GEAR icon to select settings
 	- IMPORTANT
