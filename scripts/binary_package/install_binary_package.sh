@@ -20,3 +20,6 @@ mkdir -p $DESTDIR/scripts
 cp $CONTENTSDIR/bootup.sh $DESTDIR/scripts
 $CONTENTSDIR/install_to_retropie.sh
 $CONTENTSDIR/setup_linux.sh
+
+chown pi:pi /home/pi/Freeplay/
+chown -R pi:pi $DESTDIR
