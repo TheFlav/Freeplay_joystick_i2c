@@ -28,7 +28,6 @@ static int folder_create (char* /*path*/, int /*rights*/, int /*uid*/, int /*gid
 
 static void program_close (void); //regroup all close functs
 static void program_get_path (char** /*args*/, char* /*path*/, char* /*program*/); //get current program path
-static int program_instances_count(char* /*path*/, char* /*program*/); //scan /proc/ to check if program is already running, return number of instances found
 static void program_usage(void); //display help
 static void tty_signal_handler (int /*sig*/); //handle signal func
 void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
@@ -66,6 +65,10 @@ bool io_fd_valid(int /*fd*/); //check if a file descriptor is valid
     #define diag_mode true
 #endif
 
+#ifndef MULTI_INSTANCES
+    static int program_instances_count(char* /*path*/, char* /*program*/); //scan /proc/ to check if program is already running, return number of instances found
+#endif
+
 //debug
 bool debug = def_debug; //enable debug output
 bool debug_adv = def_debug_adv; //enable advanced debug output, benchmark
@@ -89,6 +92,9 @@ bool driver_lock = false; //lock driver if shm_path/status set to 2, stop i2c po
 int uhid_fd = -1;
 int mcu_input_map_size = sizeof(mcu_input_map)/sizeof(mcu_input_map[0]);
 uint32_t mcu_input_digital_prev = 0xFFFFFFFF; //last digital inputs
+int uhid_device_id = def_uhid_device_id; //number added after reported name, mainly used if running multiple drivers
+int hid_vendor = def_hid_vendor; //HID vendor ID
+int hid_product = def_hid_product; //HID product ID
 
 struct gamepad_report_t {
     int8_t hat0;
@@ -171,6 +177,7 @@ int poll_stress_loop = 0, i2c_adc_poll_loop = 0;
 //SHM related
 FILE *logs_fh;
 bool shm_enable = false; //set during runtime
+char shm_fullpath[PATH_MAX] = {'\0'}; //path to shm incl uhid id
 char* shm_status_path_ptr; //pointer to shm status path var
 #ifndef DIAG_PROGRAM
     int shm_status = 1; //shm_path/status content
@@ -239,6 +246,10 @@ const char adc_flat_desc[] = "Center deadzone (in percent).";
 const char adc_flat_outside_desc[] = "Outside deadzone (in percent).";
 const char adc_reversed_desc[] = "Reverse axis output (0:disable, 1:enable).";
 const char adc_autocenter_desc[] = "Autodetect physical center (0:disable, 1:enable). Important: if enable, leave device alone during boot process to avoid messing detection.";
+
+const char uhid_device_id_desc[] = "Number added after driver name, mainly used if running multiple drivers.";
+const char hid_vendor_desc[] = "HID reported vendor ID.";
+const char hid_product_desc[] = "HID reported product ID.";
 
 cfg_vars_t cfg_vars[] = {
     {"debug", debug_desc, 4, &debug},
@@ -314,6 +325,10 @@ cfg_vars_t cfg_vars[] = {
     {"adc3_flat_outside", adc_flat_outside_desc, 0, &adc_params[3].flat_out},
     {"adc3_reversed", adc_reversed_desc, 4,  &adc_params[3].reversed},
     {"adc3_autocenter", adc_autocenter_desc, 4, &adc_params[3].autocenter},
+
+    {"\nuhid_device_id", uhid_device_id_desc, 0, &uhid_device_id},
+    {"hid_vendor", hid_vendor_desc, 7, &hid_vendor},
+    {"hid_product", hid_product_desc, 7, &hid_product},
 };
 
 const unsigned int cfg_vars_arr_size = sizeof(cfg_vars) / sizeof(cfg_vars[0]); //config array size

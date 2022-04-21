@@ -37,14 +37,14 @@ Some parts of the driver are in place as preimplement to ease future additions a
   <br>
 
   - ``USE_SHM_REGISTERS``
-    * Preimplement
+    * Preimplement.
     * Allow to interface I2C device register(s) to given file(s).
     * Require programming of specific ADC ICs interfacing.  
     * Please refer to [driver_main.h](driver_main.h) (shm_vars[] var) for structure.  
   <br>
 
   - ``ALLOW_EXT_ADC``
-    * Preimplement
+    * Preimplement.
     * Enable usage of external (relative to MCU) ADCs.
     * Require programming of specific ADC ICs interfacing
     * Please refer to [driver_adc_external.h](driver_adc_external.h) for more informations.  
@@ -52,7 +52,12 @@ Some parts of the driver are in place as preimplement to ease future additions a
 
   - ``DIAG_PROGRAM``
     * Compile Setup/Diagnostic part of the driver.
-    * ``USE_POLL_IRQ_PIN`` and ``USE_SHM_REGISTERS`` variables will be discarded as not used in this part.
+    * ``USE_POLL_IRQ_PIN`` and ``USE_SHM_REGISTERS`` variables will be discarded as not used in this part.  
+  <br>
+
+  - ``MULTI_INSTANCES``
+    * Allow driver and setup/diag program to run more than once at a time.
+    * New instance (once first already during) needs to use a different configuration file (no check for this, UHID may fail), please refer to argument ``-config`` to do so.
   <br><br>
 
 ### Examples:
@@ -88,6 +93,10 @@ Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. pr
 ### Arguments:
   - Common :
     * ``-h`` or ``-help`` : Show program usage.  
+
+    * ``-config`` : Set path (relative or absolute) to configuration file (including filename).  
+    Needs to be the very first argument set.  
+    Folder must aleady exist.  
     <br>
     
   - Driver specific :  
@@ -161,7 +170,7 @@ Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. pr
   Needs some investigations if it happen.  
     
   * ``-7`` : Program is already running.  
-  By design, driver or setup/diag program are limited to one instance per program at once.  
+  Driver or setup/diag program are limited to one instance per program at once if not compiled with preprocessor variable ``MULTI_INSTANCES``.  
 <br>
 
 ### Specific behaves:
@@ -172,7 +181,12 @@ Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. pr
 <br>
 - Enter Setup/Diag program first run mode:
   * Run program with configuration file not existing.
-  * Run program with argument ``-init`` set.
+  * Run program with argument ``-init`` set.  
+<br>
+- Needs to running drivers at once with multiple MCUs (to be tested):
+  * Programs to be compiled with preprocessor variable ``MULTI_INSTANCES``.
+  * Each instance to have its own configuration file set with ``-config`` argument.
+  * Run each once to create configuration file, close driver, edit ``uhid_device_id`` variable in config. files to have different driver IDs, this ID will be added after driver name report to EV/JS dev.  
 <br>
 
 ## Repository files

@@ -17,6 +17,7 @@ gcc -DDIAG_PROGRAM -o uhid-i2c-gamepad-diag nns_config.c driver_diag.c uhid-i2c-
 # ALLOW_EXT_ADC : External ADCs.
 # USE_POLL_IRQ_PIN : IRQ pin poll using WiringPi.
 # DIAG_PROGRAM : Compile Setup/Diagnostic part of the driver, IRQ and SHM functions/variables will be discarded.
+# MULTI_INSTANCES : Allow more than one instance of the driver/diag program at the same time.
 
 #testing
 #sudo ./uhid-i2c-gamepad #normal usage

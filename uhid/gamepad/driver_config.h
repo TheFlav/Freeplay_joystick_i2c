@@ -35,11 +35,14 @@
 #define cfg_mcu_addr_name "mcu_address" //MCU main I2C address field name into config file
 #define cfg_mcu_addr_sec_name "mcu_address_sec" //MCU secondary I2C address field name into config file, "ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
 
-#define shm_path "/dev/shm/uhid_i2c_driver/" //SHM path used for temporary storage
+#define shm_path "/dev/shm/uhid_i2c_driver/" //SHM path used for temporary storage, def_uhid_device_id will be added to this path
 #define user_uid 1000 //normal "non-root" user id, 1000 for 'pi' user, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 #define user_gid 1000 //normal "non-root" group id, 1000 for 'pi' group, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
 
 #define uhid_device_name "Freeplay Gamepad" //UHID device reported name
+#define def_uhid_device_id 0 //number added after reported name, mainly used if running multiple drivers
+#define def_hid_vendor 0x15d9 //HID vendor ID
+#define def_hid_product 0x0a37 //HID product ID
 #define uhid_device_path "/dev/uhid" //UHID device path, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING, may be platform specific
 
 #define def_i2c_poll_rate 125 //Driver pollrate in hz, set to 0 to disable limitation.
