@@ -21,7 +21,7 @@ In "Raspberry Pi Imager"
 		- Check the "Enable SSH" box and choose "Use password authentication" (unless you prefer to do some key auth)
 		- Check "Set hostname" and make a hostname that you prefer (if you don't want the default of "retropie")
 	- Click "SAVE" at the bottom
-	![plot](./raspi_imager.jpg)
+	![plot](./raspi_imager.jpg) 
 
 - Click the "WRITE" button
 	- When it's done writing, you will want to open the "boot" drive on your computer which is the /boot partition of the newly created SD card.
