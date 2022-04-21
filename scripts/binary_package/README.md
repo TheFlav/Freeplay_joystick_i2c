@@ -13,6 +13,7 @@ In "Raspberry Pi Imager"
 
 	- When it's done writing, you will want to open the "boot" drive on your computer which is the /boot partition of the newly created SD card.
 	- In this "boot" drive, open the config.txt file and add the "Freeplay Edits" to the end of the file, and save the changes.
+		- If you are using a shell intended for a GBA, then it's recommended to delete the # from the overscan lines below.  This will allow you to use a GBA glass/plastic lens with a smaller viewable area then the full LCD.  You can tweak these lines to your liking.
 	- Also in the boot drive, copy in the fpjoy_whatever.zip file and unzip it.  It should create a fpjoy directory in the boot drive.
 	- In the boot drive, edit the firstrun.sh file with a text editor.
 		- In firstrun.sh, you should find a line that says something like "rm -f /boot/firstrun.sh" near the end of the file.  
