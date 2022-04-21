@@ -136,6 +136,13 @@ Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. pr
     Allow easier detection of analog settings.  
     Warning: does discard already set ADC to joystick mapping, min/max values as well as axis reverse.  
     Program will run in this mode if no configuration file exists.  
+
+    * ``-postmessagetest`` : Display "first run" mode save/skip post message.  
+    Mainly used to check formating.  
+    Default filename is **post_init_message.txt** but can be changed in [driver_config.h](driver_config.h).  
+    Allow usage of ``\e`` and ``\033`` escape code.  
+    File content will be aligned horizontally center.  
+      
 <br>
 
 ### Return codes of driver (not Setup/Diag program):

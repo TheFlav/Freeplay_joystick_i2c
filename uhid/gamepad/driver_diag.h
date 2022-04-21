@@ -89,6 +89,7 @@ void term_screen_firstrun(int /*tty_line*/, int /*tty_last_width*/, int /*tty_la
 void term_screen_debug(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 
 void term_splash_save(int /*tty_last_width*/, int /*tty_last_height*/); //save new configuration file splash
+void term_splash_post_message(int /*tty_last_width*/, int /*tty_last_height*/); //display first run post message
 
 //extern funct
 extern void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
@@ -157,6 +158,8 @@ extern const char dev_webpage[]; //developer webpage
 extern char* js_axis_names[]; //joystick axis names, virtually start at index -1
 extern char config_path[]; //full path to config file
 extern bool diag_first_run; //running in "first run" mode, used to ease ADCs setup
+extern bool diag_postmessagetest; //only output "first run" post message and close
+extern char program_path[]; //full path to this program
 
 //i2c
 bool i2c_safelock = true; //disable ability to change i2c address

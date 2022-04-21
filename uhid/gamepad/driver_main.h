@@ -85,6 +85,7 @@ bool kill_requested = false, already_killed = false; //allow clean close
 double program_start_time = 0.;
 bool diag_mode_init = false; //used mainly to disable print_stderr and print_stdout output in diag mode
 bool diag_first_run = false; //running in "first run" mode, used to ease ADCs setup
+bool diag_postmessagetest = false; //only output "first run" post message and close
 bool allow_diag_run = true; //avoid diag loop at driver start
 bool driver_lock = false; //lock driver if shm_path/status set to 2, stop i2c poll and uhid update
 
