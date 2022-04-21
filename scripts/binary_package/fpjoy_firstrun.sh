@@ -12,5 +12,4 @@ SCRIPTDIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 whiptail --infobox "Installing Freeplay i2c Joystick binary package." 20 60
 $SCRIPTDIR/install_binary_package.sh
 whiptail --infobox "Installed Freeplay i2c Joystick binary package." 20 60
-sleep 5
-/usr/lib/raspi-config/init_resize.sh
+sleep 2
