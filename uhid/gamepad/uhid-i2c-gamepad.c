@@ -66,7 +66,12 @@ Notes specific to driver part:
 #elif defined(USE_WIRINGPI)
     #include <wiringPi.h>
 #elif defined(USE_GPIOD)
-    #error "todo"
+    #include <gpiod.h>
+	struct gpiod_chip *gpiod_input_chip;
+	struct gpiod_line *gpiod_input_line;
+	struct gpiod_line_event gpiod_event;
+    int gpiod_fd = -1;
+    char gpiod_consumer_name[128];
 #endif
 
 #include "driver_main.h"
@@ -297,7 +302,7 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
             #ifdef USE_WIRINGPI
                 if(digitalRead(irq_gpio) == HIGH){irq_triggered = false;} //no button pressed
             #elif defined(USE_GPIOD)
-                #error "todo"
+                if (gpiod_fd >= 0 && gpiod_line_event_read_fd(gpiod_fd, &gpiod_event) >= 0 && gpiod_event.event_type != GPIOD_LINE_EVENT_FALLING_EDGE){irq_triggered = false;}
             #endif
         }
         
@@ -372,6 +377,7 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
         update_adc = false;
         for (int i=0; i<4; i++){ //adc loop
             if (adc_params[i].enabled){
+                bool adc_failed = false;
 #ifdef ALLOW_EXT_ADC
                 if (!adc_fd_valid[i]){ //read mcu adc value
 #endif
@@ -381,25 +387,24 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
                     if (tmpPtrShift == 0){tmpMask = 0x0F; tmpShift = 4;} //adc0-2 lsb
                     adc_params[i].raw = ((*(tmpPtr + tmpPtrShift) << 8) | (*(tmpPtr + 2) & tmpMask) << tmpShift) >> (16 - adc_params[i].res); //char to word
 #ifdef ALLOW_EXT_ADC
-                } else if (adc_type_funct_read[adc_type[i]](adc_fd[i], &adc_params[i]) < 0){ //external adc value, read failed
-                    //TODO
-                }
+                } else if (adc_type_funct_read[adc_type[i]](adc_fd[i], &adc_params[i]) < 0){adc_failed = true;} //external adc value, read failed
 #endif
+                if (!adc_failed){
+                    if (adc_firstrun){adc_data_compute(i); adc_params[i].raw_prev = adc_params[i].raw;} //compute adc max value, flat in/out, offset
 
-                if (adc_firstrun){adc_data_compute(i); adc_params[i].raw_prev = adc_params[i].raw;} //compute adc max value, flat in/out, offset
+                    if(adc_params[i].raw < adc_params[i].raw_min){adc_params[i].raw_min = adc_params[i].raw;} //update min value
+                    if(adc_params[i].raw > adc_params[i].raw_max){adc_params[i].raw_max = adc_params[i].raw;} //update max value
 
-                if(adc_params[i].raw < adc_params[i].raw_min){adc_params[i].raw_min = adc_params[i].raw;} //update min value
-                if(adc_params[i].raw > adc_params[i].raw_max){adc_params[i].raw_max = adc_params[i].raw;} //update max value
+                    adc_params[i].value = adc_defuzz(adc_params[i].raw, adc_params[i].raw_prev, adc_params[i].fuzz); adc_params[i].raw_prev = adc_params[i].raw; //defuzz
+                    adc_params[i].value = adc_correct_offset_center(adc_params[i].res_limit, adc_params[i].value, adc_params[i].min, adc_params[i].max, adc_params[i].offset, adc_params[i].flat_in_comp, adc_params[i].flat_out_comp); //re-center adc value, apply flats and extend to adc range
+                    if(adc_params[i].reversed){adc_params[i].value = abs(adc_params[i].res_limit - adc_params[i].value);} //reverse value
 
-                adc_params[i].value = adc_defuzz(adc_params[i].raw, adc_params[i].raw_prev, adc_params[i].fuzz); adc_params[i].raw_prev = adc_params[i].raw; //defuzz
-                adc_params[i].value = adc_correct_offset_center(adc_params[i].res_limit, adc_params[i].value, adc_params[i].min, adc_params[i].max, adc_params[i].offset, adc_params[i].flat_in_comp, adc_params[i].flat_out_comp); //re-center adc value, apply flats and extend to adc range
-                if(adc_params[i].reversed){adc_params[i].value = abs(adc_params[i].res_limit - adc_params[i].value);} //reverse value
+                    adc_params[i].value <<= 16 - adc_params[i].res; //convert to 16bits value for report
+                    if (adc_params[i].value < 1){adc_params[i].value = 1;} else if (adc_params[i].value > 0xFFFF-1){adc_params[i].value = 0xFFFF-1;} //Reicast overflow fix
 
-                adc_params[i].value <<= 16 - adc_params[i].res; //convert to 16bits value for report
-                if (adc_params[i].value < 1){adc_params[i].value = 1;} else if (adc_params[i].value > 0xFFFF-1){adc_params[i].value = 0xFFFF-1;} //Reicast overflow fix
-
-                if(adc_map[i] > -1){ //adc mapped to -1 should be disabled during runtime if not in diagnostic mode
-                    *js_values[adc_map[i]] = (uint16_t)adc_params[i].value; update_adc = true;
+                    if(adc_map[i] > -1){ //adc mapped to -1 should be disabled during runtime if not in diagnostic mode
+                        *js_values[adc_map[i]] = (uint16_t)adc_params[i].value; update_adc = true;
+                    }
                 }
             }
         }
@@ -1126,7 +1131,20 @@ int main(int argc, char** argv){
                     irq_enable = true;
                 }
             #elif defined(USE_GPIOD)
-#error "todo"
+                sprintf(gpiod_consumer_name, "%s %d", uhid_device_name, uhid_device_id);
+                if ((gpiod_input_chip = gpiod_chip_open_lookup("0")) == NULL){
+                    print_stderr("gpiod_chip_open_lookup failed\n");
+                } else if ((gpiod_input_line = gpiod_chip_get_line(gpiod_input_chip, irq_gpio)) == NULL){
+                    print_stderr("gpiod_chip_get_line failed\n");
+                } else if (gpiod_line_request_both_edges_events(gpiod_input_line, gpiod_consumer_name) < 0){
+                    print_stderr("gpiod_line_request_both_edges_events failed. chip:%s(%s), consumer:%s\n", gpiod_chip_name(gpiod_input_chip), gpiod_chip_label(gpiod_input_chip), gpiod_consumer_name);
+                } else if ((gpiod_fd = gpiod_line_event_get_fd(gpiod_input_line)) < 0){
+                    print_stderr("gpiod_line_event_get_fd failed. errno:%d\n", -gpiod_fd);
+                } else {
+                    fcntl(gpiod_fd, F_SETFL, fcntl(gpiod_fd, F_GETFL, 0) | O_NONBLOCK); //set gpiod fd to non clocking
+                    print_stderr("using libGPIOd to poll GPIO%d, chip:%s(%s)\n", irq_gpio, gpiod_chip_name(gpiod_input_chip), gpiod_chip_label(gpiod_input_chip));
+                    irq_enable = true;
+                }
             #endif
         } else {irq_enable = false;}
     #endif
@@ -1251,6 +1269,10 @@ int main(int argc, char** argv){
                 }
             }
         }
+
+        #ifdef USE_GPIOD
+            if (irq_enable){gpiod_line_release(gpiod_input_line);}
+        #endif
     #else //diag program
         struct stat status_stat = {0}; char status_buffer[3];
 

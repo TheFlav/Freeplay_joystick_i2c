@@ -5,7 +5,7 @@
 
 #pragma once
 
-const char program_version[] = "0.1e"; //program version
+const char program_version[] = "0.1f"; //program version
 const char dev_webpage[] = "https://github.com/TheFlav/Freeplay_joystick_i2c";
 
 //Prototypes

@@ -198,10 +198,12 @@ Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. pr
   * When this happen, a last report will be pushed to UHID device to set all inputs to unpressed and center analog values, after this no more report will be done until the "lock state" reset.  
   * This reset will happen when Setup/diag program closes.  
 <br>
+
 - Enter Setup/Diag program first run mode:
-  * Run program with configuration file not existing.
+  * Run program with configuration file not existing.  
   * Run program with argument ``-init`` set.  
 <br>
+
 - Needs to running drivers at once with multiple MCUs (to be tested):
   * Programs to be compiled with preprocessor variable ``MULTI_INSTANCES``.
   * Each instance to have its own configuration file set with ``-config`` argument.
