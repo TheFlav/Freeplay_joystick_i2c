@@ -1141,7 +1141,7 @@ int main(int argc, char** argv){
                 } else if ((gpiod_fd = gpiod_line_event_get_fd(gpiod_input_line)) < 0){
                     print_stderr("gpiod_line_event_get_fd failed. errno:%d\n", -gpiod_fd);
                 } else {
-                    fcntl(gpiod_fd, F_SETFL, fcntl(gpiod_fd, F_GETFL, 0) | O_NONBLOCK); //set gpiod fd to non clocking
+                    fcntl(gpiod_fd, F_SETFL, fcntl(gpiod_fd, F_GETFL, 0) | O_NONBLOCK); //set gpiod fd to non blocking
                     print_stderr("using libGPIOd to poll GPIO%d, chip:%s(%s)\n", irq_gpio, gpiod_chip_name(gpiod_input_chip), gpiod_chip_label(gpiod_input_chip));
                     irq_enable = true;
                 }
