@@ -19,7 +19,7 @@ This page does mainly reference 2 programs:
 ### Required libraries
   - ``libi2c-dev``
   - ``wiringpi`` : please refer to ``USE_WIRINGPI``
-  - ``libgpiod`` : please refer to ``USE_GPIOD``  
+  - ``libgpiod-dev`` : please refer to ``USE_GPIOD``  
 <br>
 
 ### Preprocessor variable (gcc -D) to enable features:
@@ -34,7 +34,7 @@ Note about IRQ related variables : Only one kind will be allowed at once.
 
   - ``USE_GPIOD``
     * Allow to poll MCU IRQ pin using libGPIOd library.  
-    * ``-lgpiod`` needs to be added to compilation command line.  
+    * ``-lgpiod`` (``-l:libgpiod.a`` for static) needs to be added to compilation command line.  
   <br>
 
   - ``ALLOW_MCU_SEC_I2C``
@@ -69,7 +69,8 @@ Note about IRQ related variables : Only one kind will be allowed at once.
 
 ### Examples:
 Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. program to ``uhid-i2c-gamepad-diag``.  
-  
+Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.  
+
   - Driver : Basic with limited features (no IRQ support)  
     ```
     gcc -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c
