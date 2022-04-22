@@ -26,7 +26,8 @@
 
 //#define USE_WIRINGPI_IRQ //use wiringPi for IRQ
 //#define USE_PIGPIO_IRQ //or USE_PIGPIO
-#define USE_POLL_IRQ_PIN //use wiringPi for IRQ
+#define USE_GPIOD
+//#define USE_POLL_IRQ_PIN //use wiringPi for IRQ
 
 //or comment out all 3 of the above to poll i2c without an IRQ pin
 
@@ -41,6 +42,9 @@
  #define nINT_GPIO 10   //pigpio won't allow >31
 #elif defined(USE_POLL_IRQ_PIN)
  #include <wiringPi.h>
+ #define nINT_GPIO 40
+#elif defined(USE_GPIOD)
+ #include <gpiod.h>
  #define nINT_GPIO 40
 #endif
 
@@ -422,7 +426,7 @@ void gpio_callback(int gpio, int level, uint32_t tick) {
 }
 #endif
 
-#if defined(USE_WIRINGPI_IRQ) || defined(USE_POLL_IRQ_PIN)
+#if defined(USE_WIRINGPI_IRQ) || defined(USE_POLL_IRQ_PIN) || defined(USE_GPIOD)
 void attiny_irq_handler(void)
 {
     i2c_poll_joystick();
@@ -495,6 +499,46 @@ int main(int argc, char **argv)
     }
 #endif
     
+#if defined(USE_GPIOD)
+	printf("Using gpiod events on GPIO %d\n", nINT_GPIO);
+	struct gpiod_chip *input_chip;
+	struct gpiod_line *input_line;
+	struct gpiod_line_event event;
+	//char *chipname = "gpiochip0";
+
+	input_chip = gpiod_chip_open_lookup("0");
+	if (input_chip == NULL) {
+		printf("error: gpiod_chip_open_lookup(0)\n");
+		exit(EXIT_FAILURE);
+	}
+
+	input_line = gpiod_chip_get_line(input_chip, nINT_GPIO);
+	if (input_line == NULL) {
+		printf("error: gpiod_chip_get_line\n");
+		exit(EXIT_FAILURE);
+	}
+
+	if (gpiod_line_request_both_edges_events(input_line, argv[0]) < 0) {
+		printf("error: gpiod_line_request_both_edges_events(input_line, %s)\n", argv[0]);
+		exit(EXIT_FAILURE);
+	}
+
+
+        printf("Stargint gpiod_line_event_wait loop\n");
+
+	while(1)
+	{
+		gpiod_line_event_wait(input_line, NULL);
+		if (gpiod_line_event_read(input_line, &event) == 0) {
+			if (event.event_type == GPIOD_LINE_EVENT_FALLING_EDGE) {
+				attiny_irq_handler();
+			}
+		}
+	}
+	gpiod_line_release(input_line);
+
+#endif
+
 #ifdef USE_PIGPIO_IRQ
  {
         int ver;
