@@ -1711,14 +1711,14 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
                         tmp_line++;
 
                         if (adc_index != -1){
-                            sprintf(buffer, "%6d", axis_min[adc_index]); //min
-                            sprintf(buffer1, "%6d", axis_max[adc_index]); //max
+                            sprintf(buffer, "%6d", axis_min[axis_loop]); //min
+                            sprintf(buffer1, "%6d", axis_max[axis_loop]); //max
                         } else {
                             strcpy(buffer, "______"); //min
                             strcpy(buffer1, "______"); //max
                         }
                         fprintf(stdout, "\e[%d;%dH\e[%dmMin:\e[4m%s\e[24m Max:\e[4m%s\e[0m", tmp_line, term_left, term_esc_col_normal, buffer, buffer1);
-                        fprintf(stdout, "\e[%d;%dH\e[%dmReversed:\e[4m%s\e[0m", tmp_line++, term_right-10, term_esc_col_normal, axis_reversed[adc_index]?"X":" ");
+                        fprintf(stdout, "\e[%d;%dH\e[%dmReversed:\e[4m%s\e[0m", tmp_line++, term_right-10, term_esc_col_normal, axis_reversed[axis_loop]?"X":" ");
                         tmp_line+=2; axis_loop++;
                     }
                 }

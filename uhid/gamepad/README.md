@@ -18,16 +18,23 @@ This page does mainly reference 2 programs:
 ## Compilation:
 ### Required libraries
   - ``libi2c-dev``
-  - ``wiringpi`` : please refer to ``USE_POLL_IRQ_PIN``  
+  - ``wiringpi`` : please refer to ``USE_WIRINGPI``
+  - ``libgpiod-dev`` : please refer to ``USE_GPIOD``  
 <br>
 
 ### Preprocessor variable (gcc -D) to enable features:
 Some parts of the driver are in place as preimplement to ease future additions and improvements or use outside of FreeplayTech products line.  
+Note about IRQ related variables : Only one kind will be allowed at once.  
 
-  - ``USE_POLL_IRQ_PIN``
+  - ``USE_WIRINGPI``
     * Allow to poll MCU IRQ pin using WiringPi library.  
     * ``-lwiringPi`` needs to be added to compilation command line.  
     * **Note for Pi Zero 2**: You may need to clone and compile for unofficial github repository as official WiringPi ended development, please refer to: https://github.com/PinkFreud/WiringPi  
+  <br>
+
+  - ``USE_GPIOD``
+    * Allow to poll MCU IRQ pin using libGPIOd library.  
+    * ``-lgpiod`` (``-l:libgpiod.a`` for static) needs to be added to compilation command line.  
   <br>
 
   - ``ALLOW_MCU_SEC_I2C``
@@ -52,7 +59,7 @@ Some parts of the driver are in place as preimplement to ease future additions a
 
   - ``DIAG_PROGRAM``
     * Compile Setup/Diagnostic part of the driver.
-    * ``USE_POLL_IRQ_PIN`` and ``USE_SHM_REGISTERS`` variables will be discarded as not used in this part.  
+    * ``USE_WIRINGPI``, ``USE_GPIOD`` and ``USE_SHM_REGISTERS`` variables will be discarded as not used in this part.  
   <br>
 
   - ``MULTI_INSTANCES``
@@ -62,7 +69,8 @@ Some parts of the driver are in place as preimplement to ease future additions a
 
 ### Examples:
 Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. program to ``uhid-i2c-gamepad-diag``.  
-  
+Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.  
+
   - Driver : Basic with limited features (no IRQ support)  
     ```
     gcc -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c
@@ -70,12 +78,17 @@ Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. pr
 
   - Driver : Enable use of WiringPi IRQ  
     ```
-    gcc -DUSE_POLL_IRQ_PIN -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c -lwiringPi
+    gcc -DUSE_WIRINGPI -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c -lwiringPi
+    ```
+
+  - Driver : Enable use of libGPIOd IRQ  
+    ```
+    gcc -DUSE_GPIOD -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c -lgpiod
     ```
 
   - Driver : WiringPi IRQ and MCU features  
     ```
-    gcc -DALLOW_MCU_SEC_I2C -DUSE_POLL_IRQ_PIN -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c -lwiringPi
+    gcc -DALLOW_MCU_SEC_I2C -DUSE_WIRINGPI -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c -lwiringPi
     ```
 
   - Setup/Diag. : Basic with limited features  
@@ -186,10 +199,12 @@ Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. pr
   * When this happen, a last report will be pushed to UHID device to set all inputs to unpressed and center analog values, after this no more report will be done until the "lock state" reset.  
   * This reset will happen when Setup/diag program closes.  
 <br>
+
 - Enter Setup/Diag program first run mode:
-  * Run program with configuration file not existing.
+  * Run program with configuration file not existing.  
   * Run program with argument ``-init`` set.  
 <br>
+
 - Needs to running drivers at once with multiple MCUs (to be tested):
   * Programs to be compiled with preprocessor variable ``MULTI_INSTANCES``.
   * Each instance to have its own configuration file set with ``-config`` argument.

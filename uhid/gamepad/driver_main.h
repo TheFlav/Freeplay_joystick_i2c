@@ -5,7 +5,7 @@
 
 #pragma once
 
-const char program_version[] = "0.1e"; //program version
+const char program_version[] = "0.1f"; //program version
 const char dev_webpage[] = "https://github.com/TheFlav/Freeplay_joystick_i2c";
 
 //Prototypes
@@ -60,7 +60,8 @@ bool io_fd_valid(int /*fd*/); //check if a file descriptor is valid
     #define diag_mode false
 #else
     extern int program_diag_mode(void); //main diag mode function
-    #undef USE_POLL_IRQ_PIN
+    #undef USE_WIRINGPI
+    #undef USE_GPIOD
     #undef USE_SHM_REGISTERS
     #define diag_mode true
 #endif
