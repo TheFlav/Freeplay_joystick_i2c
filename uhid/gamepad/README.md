@@ -18,16 +18,23 @@ This page does mainly reference 2 programs:
 ## Compilation:
 ### Required libraries
   - ``libi2c-dev``
-  - ``wiringpi`` : please refer to ``USE_POLL_IRQ_PIN``  
+  - ``wiringpi`` : please refer to ``USE_WIRINGPI``
+  - ``libgpiod`` : please refer to ``USE_GPIOD``  
 <br>
 
 ### Preprocessor variable (gcc -D) to enable features:
 Some parts of the driver are in place as preimplement to ease future additions and improvements or use outside of FreeplayTech products line.  
+Note about IRQ related variables : Only one kind will be allowed at once.  
 
-  - ``USE_POLL_IRQ_PIN``
+  - ``USE_WIRINGPI``
     * Allow to poll MCU IRQ pin using WiringPi library.  
     * ``-lwiringPi`` needs to be added to compilation command line.  
     * **Note for Pi Zero 2**: You may need to clone and compile for unofficial github repository as official WiringPi ended development, please refer to: https://github.com/PinkFreud/WiringPi  
+  <br>
+
+  - ``USE_GPIOD``
+    * Allow to poll MCU IRQ pin using libGPIOd library.  
+    * ``-lgpiod`` needs to be added to compilation command line.  
   <br>
 
   - ``ALLOW_MCU_SEC_I2C``
@@ -52,7 +59,7 @@ Some parts of the driver are in place as preimplement to ease future additions a
 
   - ``DIAG_PROGRAM``
     * Compile Setup/Diagnostic part of the driver.
-    * ``USE_POLL_IRQ_PIN`` and ``USE_SHM_REGISTERS`` variables will be discarded as not used in this part.  
+    * ``USE_WIRINGPI``, ``USE_GPIOD`` and ``USE_SHM_REGISTERS`` variables will be discarded as not used in this part.  
   <br>
 
   - ``MULTI_INSTANCES``
@@ -70,12 +77,17 @@ Provided commands will compile driver to ``uhid-i2c-gamepad`` and Setup/Diag. pr
 
   - Driver : Enable use of WiringPi IRQ  
     ```
-    gcc -DUSE_POLL_IRQ_PIN -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c -lwiringPi
+    gcc -DUSE_WIRINGPI -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c -lwiringPi
+    ```
+
+  - Driver : Enable use of libGPIOd IRQ  
+    ```
+    gcc -DUSE_GPIOD -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c -lgpiod
     ```
 
   - Driver : WiringPi IRQ and MCU features  
     ```
-    gcc -DALLOW_MCU_SEC_I2C -DUSE_POLL_IRQ_PIN -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c -lwiringPi
+    gcc -DALLOW_MCU_SEC_I2C -DUSE_WIRINGPI -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -li2c -lwiringPi
     ```
 
   - Setup/Diag. : Basic with limited features  

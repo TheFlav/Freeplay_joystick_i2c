@@ -54,13 +54,19 @@ Notes specific to driver part:
     #undef USE_SHM_REGISTERS //can't use shm register "bridge" with MCU secondary feature
 #endif
 #ifdef DIAG_PROGRAM
-    #undef USE_POLL_IRQ_PIN
+    #undef USE_WIRINGPI
+    #undef USE_GPIOD
     #undef USE_SHM_REGISTERS
 #else
     #include "driver_hid_desc.h"
 #endif
-#ifdef USE_POLL_IRQ_PIN
+
+#if defined(USE_WIRINGPI) && defined(USE_GPIOD) //irq
+    #error "Only one kind of IRQ can be enabled at once, please refer to README.md for more informations."
+#elif defined(USE_WIRINGPI)
     #include <wiringPi.h>
+#elif defined(USE_GPIOD)
+    #error "todo"
 #endif
 
 #include "driver_main.h"
@@ -285,14 +291,20 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
     if (!i2c_disabled){
         uint8_t *mcu_registers_ptr = (uint8_t*)&i2c_joystick_registers; //pointer to i2c store
         uint8_t read_limit = input_registers_count;
-        #ifdef USE_POLL_IRQ_PIN
-            if (irq_enable && !(force_update || i2c_poll_rate_disable)){
-                if(digitalRead(irq_gpio) == HIGH){ //no button pressed
-                    mcu_registers_ptr += read_limit; read_limit = 0; //shift register
-                    update_digital = false;
-                }
-            }
-        #endif
+        bool irq_triggered = true;
+
+        if (irq_enable && !(force_update || i2c_poll_rate_disable)){
+            #ifdef USE_WIRINGPI
+                if(digitalRead(irq_gpio) == HIGH){irq_triggered = false;} //no button pressed
+            #elif defined(USE_GPIOD)
+                #error "todo"
+            #endif
+        }
+        
+        if (!irq_triggered){
+            mcu_registers_ptr += read_limit; read_limit = 0; //shift register
+            update_digital = false;
+        }
 
         if ((mcu_adc_read[0] || mcu_adc_read[1]) && (force_update || i2c_adc_poll_loop == i2c_adc_poll || i2c_poll_rate_disable)){update_adc = true; i2c_adc_poll_loop = 0;}
 
@@ -857,7 +869,7 @@ static void program_usage(void){ //display help
         fprintf(stderr, "Dev: %s\n\n", dev_webpage);
         fprintf(stderr, "Since it needs to access/write to system device, program has to run as root.\n\n");
 
-        #if defined(ALLOW_MCU_SEC_I2C) || defined(USE_SHM_REGISTERS) || defined(ALLOW_EXT_ADC) || defined(USE_POLL_IRQ_PIN)
+        #if defined(ALLOW_MCU_SEC_I2C) || defined(USE_SHM_REGISTERS) || defined(ALLOW_EXT_ADC) || defined(USE_WIRINGPI) || defined(USE_GPIOD)
             fprintf(stderr, "Enabled feature(s) (at compilation time):\n"
             #ifdef ALLOW_MCU_SEC_I2C
                 "\t-MCU secondary features, on-the-fly I2C address update, backlight control, ...\n"
@@ -868,8 +880,11 @@ static void program_usage(void){ //display help
             #ifdef ALLOW_EXT_ADC
                 "\t-External ADCs.\n"
             #endif
-            #ifdef USE_POLL_IRQ_PIN
+            #ifdef USE_WIRINGPI
                 "\t-MCU digital input interrupt pin poll using WiringPi.\n"
+            #endif
+            #ifdef USE_GPIOD
+                "\t-MCU digital input interrupt pin poll using libGPIOd.\n"
             #endif
                 "\n"
             );
@@ -1100,7 +1115,7 @@ int main(int argc, char** argv){
         //interrupt
         if (irq_gpio >= 0 && irq_enable/* && !diag_first_run*/){
             irq_enable = false;
-            #ifdef USE_POLL_IRQ_PIN
+            #ifdef USE_WIRINGPI
                 #define WIRINGPI_CODES 1 //allow error code return
                 int err;
                 if ((err = wiringPiSetupGpio()) < 0){ //use BCM numbering
@@ -1110,6 +1125,8 @@ int main(int argc, char** argv){
                     print_stderr("using wiringPi to poll GPIO%d\n", irq_gpio);
                     irq_enable = true;
                 }
+            #elif defined(USE_GPIOD)
+#error "todo"
             #endif
         } else {irq_enable = false;}
     #endif

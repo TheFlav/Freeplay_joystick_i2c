@@ -23,7 +23,7 @@
 #define def_debug false //enable debug output
 #define def_debug_adv false //enable advanced debug output, benchmark
 
-#define def_irq_gpio 40 //gpio pin used for digital input interrupt, set to -1 to disable, "USE_POLL_IRQ_PIN" needs to be defined in compilation command line
+#define def_irq_gpio 40 //gpio pin used for digital input interrupt, set to -1 to disable, "USE_WIRINGPI" or "USE_GPIOD" needs to be defined in compilation command line
 
 #define i2c_ignore_busy true //allow i2c running on busy address
 #define def_i2c_bus 1 //I2C bus

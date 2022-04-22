@@ -60,7 +60,8 @@ bool io_fd_valid(int /*fd*/); //check if a file descriptor is valid
     #define diag_mode false
 #else
     extern int program_diag_mode(void); //main diag mode function
-    #undef USE_POLL_IRQ_PIN
+    #undef USE_WIRINGPI
+    #undef USE_GPIOD
     #undef USE_SHM_REGISTERS
     #define diag_mode true
 #endif
