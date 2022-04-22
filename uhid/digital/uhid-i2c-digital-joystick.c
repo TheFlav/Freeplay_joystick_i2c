@@ -19,7 +19,7 @@
 #include <unistd.h>
 #include <linux/uhid.h>
 #include <stdint.h>
-
+#include <time.h>
 
 #include <linux/i2c-dev.h>
 #include <i2c/smbus.h>
@@ -184,6 +184,15 @@ static unsigned char rdesc[] = {
     //DPAD END
  0xC0,// ; END_COLLECTION
 };
+
+
+long long current_timestamp() {
+    struct timeval te; 
+    gettimeofday(&te, NULL); // get current time
+    long long milliseconds = te.tv_sec*1000LL + te.tv_usec/1000; // calculate milliseconds
+    // printf("milliseconds: %lld\n", milliseconds);
+    return milliseconds;
+}
 
 static int uhid_write(int fd, const struct uhid_event *ev)
 {
@@ -505,6 +514,7 @@ int main(int argc, char **argv)
 	struct gpiod_line *input_line;
 	struct gpiod_line_event event;
 	//char *chipname = "gpiochip0";
+	int gpiod_fd = -1;
 
 	input_chip = gpiod_chip_open_lookup("0");
 	if (input_chip == NULL) {
@@ -518,22 +528,70 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	if (gpiod_line_request_both_edges_events(input_line, argv[0]) < 0) {
+/*	if (gpiod_line_request_both_edges_events(input_line, argv[0]) < 0) {
 		printf("error: gpiod_line_request_both_edges_events(input_line, %s)\n", argv[0]);
+		exit(EXIT_FAILURE);
+	}*/
+
+	if (gpiod_line_request_falling_edge_events(input_line, argv[0]) < 0) {
+		printf("error: gpiod_line_request_falling_edge_events(input_line, %s)\n", argv[0]);
 		exit(EXIT_FAILURE);
 	}
 
+	if ((gpiod_fd = gpiod_line_event_get_fd(input_line)) < 0){
+		printf("gpiod_line_event_get_fd failed. errno:%d\n", -gpiod_fd);
+		exit(EXIT_FAILURE);
+	}
 
-        printf("Stargint gpiod_line_event_wait loop\n");
+        fcntl(gpiod_fd, F_SETFL, fcntl(gpiod_fd, F_GETFL, 0) | O_NONBLOCK); //set gpiod fd to non blocking
+
+
+        printf("Starting gpiod_line_event_wait loop\n");
+
+//	long long curr_ms, prev_ms;
+//	struct timespec ts;
+//	ts.tv_sec  = 0;
+//	ts.tv_nsec = 8000000;
+//	unsigned int iterations = 0;
+//	unsigned int events = 0;
+//	unsigned int falling = 0;
+
+//	prev_ms = current_timestamp();
 
 	while(1)
 	{
-		gpiod_line_event_wait(input_line, NULL);
-		if (gpiod_line_event_read(input_line, &event) == 0) {
+		//gpiod_line_event_wait(input_line, &ts);
+
+		if(gpiod_line_event_read_fd(gpiod_fd, &event) == 0)//non-blocking due to fcntl above
+		{
+//			events++;
+			if (event.event_type == GPIOD_LINE_EVENT_FALLING_EDGE) {
+//				falling++;
+                                attiny_irq_handler();
+                        }
+		}
+
+
+/*		if (gpiod_line_event_read(input_line, &event) == 0)//blocking
+                {
 			if (event.event_type == GPIOD_LINE_EVENT_FALLING_EDGE) {
 				attiny_irq_handler();
 			}
+		}*/
+
+/*		iterations++;
+		curr_ms = current_timestamp();
+		if((curr_ms - prev_ms) > 1000)
+		{
+			printf("%d iterations and %d events (%d falling) in 1s\n", iterations, events, falling);
+			iterations = 0;
+			events = 0;
+			falling = 0;
+			prev_ms = curr_ms;
 		}
+*/
+
+
 	}
 	gpiod_line_release(input_line);
 
