@@ -6,10 +6,10 @@ rm uhid-i2c-gamepad-diag
 #gcc -march=armv6 -mfpu=vfp -mfloat-abi=hard -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -l:libi2c.a
 
 #compile with wiringPi IRQ
-gcc -march=armv6 -mfpu=vfp -mfloat-abi=hard -DUSE_WIRINGPI -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -l:libi2c.a -lwiringPi
+#gcc -march=armv6 -mfpu=vfp -mfloat-abi=hard -DUSE_WIRINGPI -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -l:libi2c.a -lwiringPi
 
 #compile with libGPIOd IRQ
-#gcc -march=armv6 -mfpu=vfp -mfloat-abi=hard -DUSE_GPIOD -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -l:libi2c.a -l:libgpiod.a
+gcc -march=armv6 -mfpu=vfp -mfloat-abi=hard -DUSE_GPIOD -o uhid-i2c-gamepad nns_config.c uhid-i2c-gamepad.c -l:libi2c.a -l:libgpiod.a
 
 #compile diagnostic program
 gcc -march=armv6 -mfpu=vfp -mfloat-abi=hard -DDIAG_PROGRAM -o uhid-i2c-gamepad-diag nns_config.c driver_diag.c uhid-i2c-gamepad.c -l:libi2c.a
