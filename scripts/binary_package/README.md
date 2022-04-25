@@ -6,11 +6,12 @@ Start "Raspberry Pi Imager" (download from https://www.raspberrypi.com/software/
 In "Raspberry Pi Imager"
 
 - Select "CHOOSE OS"
-	- **RECOMMENDED** (using the built-in RetroPie from Raspberry Pi Imager)
-		- Under "Emulation and game OS" select RetroPie and choose the one suitable for your Pi
-	- OPTIONAL (using a RetroPie image that you download elsewhere)
+	- **RECOMMENDED** (using a RetroPie image that you download elsewhere)
 		- Select "Use custom" at the bottom of the list.
 		- Select the RetroPie SD image file (recomended to download from https://retropie.org.uk/download/)
+	- OPTIONAL (using the built-in RetroPie from Raspberry Pi Imager)
+		- Under "Emulation and game OS" select RetroPie and choose the one suitable for your Pi
+		- If the option you select does not give you the "GEAR icon" to change settings after selecting your SD card, then you may need a different selection or to download the image and "Use custom"
 - Select your SD card
 - Click the GEAR icon to select settings
 	- **IMPORTANT**
@@ -50,7 +51,8 @@ In "Raspberry Pi Imager"
 	- Eject the boot drive (SD card).
 	- Pop the SD card into your Freeplay.
 	- Boot it up!
-
+	- Cleanup
+		- After your system is working, you may want to delete the fpjoy_binary_package.zip and fpjoy from the "boot" drive.
 
 ```
 ##### Freeplay Edits #####
