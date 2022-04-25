@@ -22,6 +22,7 @@ cd $SOURCE_DIR/../uhid/gamepad
 ./build-gamepad.sh
 
 cp $SOURCE_DIR/../arduino/Freeplay_joystick_i2c_megatinycore/Freeplay_joystick_i2c_megatinycore_build_1627/Freeplay_joystick_i2c_megatinycore.ino.hex $CONTENTS_DIR
+cp $SOURCE_DIR/../arduino/Freeplay_joystick_i2c_megatinycore/*.sh $CONTENTS_DIR
 cp $SOURCE_DIR/../uhid/gamepad/uhid-i2c-gamepad $CONTENTS_DIR
 cp $SOURCE_DIR/../uhid/gamepad/uhid-i2c-gamepad-diag $CONTENTS_DIR
 cp $SOURCE_DIR/../uhid/gamepad/post_init_message.txt $CONTENTS_DIR
