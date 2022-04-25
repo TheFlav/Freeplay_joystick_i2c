@@ -51,7 +51,8 @@ In "Raspberry Pi Imager"
 	- Eject the boot drive (SD card).
 	- Pop the SD card into your Freeplay.
 	- Boot it up!
-
+	- Cleanup
+		- After your system is working, you may want to delete the fpjoy_binary_package.zip and fpjoy from the "boot" drive.
 
 ```
 ##### Freeplay Edits #####
