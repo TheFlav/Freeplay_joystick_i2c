@@ -64,10 +64,15 @@ if [ $JOY_NEEDS_NEW_FIRMWARE -eq 1 ]; then
 	fi
 
 	# prepare the pin
-	if [ ! -d /sys/class/gpio/gpio${GPIO} ]; then
-	  echo "${GPIO}" > /sys/class/gpio/export
+	PINFUNC=`raspi-gpio get ${GPIO} | awk '{print $5;}'`
+	if [ "$PINFUNC" != "func=INPUT" ] ; then
+        	raspi-gpio set ${GPIO} ip
 	fi
-	echo "in" > /sys/class/gpio/gpio"${GPIO}"/direction
+        PINFUNC=`raspi-gpio get ${GPIO} | awk '{print $5;}'`
+	if [ "$PINFUNC" != "func=INPUT" ] ; then
+		echo "ERROR: Can't set GPIO ${GPIO} pin function!"
+		exit 20
+        fi
 
 	echo "Tap and release POWER button to skip Firmware Upload."
 	SKIP=0
@@ -76,7 +81,9 @@ if [ $JOY_NEEDS_NEW_FIRMWARE -eq 1 ]; then
 	CURRTIME=`date +%s`
 	let ELAPSED=${CURRTIME}-${STARTTIME}
 	while [ "${SKIP}" == "0" ] && (( ELAPSED < SECONDSTOWAIT )); do
-		if [ 1 == "$(</sys/class/gpio/gpio"${GPIO}"/value)" ]; then
+		PINVAL=`raspi-gpio get ${GPIO} | awk '{print $3;}'`
+
+		if [ $PINVAL == "level=1" ]; then
 			SKIP=1
 		fi
 		CURRTIME=`date +%s`
@@ -102,9 +109,12 @@ if [ $JOY_NEEDS_NEW_FIRMWARE -eq 1 ]; then
 	        CURRTIME=`date +%s`
 	        let ELAPSED=${CURRTIME}-${STARTTIME}
 	        while [ "${SKIP}" == "0" ] && (( ELAPSED < SECONDSTOWAIT )); do
-	                if [ 1 == "$(</sys/class/gpio/gpio"${GPIO}"/value)" ]; then
-	                        SKIP=1
-	                fi
+			PINVAL=`raspi-gpio get ${GPIO} | awk '{print $3;}'`
+
+			if [ $PINVAL == "level=1" ]; then
+				SKIP=1
+			fi
+
 	                CURRTIME=`date +%s`
 	                let ELAPSED=${CURRTIME}-${STARTTIME}
 	                if (( ELAPSED != PREVELAPSED)); then
