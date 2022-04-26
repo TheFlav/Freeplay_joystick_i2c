@@ -11,7 +11,7 @@ const char dev_webpage[] = "https://github.com/TheFlav/Freeplay_joystick_i2c";
 //Prototypes
 double get_time_double (void); //get time in double (seconds)
 
-int i2c_check_bus(int /*bus*/); //check I2C bus, return 0 on success, -1:addr
+int i2c_check_bus(int /*bus*/, int* /*bus_found*/); //check I2C bus, return errno, set bus_found to NULL to disable bus searching
 int i2c_open_dev(int* /*fd*/, int /*bus*/, int /*addr*/); //open I2C device, return 0 on success, -1:bus, -2:addr, -3:generic error
 void i2c_close_all(void); //close all I2C file
 void adc_data_compute(int /*adc_index*/); //compute adc max value, flat in/out, offset
@@ -226,7 +226,7 @@ const char adc_pollrate_desc[] = "ADC pollrate (every given poll loop).";
 const char debounce_desc[] = "Debounce filtering to mitigate possible pad false contact, max:7 (0 to disable).";
 
 const char i2c_bus_desc[] = "I2C bus to use.";
-const char mcu_search_desc[] = "Enable search of proper MCU address if provided one fails.";
+const char mcu_search_desc[] = "Try to correct wrong I2C bus number and enable search of proper MCU address if provided one fails.";
 const char mcu_addr_desc[] = "MCU I2C address.";
 #ifdef ALLOW_MCU_SEC_I2C
     const char mcu_addr_sec_desc[] = "MCU Secondary I2C address for additionnal features.";

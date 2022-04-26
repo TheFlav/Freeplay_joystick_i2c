@@ -176,13 +176,34 @@ int uhid_send_event(int fd){ //send event to uhid device
 
 
 //I2C related
-int i2c_check_bus(int bus){ //check I2C bus, return 0 on success, -1:addr
-    if (bus < 0){print_stderr("invalid I2C bus:%d\n", bus); errno = ENOENT; return -1;} //invalid bus
-    char fd_path[strlen(def_i2c_bus_path_format)+4]; sprintf(fd_path, def_i2c_bus_path_format, bus);
-    int fd = open(fd_path, O_RDWR);
-    if (!io_fd_valid(fd)){print_stderr("failed to open '%s', errno:%d (%m)\n", fd_path, -fd); return -1; //invalid bus
-    } else {print_stderr("I2C bus '%s' found\n", fd_path);}
+int i2c_check_bus(int bus, int* bus_found){ //check I2C bus, return errno, set bus_found to NULL to disable bus searching
+    char fd_path[strlen(def_i2c_bus_path_format)+5];
+    bool quiet_mode_back = quiet_mode; quiet_mode = true; //disable output
+
+    if (bus < 0 || bus > 255){bus = 0;}
+    int bus_tmp = -1, fd = -1, tmp_addr_main = 0, tmp_addr_sec = 0;
+
+    //test provided bus num first
+    sprintf(fd_path, def_i2c_bus_path_format, bus);
+    fd = open(fd_path, O_RDWR);
+    if (io_fd_valid(fd) && mcu_search_i2c_addr(bus, &tmp_addr_main, &tmp_addr_sec) == 0){bus_tmp = bus;}
     close(fd);
+
+    if (bus_tmp == -1 && bus_found != NULL){ //given num failed, search
+        for (int i=0; i<256; i++){
+            sprintf(fd_path, def_i2c_bus_path_format, i);
+            fd = open(fd_path, O_RDWR);
+            if (io_fd_valid(fd) && mcu_search_i2c_addr(i, &tmp_addr_main, &tmp_addr_sec) == 0){bus_tmp = i; break;}
+            close(fd);
+        }
+    }
+
+    if (bus_found != NULL){*bus_found = bus_tmp;}
+
+    quiet_mode = quiet_mode_back; //restore output
+    if (bus_tmp == -1){print_stderr("failed to found proper I2C bus\n"); errno = ENOENT; return -1;
+    } else {print_stderr("I2C bus '%d' found\n", bus_tmp);}
+
     return 0;
 }
 
@@ -1026,7 +1047,15 @@ int main(int argc, char** argv){
     //open i2c devices
     if (!i2c_disabled){
         bool mcu_failed = false;
-        if (i2c_check_bus(i2c_bus) != 0 && !diag_mode){return EXIT_FAILED_I2C;}
+        int tmp_bus = i2c_bus;
+        if (i2c_check_bus(i2c_bus, mcu_search ? &tmp_bus : NULL) == 0){ //proper bus found
+            if (tmp_bus >= 0 && i2c_bus != tmp_bus){ //bus number needs to be updated
+                print_stderr("provided I2C bus corrected, was %d, now is %d\n", i2c_bus, tmp_bus);
+                i2c_bus = tmp_bus;
+                config_save(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid, false); //save config to update bus
+            }
+        } else if (!diag_mode){return EXIT_FAILED_I2C;} //bus not found
+
         if (i2c_open_dev(&mcu_fd, i2c_bus, mcu_addr) != 0){mcu_failed = true; print_stderr("Failed to open MCU main address\n");} //main failed
 
         #ifdef ALLOW_MCU_SEC_I2C

@@ -64,7 +64,12 @@ Note about IRQ related variables : Only one kind will be allowed at once.
 
   - ``MULTI_INSTANCES``
     * Allow driver and setup/diag program to run more than once at a time.
-    * New instance (once first already during) needs to use a different configuration file (no check for this, UHID may fail), please refer to argument ``-config`` to do so.
+    * New instance (once first already during) needs to use a different configuration file (no check for this, UHID may fail), please refer to argument ``-config`` to do so.  
+  <br>
+
+  - ``def_i2c_bus ***NUMBER***``
+    * Set default I2C bus number.
+    * Can be handy when compiling to multiple target (e.g Rpi Zero is 0, Zero 2 is 1).  
   <br><br>
 
 ### Examples:

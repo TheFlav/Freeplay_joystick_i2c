@@ -26,7 +26,9 @@
 #define def_irq_gpio 40 //gpio pin used for digital input interrupt, set to -1 to disable, "USE_WIRINGPI" or "USE_GPIOD" needs to be defined in compilation command line
 
 #define i2c_ignore_busy true //allow i2c running on busy address
-#define def_i2c_bus 1 //I2C bus
+#ifndef def_i2c_bus //allow to set default bus via compiler args
+    #define def_i2c_bus 1 //I2C bus
+#endif
 #define def_i2c_bus_path_format "/dev/i2c-%d" //path to i2c bus, follow printf format rules
 #define def_mcu_search true //enable search of proper MCU address if provided one fails.
 #define def_mcu_addr 0x30 //main MCU I2C address

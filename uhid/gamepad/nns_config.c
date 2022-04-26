@@ -81,7 +81,7 @@ int config_set (cfg_vars_t* cfg, unsigned int cfg_size, char* filename, int uid,
         char tmpVal [tmpValSize+1]; strcpy (tmpVal, tmpPtr + 1); //extract val
         int tmpIndex = config_search_name (cfg, cfg_size, tmpVar, true); //var in config array
         if (tmpIndex != -1) { //found in config array
-            if (config_type_parse (cfg, cfg_size, tmpIndex, cfg[tmpIndex].type, tmpVar, tmpVal)){ //parse config var with specific type
+            if (config_type_parse(cfg, cfg_size, tmpIndex, cfg[tmpIndex].type, tmpVar, tmpVal)){ //parse config var with specific type
                 print_stderr("Config '%s' set to '%s'\n", tmpVar, tmpVal);
                 return config_save(cfg, cfg_size, filename, uid, gid, false); //save new config
             } else {print_stderr("FATAL: Config: failed to set '%s' to '%s'\n", tmpVar, tmpVal); ret = -EPERM;}

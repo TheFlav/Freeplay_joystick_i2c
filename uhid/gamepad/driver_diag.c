@@ -565,7 +565,7 @@ void term_screen_i2c(int tty_line, int tty_last_width, int tty_last_height){
     int i2c_bus_default = def_i2c_bus;
     if (i2c_bus != i2c_bus_back){
         i2c_bus_back = i2c_bus; i2c_bus_update = true;
-        i2c_bus_failed = (i2c_check_bus(i2c_bus) != 0);
+        i2c_bus_failed = (i2c_check_bus(i2c_bus, NULL) != 0);
         if (i2c_bus_failed){
             i2c_bus_err = errno;
             i2c_bus_failed = true;
