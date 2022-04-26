@@ -27,7 +27,7 @@ In "Raspberry Pi Imager"
 - Click the "WRITE" button
 - When it's done writing, you will want to open the "boot" drive on your computer which is the /boot partition of the newly created SD card.  If you don't see this drive, make sure that Raspberry Pi Imager is done writing.  If it's done writing, you may need to eject the SD card and re-insert it to get the "boot" drive to show up on your machine.
 	- In this "boot" drive you will edit 2 files and add some files.
-		- Open the config.txt file and copy/paste the "Freeplay Edits" to the end of the file
+		- Open the config.txt file and copy/paste the "Freeplay Additions" to the end of the file
 			- If you are using a plastic shell intended for a GBA, then it's recommended to delete the # from the overscan lines that you just pasted in.  [Note that there are also overscan lines that were already in the file.]  This will allow you to use a GBA glass/plastic lens with a smaller viewable area then the full LCD.  You can tweak these lines to your liking.
 		- Save the changes and close the config.txt file.
 		- Copy the the fpjoy_binary_package.zip file (downloaded from https://github.com/TheFlav/Freeplay_joystick_i2c/releases) into the boot drive.
@@ -55,24 +55,20 @@ In "Raspberry Pi Imager"
 		- After your system is working, you may want to delete the fpjoy_binary_package.zip and fpjoy from the "boot" drive.
 
 ```
-##### Freeplay Edits #####
+##### Freeplay Additions #####
 
 framebuffer_width=640
 framebuffer_height=480
 
-dtparam=i2c_arm=on
-
-
 [EDID=N/A-]
-gpio=0-9,12-17,20-25=a2
 ###dtoverlay=dpi18
+gpio=0-9,12-17,20-25=a2
 enable_dpi_lcd=1
 display_default_lcd=1
 extra_transpose_buffer=2
 dpi_group=2
 dpi_mode=87
 dpi_output_format=0x6f006
-#dpi_output_format=0x6fc06 #disable HSYNC and VSYNC
 dpi_timings=640 0 20 10 10 480 0 10 5 5 0 0 0 60 0 60000000 1
 #overscan_left=32
 #overscan_right=32
@@ -80,41 +76,34 @@ dpi_timings=640 0 20 10 10 480 0 10 5 5 0 0 0 60 0 60000000 1
 #overscan_bottom=84
 
 [edid=*]
-#gpio=0-9,12-13,16-17,20-25=ip
 gpio=0-9,12-17,20-25=ip
 enable_dpi_lcd=0
 display_default_lcd=0
 
-#uart0=on
-#dtoverlay=uart1,txd0_pin=14,rxd0_pin=15
-#dtoverlay=uart0,txd0_pin=14,rxd0_pin=15
-#enable_uart=1
-
 [ALL]
 
 dtoverlay=audremap,swap_lr=off,pins_18_19
-#dtoverlay=i2c-gpio,i2c_gpio_sda=10,i2c_gpio_scl=11,bus=74,i2c_gpio_delay_us=0
-#dtoverlay=i2c-gpio,i2c_gpio_sda=10,i2c_gpio_scl=11,bus=74
-#dtoverlay=pca953x,addr=0x20,pca9555
 dtoverlay=gpio-poweroff,gpiopin=26,active_low
 dtoverlay=gpio-shutdown,gpio_pin=27,active_low=0,gpio_pull=off,debounce=4000
 
-#dtparam=i2c1_baudrate=10000 #low speed mode
-#dtparam=i2c1_baudrate=100000 #standard mode
-#dtparam=i2c1_baudrate=400000 #fast mode 
-dtparam=i2c1_baudrate=1000000 #works with Freeplay i2c Joystick
-#dtparam=i2c1_baudrate=3400000 #high speed mode
-dtoverlay=i2c1,pins_44_45
-#dtoverlay=i2c1,pins_2_3
+#set up /dev/i2c-0
+#dtparam=i2c0_baudrate=10000 #low speed mode
+#dtparam=i2c0_baudrate=100000 #standard mode
+#dtparam=i2c0_baudrate=400000 #fast mode 
+dtparam=i2c0_baudrate=1000000 #works with Freeplay i2c Joystick
+#dtparam=i2c0_baudrate=3400000 #high speed mode (NOT RECOMMENDED)
+[pi0]
+dtoverlay=i2c0,pins_28_29
+[pi0w]
+dtoverlay=i2c0,pins_28_29
+[pi02]
+dtoverlay=i2c0,pins_44_45
+[all]
 
 #dtparam=watchdog=on
 
-#dtoverlay=freeplay-joystick,reg=0x30,interrupt=40,analogsticks=2,dpads=1,digitalbuttons=11,joy0-swapped-x-y=0,joy1-swapped-x-y=1
-#interrupt=40 addr=0x30 analogsticks=2 digitalbuttons=13 dpads=0 joy1-x-min=0x1A0 joy1-x-max=0xCC0 joy1-y-min=0x1A0 joy1-y-max=0xD40 joy0-x-fuzz=20 joy0-x-flat=100
-
 
 gpio=10=np
-#disable_audio_dither=1
 #dtoverlay=disable-wifi
 #dtoverlay=disable-bt
 
@@ -122,6 +111,7 @@ dtparam=act_led_trigger=none
 dtparam=act_led_activelow=on
 
 audio_pwm_mode=2
+##### END Freeplay Additions #####
 ```
 	
 
