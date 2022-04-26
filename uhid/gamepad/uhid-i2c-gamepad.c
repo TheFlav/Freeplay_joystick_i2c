@@ -938,6 +938,7 @@ static void program_usage(void){ //display help
     #else
         fprintf(stderr,
         "\t-init : allow easier detection of analog settings, does discard ADC mapping and min/max values.\n"
+        "\t-noinputs : disable MCU inputs to navigate.\n"
         "\t-postmessagetest : display 'first run' post save/skip message and closes. Require '" diag_post_init_message_filename "' file to exist.\n"
         );
     #endif
@@ -1020,6 +1021,7 @@ int main(int argc, char** argv){
         }
 #else
         } else if (strcmp(argv[i],"-init") == 0){diag_first_run = true; //force first run mode
+        } else if (strcmp(argv[i],"-noinputs") == 0){diag_noinputs = true; //disable mcu inputs in menu
         } else if (strcmp(argv[i],"-postmessagetest") == 0){diag_postmessagetest = true;} //only output "first run" post message and close
 #endif
     }
