@@ -55,13 +55,13 @@ if [ $JOY_NEEDS_NEW_FIRMWARE -eq 1 ]; then
 	#echo "FAILED FPJSMAGIC=${FPJSMAGIC}, FPJS2NDMAGIC=${FPJS2NDMAGIC}"
 	echo "Freeplay i2c Joystick needs new firmware."
 
-	#cd /home/pi/Freeplay/Freeplay_joystick_i2c/arduino/Freeplay_joystick_i2c_megatinycore
-        #./verify.sh
-	#if [ $? == 0 ]; then
-	#	echo "It seems like you have the proper Firmware installed, but the Freeplay i2c Joystick is not found on the i2c bus."
-	#	echo "Check the ribbon cable and retry or run 'i2cdetect -y 1' to troubleshoot."
-	#	exit 0
-	#fi
+	cd /home/pi/Freeplay/Freeplay_joystick_i2c/arduino/Freeplay_joystick_i2c_megatinycore
+        ./verify.sh
+	if [ $? == 0 ]; then
+		echo "It seems like you have the proper Firmware installed, but the Freeplay i2c Joystick is not found on the i2c bus."
+		echo "Check the ribbon cable and retry or run 'i2cdetect -y 1' to troubleshoot."
+		exit 0
+	fi
 
 	# prepare the pin
 	if [ ! -d /sys/class/gpio/gpio${GPIO} ]; then

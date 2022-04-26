@@ -11,17 +11,8 @@ CONTENTSDIR=$SCRIPTDIR/contents
 
 DESTDIR=/home/pi/Freeplay/Freeplay_joystick_i2c/
 
-mkdir -p $DESTDIR/arduino/Freeplay_joystick_i2c_megatinycore/Freeplay_joystick_i2c_megatinycore_build_1627/
-mkdir -p $DESTDIR/arduino/Freeplay_joystick_i2c_megatinycore/bin/
-cp $CONTENTSDIR/Freeplay_joystick_i2c_megatinycore.ino.hex $DESTDIR/arduino/Freeplay_joystick_i2c_megatinycore/Freeplay_joystick_i2c_megatinycore_build_1627/
-cp -r $CONTENTSDIR/avrdude* $DESTDIR/arduino/Freeplay_joystick_i2c_megatinycore/bin
-mkdir -p $DESTDIR/uhid/gamepad
-cp $CONTENTSDIR/uhid-i2c-gamepad $DESTDIR/uhid/gamepad
-cp $CONTENTSDIR/uhid-i2c-gamepad-diag $DESTDIR/uhid/gamepad
-mkdir -p $DESTDIR/scripts
-cp $CONTENTSDIR/bootup.sh $DESTDIR/scripts
-$CONTENTSDIR/install_to_retropie.sh
-$CONTENTSDIR/setup_linux.sh
+mkdir -p $DESTDIR
+cp -r $CONTENTSDIR/* $DESTDIR
 
 chown pi:pi /home/pi/Freeplay/
 chown -R pi:pi $DESTDIR
