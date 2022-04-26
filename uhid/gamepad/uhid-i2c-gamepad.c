@@ -190,10 +190,12 @@ int i2c_check_bus(int bus, int* bus_found){ //check I2C bus, return errno, set b
     close(fd);
 
     if (bus_tmp == -1 && bus_found != NULL){ //given num failed, search
+        double start = get_time_double();
         for (int i=0; i<256; i++){
+            if (get_time_double() - start > 10.){quiet_mode = quiet_mode_back; print_stderr("stopped because timed out, bus:%d\n", i-1); break;} //timeout
             sprintf(fd_path, def_i2c_bus_path_format, i);
             fd = open(fd_path, O_RDWR);
-            if (io_fd_valid(fd) && mcu_search_i2c_addr(i, &tmp_addr_main, &tmp_addr_sec) == 0){bus_tmp = i; break;}
+            if (io_fd_valid(fd) && mcu_search_i2c_addr(i, &tmp_addr_main, &tmp_addr_sec) == 0){close(fd); bus_tmp = i; break;}
             close(fd);
         }
     }
@@ -443,6 +445,7 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
 //MCU related functions
 int mcu_search_i2c_addr(int bus, int* addr_main, int* addr_sec){ //search mcu on given i2c bus, return -1 on failure, 0 on success
     *addr_main = *addr_sec = -1;
+    double start = get_time_double();
 
     if (bus < 0){print_stderr("invalid I2C bus:%d\n", bus); return -1;} //invalid bus
     char fd_path[strlen(def_i2c_bus_path_format)+4]; sprintf(fd_path, def_i2c_bus_path_format, bus);
@@ -455,6 +458,7 @@ int mcu_search_i2c_addr(int bus, int* addr_main, int* addr_sec){ //search mcu on
     #endif
 
     for (int addr=0; addr <=127; addr++){
+        if (get_time_double() - start > 5.){print_stderr("stopped because timed out, bus:%d, addr:0x%02X\n", bus, addr-1); break;} //timeout
         #ifdef ALLOW_MCU_SEC_I2C
             if (ioctl(fd, I2C_SLAVE_FORCE, addr) < 0){print_stderr("ioctl failed for address 0x%02X, errno:%d (%m)\n", addr, errno); continue;} //invalid address
             if (i2c_smbus_read_byte_data(fd, tmp_reg_manuf_sec) != mcu_manuf){continue;} //invalid manuf_id
@@ -934,6 +938,7 @@ static void program_usage(void){ //display help
     #else
         fprintf(stderr,
         "\t-init : allow easier detection of analog settings, does discard ADC mapping and min/max values.\n"
+        "\t-noinputs : disable MCU inputs to navigate.\n"
         "\t-postmessagetest : display 'first run' post save/skip message and closes. Require '" diag_post_init_message_filename "' file to exist.\n"
         );
     #endif
@@ -1016,6 +1021,7 @@ int main(int argc, char** argv){
         }
 #else
         } else if (strcmp(argv[i],"-init") == 0){diag_first_run = true; //force first run mode
+        } else if (strcmp(argv[i],"-noinputs") == 0){diag_noinputs = true; //disable mcu inputs in menu
         } else if (strcmp(argv[i],"-postmessagetest") == 0){diag_postmessagetest = true;} //only output "first run" post message and close
 #endif
     }

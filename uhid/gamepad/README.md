@@ -155,6 +155,9 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
     Warning: does discard already set ADC to joystick mapping, min/max values as well as axis reverse.  
     Program will run in this mode if no configuration file exists.  
 
+    * ``-noinputs`` : Disable MCU inputs to navigate.  
+    Can become handy to diagnotic possibly stick input(s) or defective IC.  
+
     * ``-postmessagetest`` : Display "first run" mode save/skip post message.  
     Mainly used to check formating.  
     Default filename is **post_init_message.txt** but can be changed in [driver_config.h](driver_config.h).  

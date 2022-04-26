@@ -158,6 +158,7 @@ extern const char dev_webpage[]; //developer webpage
 extern char* js_axis_names[]; //joystick axis names, virtually start at index -1
 extern char config_path[]; //full path to config file
 extern bool diag_first_run; //running in "first run" mode, used to ease ADCs setup
+extern bool diag_noinputs; //disable mcu inputs in menus
 extern bool diag_postmessagetest; //only output "first run" post message and close
 extern char program_path[]; //full path to this program
 
