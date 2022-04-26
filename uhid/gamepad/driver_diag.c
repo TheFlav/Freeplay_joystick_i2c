@@ -1783,14 +1783,19 @@ void term_screen_debug(int tty_line, int tty_last_width, int tty_last_height){ /
     fprintf(stdout, "\e[%d;%dH\e[4;%dmBenchmark (sample over 2 seconds, all inputs will be blocked):\e[0m", tty_line++, tmp_col, term_esc_col_normal);
 
     bool benchmark_i2c = false;
-    int benchmark_i2c_index = select_limit, benchmark_i2c_loops = 0, benchmark_i2c_read = input_registers_count + 6;
-    fprintf(stdout, "\e[%d;%dH\e[%dmI2C:________ loops per sec (MCU input, %d write/read per poll)\e[0m", tty_line, tmp_col, term_esc_col_normal, benchmark_i2c_read);
+    int benchmark_i2c_index = select_limit, benchmark_i2c_loops = 0, benchmark_i2c_failed = 0, benchmark_i2c_read = input_registers_count + 6;
+    fprintf(stdout, "\e[%d;%dH\e[%dmI2C:________ polls per sec (MCU input, %d write/read per poll)\e[0m", tty_line, tmp_col, term_esc_col_normal, benchmark_i2c_read);
     term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+4, .y=tty_line++, .size=8}, .type=1, .disabled=!io_fd_valid(mcu_fd), .value={.ptrbool=&benchmark_i2c, .ptrint=&benchmark_i2c_loops}, .hint={.y=hint_line, .str=benchmark_hint_str}};
 
     bool benchmark_uhid = false;
     int benchmark_uhid_index = select_limit, benchmark_uhid_loops = 0;
-    fprintf(stdout, "\e[%d;%dH\e[%dmUHID:________ loops per sec (push to %s, can crash system)\e[0m", tty_line, tmp_col, term_esc_col_normal, uhid_device_path);
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+5, .y=tty_line++, .size=8}, .type=1, .value={.ptrbool=&benchmark_uhid, .ptrint=&benchmark_uhid_loops}, .hint={.y=hint_line, .str=benchmark_hint_str}};
+    fprintf(stdout, "\e[%d;%dH\e[%dmUHID:________ pushes per sec (push to %s, can crash system)\e[0m", tty_line, tmp_col, term_esc_col_normal, uhid_device_path);
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+5, .y=tty_line, .size=8}, .type=1, .value={.ptrbool=&benchmark_uhid, .ptrint=&benchmark_uhid_loops}, .hint={.y=hint_line, .str=benchmark_hint_str}};
+    tty_line+=2;
+
+    fprintf(stdout, "\e[%d;%dH\e[%d;4mI2C stability:\e[24m Run I2C benchmark to get data.\e[0m", tty_line, tmp_col, term_esc_col_normal);
+    term_pos_generic_t term_i2c_stability = {.x=tmp_col+15, .y=tty_line};
+    tty_line+=2;
 
     //footer
     fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[0], 20)) / 2, term_hint_nav_str[0]); //nav hint
@@ -1831,15 +1836,20 @@ void term_screen_debug(int tty_line, int tty_last_width, int tty_last_height){ /
             bool adc_fd_valid_back[4] = {0}; memcpy(&adc_fd_valid_back, &adc_fd_valid, sizeof(bool)*4); //backup ext adc valid fd
             adc_fd_valid[0] = adc_fd_valid[1] = adc_fd_valid[2] = adc_fd_valid[3] = false; //disable external adcs
 
-            benchmark_i2c_loops = 0; //reset loops count
+            benchmark_i2c_loops = benchmark_i2c_failed = 0; //reset loops count
 
             double benchmark_start = get_time_double();
             while (true){
+                errno = 0;
                 i2c_poll_joystick(true);
                 if (poll_clock_start - benchmark_start > 2.){break;}
                 benchmark_i2c_loops++;
+                if (errno != 0){benchmark_i2c_failed++;}
             }
             benchmark_i2c_loops /= 2;
+
+            //update i2c stability result
+            fprintf(stdout, "\e[%d;%dH\e[%dm%d failed out of %d requests (%.2lf%%)\e[0m", term_i2c_stability.y, term_i2c_stability.x, term_esc_col_normal, benchmark_i2c_failed, benchmark_i2c_loops, (benchmark_i2c_failed==0)?.0:(double)benchmark_i2c_loops/(double)benchmark_i2c_failed);
 
             memcpy(&mcu_adc_read, &mcu_adc_read_back, sizeof(bool)*2); //restore mcu adc read
             memcpy(&adc_fd_valid, &adc_fd_valid_back, sizeof(bool)*4); //restore external adcs
