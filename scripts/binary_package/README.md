@@ -91,7 +91,7 @@ dtoverlay=gpio-shutdown,gpio_pin=27,active_low=0,gpio_pull=off,debounce=4000
 #dtparam=i2c0_baudrate=100000 #standard mode
 #dtparam=i2c0_baudrate=400000 #fast mode 
 dtparam=i2c0_baudrate=1000000 #works with Freeplay i2c Joystick
-#dtparam=i2c0_baudrate=3400000 #high speed mode
+#dtparam=i2c0_baudrate=3400000 #high speed mode (NOT RECOMMENDED)
 [pi0]
 dtoverlay=i2c0,pins_28_29
 [pi0w]
