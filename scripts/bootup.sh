@@ -59,7 +59,10 @@ if [ $JOY_NEEDS_NEW_FIRMWARE -eq 1 ]; then
         ./verify.sh
 	if [ $? == 0 ]; then
 		echo "It seems like you have the proper Firmware installed, but the Freeplay i2c Joystick is not found on the i2c bus."
-		echo "Check the ribbon cable and retry or run 'i2cdetect -y 1' to troubleshoot."
+		echo "Check the ribbon cable and retry or run 'i2cdetect -y 0' to troubleshoot."
+		sleep 5
+		echo "Continuing in 5 seconds."
+		sleep 5
 		exit 0
 	fi
 
