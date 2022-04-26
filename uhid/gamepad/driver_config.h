@@ -27,7 +27,7 @@
 
 #define i2c_ignore_busy true //allow i2c running on busy address
 #ifndef def_i2c_bus //allow to set default bus via compiler args
-    #define def_i2c_bus 1 //I2C bus
+    #define def_i2c_bus 0 //I2C bus
 #endif
 #define def_i2c_bus_path_format "/dev/i2c-%d" //path to i2c bus, follow printf format rules
 #define def_mcu_search true //enable search of proper MCU address if provided one fails.
