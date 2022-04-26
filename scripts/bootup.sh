@@ -36,7 +36,7 @@ if [ $GAMEPAD_RETURN_CODE -ne 0 ]; then
 
 	#return code -2
 	if [ $GAMEPAD_RETURN_CODE -eq 254 ]; then
-		echo "Freeplay i2c Joystick not found on /dev/i2c-1.  Firmware update required or i2c-1 not connected/configured properly."
+		echo "Freeplay i2c Joystick not found on i2c bus.  Firmware update required (or i2c not connected/configured properly)."
 		JOY_NEEDS_NEW_FIRMWARE=1
 	fi
 fi

@@ -1,14 +1,11 @@
 /*
- 
- This program sets up a gamepad device in the sytem, interfaces with the attiny i2c device as a gamepad (digital only), and sends HID reports to the system.
- 
- Setup:     sudo apt install libi2c-dev pigpio
- Compile:   gcc -o uhid-i2c-gamepad uhid-i2c-gamepad.c -li2c -lpigpio
- Run:       sudo ./uhid-i2c-gamepad
- 
- Notes:
- On the Pi Zero 2 W, I had to use "git clone https://github.com/PinkFreud/WiringPi.git" to get a WiringPi that knew about the Pi02
- 
+
+ This program sets up a gamepad device in the sytem, interfaces with the attiny i2c device as an analog joystick, and sends HID reports to the system.
+
+ Setup:     sudo apt install libi2c-dev libgpiod-dev
+ Compile:   gcc -o uhid-i2c-analog-joystick uhid-i2c-analog-joystick.c -l:libi2c.a
+ Run:       sudo ./uhid-i2c-analog-joystick
+
  */
 
 
@@ -30,7 +27,7 @@
 
 int fd;
 
-#define I2C_BUSNAME "/dev/i2c-1"
+#define I2C_BUSNAME "/dev/i2c-0"
 #define I2C_ADDRESS 0x30
 int i2c_file = -1;
 
