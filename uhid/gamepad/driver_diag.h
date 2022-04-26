@@ -96,7 +96,7 @@ extern void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int
 extern void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value
 extern int int_digit_count(int /*num*/); //number of digit of a integer, negative sign is consider as a digit
 
-extern int i2c_check_bus(int /*bus*/); //check I2C bus, return 0 on success, -1:addr
+extern int i2c_check_bus(int /*bus*/, int* /*bus_found*/); //check I2C bus, return errno, set bus_found to NULL to disable bus searching
 extern int i2c_open_dev(int* /*fd*/, int /*bus*/, int /*addr*/); //open I2C device, return 0 on success, -1:bus, -2:addr, -3:generic error
 extern void i2c_close_all(void); //close all I2C file
 
