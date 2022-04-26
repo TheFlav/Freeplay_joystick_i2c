@@ -21,15 +21,25 @@ make compile
 cd $SOURCE_DIR/../uhid/gamepad
 ./build-gamepad.sh
 
+cd $SOURCE_DIR/../uhid/digital
+make
+
+cd $SOURCE_DIR/../uhid/analog
+make
+
 mkdir -p $CONTENTS_DIR/arduino/Freeplay_joystick_i2c_megatinycore/Freeplay_joystick_i2c_megatinycore_build_1627/
 mkdir -p $CONTENTS_DIR/arduino/Freeplay_joystick_i2c_megatinycore/bin/
 mkdir -p $CONTENTS_DIR/uhid/gamepad/
+mkdir -p $CONTENTS_DIR/uhid/digital/
+mkdir -p $CONTENTS_DIR/uhid/analog/
 cp -L $SOURCE_DIR/../arduino/Freeplay_joystick_i2c_megatinycore/Freeplay_joystick_i2c_megatinycore_build_1627/Freeplay_joystick_i2c_megatinycore.ino.hex $CONTENTS_DIR/arduino/Freeplay_joystick_i2c_megatinycore/Freeplay_joystick_i2c_megatinycore_build_1627/
 cp -L $SOURCE_DIR/../arduino/Freeplay_joystick_i2c_megatinycore/bin/avrdude* $CONTENTS_DIR/arduino/Freeplay_joystick_i2c_megatinycore/bin/
 cp -L $SOURCE_DIR/../arduino/Freeplay_joystick_i2c_megatinycore/*.sh $CONTENTS_DIR/arduino/Freeplay_joystick_i2c_megatinycore/
 cp -L $SOURCE_DIR/../uhid/gamepad/uhid-i2c-gamepad $CONTENTS_DIR/uhid/gamepad/
 cp -L $SOURCE_DIR/../uhid/gamepad/uhid-i2c-gamepad-diag $CONTENTS_DIR/uhid/gamepad/
 cp -L $SOURCE_DIR/../uhid/gamepad/post_init_message.txt $CONTENTS_DIR/uhid/gamepad/
+cp -L $SOURCE_DIR/../uhid/digital/uhid-i2c-digital-joystick $CONTENTS_DIR/uhid/digital/
+cp -L $SOURCE_DIR/../uhid/analog/uhid-i2c-analog-joystick $CONTENTS_DIR/uhid/analog/
 cp -L $SOURCE_DIR/../uhid/gamepad/README.md $CONTENTS_DIR/uhid/gamepad/
 
 cd $BUILD_DIR/..
