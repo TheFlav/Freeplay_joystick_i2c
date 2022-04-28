@@ -54,7 +54,7 @@
 
 #define MANUF_ID         0xED
 #define DEVICE_ID        0x00
-#define VERSION_NUMBER   17
+#define VERSION_NUMBER   18
 
 #define CONFIG_PERIODIC_TASK_TIMER_MILLIS 5000
 #define CONFIG_INPUT_READ_TIMER_MICROS 500        //set to 0 for NO delay reading inputs, otherwise try to read inputs at least every CONFIG_INPUT_READ_TIMER_MICROS microseconds
@@ -1314,7 +1314,7 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
       //power_control bits 1-7 are currently unused
       
       //we would use this as a way for the i2c master (host system) to tell us about power related stuff (like if the battery is getting low)
-      i2c_secondary_registers.power_control = temp;
+      i2c_secondary_registers.power_control = temp & 0x01;    //only bit 0x01 is currently used
     }
     else if(x == REGISTER_SEC_BATTERY_CAPACITY && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
