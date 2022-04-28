@@ -259,7 +259,8 @@ struct /*i2c_secondary_address_register_struct */
   uint8_t rfu1;              // Reg: 0x05 - reserved for future use (or device-specific use)
   uint8_t rfu2;              // Reg: 0x06 - reserved for future use (or device-specific use)
   uint8_t rfu3;              // Reg: 0x07 - reserved for future use (or device-specific use)
-  uint8_t rfu4;              // Reg: 0x08 - reserved for future use (or device-specific use)
+#define REGISTER_SEC_BATTERY_CAPACITY   0x08
+  uint8_t battery_capacity;  // Reg: 0x08 - battery capacity (0-100 = battery %, 255 = UNKNOWN)
 #define REGISTER_SEC_STATUS_LED         0x09   //this one is writeable
   uint8_t status_led_control;// Reg: 0x09 - turn on/off/blinkSlow/blinkFast/etc the blue status LED  (this is actuall a WRITE-ONLY "virtual" register)
 #define REGISTER_SEC_WRITE_PROTECT      0x0A   //this one is writeable
@@ -1310,7 +1311,11 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
       //backlight_start_flashing(temp);     //change this at some point!
       
       //we would use this as a way for the i2c master (host system) to tell us about power related stuff (like if the battery is getting low)
-      i2c_secondary_registers.power_control = temp;      
+      i2c_secondary_registers.power_control = temp;
+    }
+    else if(x == REGISTER_SEC_BATTERY_CAPACITY && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
+    {
+      i2c_secondary_registers.battery_capacity = temp;
     }
     else if(x == REGISTER_SEC_STATUS_LED && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
@@ -1473,6 +1478,8 @@ void setup()
   i2c_secondary_registers.manuf_ID = MANUF_ID;
   i2c_secondary_registers.device_ID = DEVICE_ID;
   i2c_secondary_registers.version_ID = VERSION_NUMBER;
+
+  i2c_secondary_registers.battery_capacity = 255;  //255 = battery capacity is unknown
 
   i2c_secondary_registers.power_control = 0;
   i2c_secondary_registers.write_protect = WRITE_PROTECT;
