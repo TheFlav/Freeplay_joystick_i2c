@@ -31,8 +31,12 @@ In "Raspberry Pi Imager"
 			- If you are using a plastic shell intended for a GBA, then it's recommended to delete the # from the overscan lines that you just pasted in.  [Note that there are also overscan lines that were already in the file.]  This will allow you to use a GBA glass/plastic lens with a smaller viewable area then the full LCD.  You can tweak these lines to your liking.
 		- Save the changes and close the config.txt file.
 		- Copy the the fpjoy_binary_package.zip file (downloaded from https://github.com/TheFlav/Freeplay_joystick_i2c/releases) into the boot drive.
-		- Unzip the fpjoy_binary_package.zip file (right click -> extract all or double-click on it depending on your OS).
-		- This should create a fpjoy directory in the root of the 'boot' drive.
+		- Unzip the fpjoy_binary_package.zip file
+			- Mac:  double-click on the fpjoy_binary_package.zip file to automatically unzip the file
+			- Windows:  double-click on the fpjoy_binary_package.zip file to open it and then drag the "fpjoy" folder from the newly opened window to the 'boot' drive. 
+		- This should create a directory named "fpjoy" in the root of the 'boot' drive.
+			- If you do not have this directory, the Freeplay portion install will fail.
+			- If you have a directory named something like "fpjoy_binary_package_2022-04-26-15-03-53," the Freeplay portion install will fail.
 		- Open the firstrun.sh file with a text editor.
 			- In firstrun.sh, near the end of the file, you should find a line that says something like 
 				```
