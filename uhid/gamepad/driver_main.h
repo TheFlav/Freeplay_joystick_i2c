@@ -152,6 +152,7 @@ mcu_config0_t mcu_config0 = {0};
 #ifdef ALLOW_MCU_SEC_I2C
     int mcu_backlight = 255; //current backlight level, set during runtime
     int mcu_backlight_steps = 255; //maximum amount of backlight steps, set during runtime
+    int battery_report_type = def_battery_report_type; //todo
 #endif
 
 //ADC related
@@ -231,6 +232,7 @@ const char mcu_search_desc[] = "Try to correct wrong I2C bus number and enable s
 const char mcu_addr_desc[] = "MCU I2C address.";
 #ifdef ALLOW_MCU_SEC_I2C
     const char mcu_addr_sec_desc[] = "MCU Secondary I2C address for additionnal features.";
+    const char battery_report_type_desc[] = "TODO.";
 #endif
 const char irq_gpio_desc[] = "GPIO pin to use for interrupt, default:40 (-1 to disable)."; //gpio pin used for irq, limited to 31 for pigpio, set to -1 to disable
 
@@ -267,6 +269,7 @@ cfg_vars_t cfg_vars[] = {
     {"mcu_address", mcu_addr_desc, 6, &mcu_addr},
 #ifdef ALLOW_MCU_SEC_I2C
     {"mcu_address_sec", mcu_addr_sec_desc, 6, &mcu_addr_sec},
+    {"\nbattery_report_type", battery_report_type_desc, 0, &battery_report_type},
 #endif
 
     {"\ndigital_debounce", debounce_desc, 0, &digital_debounce},

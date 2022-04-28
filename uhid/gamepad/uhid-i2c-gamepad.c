@@ -956,17 +956,6 @@ int main(int argc, char** argv){
     program_get_path(argv, program_path, program_name); //get current program path and filename
     if (getuid() != 0){program_usage(); return EXIT_FAILED_GENERIC;} //show help if not running as root
 
-    #ifndef MULTI_INSTANCES
-        if (program_instances_count(program_path, program_name) > 1){ //check if program already running
-            print_stderr("program is already running\n");
-            return EXIT_FAILED_ALREADY_RUN;
-        }
-    #endif
-
-    int main_return = EXIT_SUCCESS; //program return
-    bool cfg_no_create = false; //disable creation of config file
-    bool program_close_on_warn = false; //close program on major warnings
-
     if (argc > 2 && strcmp(argv[1],"-config") == 0){
         if (argv[2][0] == '/'){strcpy(config_path, argv[2]); //absolute path
         } else {sprintf(config_path, "%s/%s", program_path, argv[2]);} //relative path
@@ -989,6 +978,10 @@ int main(int argc, char** argv){
         bool input_searching = false;
         int input_search[2] = {-1, -1}; //input to search
     #endif
+
+    int main_return = EXIT_SUCCESS; //program return
+    bool cfg_no_create = false; //disable creation of config file
+    bool program_close_on_warn = false; //close program on major warnings
 
     //program arguments parse
     for(int i=1; i<argc; ++i){
@@ -1025,6 +1018,13 @@ int main(int argc, char** argv){
         } else if (strcmp(argv[i],"-postmessagetest") == 0){diag_postmessagetest = true;} //only output "first run" post message and close
 #endif
     }
+
+    #ifndef MULTI_INSTANCES
+        if (program_instances_count(program_path, program_name) > 1){ //check if program already running
+            print_stderr("Program is already running\n");
+            return EXIT_FAILED_ALREADY_RUN;
+        }
+    #endif
 
     //config
     if (cfg_no_create){struct stat file_stat = {0}; if (stat(config_path, &file_stat) != 0){return EXIT_FAILED_CONFIG;}} //config file not exist
