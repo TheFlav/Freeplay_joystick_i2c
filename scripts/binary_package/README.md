@@ -51,6 +51,11 @@ In "Raspberry Pi Imager"
 	- Eject the boot drive (SD card).
 	- Pop the SD card into your Freeplay.
 	- Boot it up!
+		- On the first boot it will expand the partition to use the entire SD card.
+			- It will automatically shut itself down when it's done.
+		- On the second boot it will do some initial setup stuff (like the config choices you made in Raspberry Pi Imager)
+			- It will automatically shut itself down when it's done.
+		- On the third boot, you should see RetroPie and then get a Joystick setup screen where you can detect and define analog parameters if you chose to add analog to your system.  If not, you can use the DPAD down to go to the SKIP option.
 	- Cleanup
 		- After your system is working, you may want to delete the fpjoy_binary_package.zip and fpjoy from the "boot" drive.
 
