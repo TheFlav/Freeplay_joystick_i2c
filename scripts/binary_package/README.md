@@ -22,7 +22,7 @@ In "Raspberry Pi Imager"
 		- Check "Set hostname" and make a hostname that you prefer (if you don't want the default of "retropie")
 		- Check the "Enable SSH" box and choose "Use password authentication" (unless you prefer to do some key auth)
 	- Click "SAVE" at the bottom
-	![plot](./raspi_imager.jpg) 
+	![plot](./raspi_imager.jpg)
 
 - Click the "WRITE" button
 - When it's done writing, you will want to open the "boot" drive on your computer which is the /boot partition of the newly created SD card.  If you don't see this drive, make sure that Raspberry Pi Imager is done writing.  If it's done writing, you may need to eject the SD card and re-insert it to get the "boot" drive to show up on your machine.
@@ -37,6 +37,7 @@ In "Raspberry Pi Imager"
 		- This should create a directory named "fpjoy" in the root of the 'boot' drive.
 			- If you do not have this directory, the Freeplay portion install will fail.
 			- If you have a directory named something like "fpjoy_binary_package_2022-04-26-15-03-53," the Freeplay portion install will fail.
+			- ![plot](./fpjoy_directory.png)
 		- Open the firstrun.sh file with a text editor.
 			- In firstrun.sh, near the end of the file, you should find a line that says something like 
 				```
