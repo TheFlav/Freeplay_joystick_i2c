@@ -87,6 +87,7 @@ void term_screen_save(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_h
 void term_screen_advanced(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //"ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
 void term_screen_firstrun(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/); //resizing this screen will fully reset it
 void term_screen_debug(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
+void term_screen_addons(int /*tty_line*/, int /*tty_last_width*/, int /*tty_last_height*/);
 
 void term_splash_save(int /*tty_last_width*/, int /*tty_last_height*/); //save new configuration file splash
 void term_splash_post_message(int /*tty_last_width*/, int /*tty_last_height*/); //display first run post message
@@ -128,8 +129,8 @@ int term_adc_vertspacing = 9; //vertical spacing between each horizontal ADC ele
 
 int select_index_current = 0, select_index_last = -1; //current element selected, last selected
 
-void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_screen_i2c, term_screen_adc, term_screen_digital, term_screen_save, term_screen_advanced, term_screen_firstrun, term_screen_debug}; //pointer to screen functions
-enum term_screen {SCREEN_MAIN, SCREEN_I2C, SCREEN_ADC, SCREEN_DIGITAL, SCREEN_SAVE, SCREEN_ADVANCED, SCREEN_FIRSTRUN, SCREEN_DEBUG};
+void (*term_screen_funct_ptr[])(int, int, int) = {term_screen_main, term_screen_i2c, term_screen_adc, term_screen_digital, term_screen_save, term_screen_advanced, term_screen_firstrun, term_screen_debug, term_screen_addons}; //pointer to screen functions
+enum term_screen {SCREEN_MAIN, SCREEN_I2C, SCREEN_ADC, SCREEN_DIGITAL, SCREEN_SAVE, SCREEN_ADVANCED, SCREEN_FIRSTRUN, SCREEN_DEBUG, SCREEN_ADDONS};
 
 int term_screen_current = SCREEN_MAIN, term_screen_last = -1; //start "screen", last screen
 int term_screen_update = false; //"screen" require update
@@ -192,7 +193,6 @@ double term_read_mcu_left_hold_start = -1.;
 double term_read_mcu_right_hold_start = -1.;
 double term_read_mcu_start = -1.;
 
-
 #ifdef ALLOW_MCU_SEC_I2C
     extern struct i2c_secondary_address_register_struct i2c_secondary_registers;
     extern uint8_t mcu_sec_register_backlight; //defined at runtime, based on i2c_secondary_registers, config_backlight
@@ -203,6 +203,11 @@ double term_read_mcu_start = -1.;
     extern uint8_t mcu_sec_register_status_led_control; //defined at runtime, based on i2c_secondary_registers, status_led_control
     extern int mcu_backlight; //current backlight level, set during runtime
     extern int mcu_backlight_steps; //maximum amount of backlight steps, set during runtime
+
+    extern int battery_interval; //MCU battery related stuff update interval in sec
+    extern int battery_report_type; //todo
+    extern int lowbattery_gpio; //low battery gpio pin, set to -1 to disable
+    extern bool lowbattery_gpio_invert; //invert low battery gpio pin signal
 #endif
 
 //adc
