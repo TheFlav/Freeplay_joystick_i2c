@@ -5,14 +5,14 @@ This set of programs does allow to emulate a USB input device using UHID device.
   
 Using this method have the benefit to allow faster compilation and debugging (incl. programing on Windows platform without messing with GDB) compared to a kernel driver but comes with some limitations linked to security in place on Linux systems (.e.g needs to run as root to access needed device).  
   
-In its current state, this driver mainly targeting Raspberry Pi boards (additional comments on this later).  
-
+In its current state, this driver mainly targeting Raspberry Pi boards but should be compatible with other platforms.  
+  
 This page does mainly reference 2 programs:
 - ``uhid-i2c-gamepad`` : UHID input driver.
 - ``uhid-i2c-gamepad-diag`` : Setup/Diagnostic program.  
   Does allow end-user to edit and set most of editable settings.  
   It doesn't edit any of the .c or .h files.  
-  This program is meant to run on at least 640x480 screen (80 cols x 30 lines TTY).  
+  This program is meant to run on a screen at least 640x480 (80 cols x 30 lines TTY).  
 <br>
   
 ## Compilation:
@@ -216,9 +216,9 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
 - Needs to running drivers at once with multiple MCUs (to be tested):
   * Programs to be compiled with preprocessor variable ``MULTI_INSTANCES``.
   * Each instance to have its own configuration file set with ``-config`` argument.
-  * Run each once to create configuration file, close driver, edit ``uhid_device_id`` variable in config. files to have different driver IDs, this ID will be added after driver name report to EV/JS dev.  
-<br>
-
+  * Run each once to create configuration file, close driver, edit ``uhid_device_id`` variable in config. files to have different driver IDs, this ID will be added after driver name report to EV/JS dev.
+<br><br>
+  
 ## Repository files
 - **driver_config.h** : User default driver settings.
 - **driver_hid_desc.h** : HID descriptor definition.
@@ -228,5 +228,15 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
 - **driver_debug_print.h** : Shared debug output functions.
 - **nns_config.c**/**nns_config.h** : Shared configuration functions.
 - **build-gamepad.sh** : Example compilation script.
-<br>
+<br><br>
+  
+## Known issue(s)
+- EmulationStation can crash will waiting for a user input on Welcome screen (no input device binded) if driver is killed and restart in a short span (liked to JS/EV dev unregistering, no clue if ES or UHID related).
+<br><br>
+
+## TODO, memo to dev
+- battery report: require ALLOW_MCU_SEC_I2C
+  * mcu sec power_control register <> gpio require USE_WIRINGPI or USE_GPIOD.
+  * mcu sec battery_capacity register require fuel gauge ic.
+  * diag part implement.
 

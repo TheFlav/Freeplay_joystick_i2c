@@ -50,6 +50,9 @@ bool io_fd_valid(int /*fd*/); //check if a file descriptor is valid
 
 #ifndef ALLOW_MCU_SEC_I2C
     #undef USE_SHM_REGISTERS //can't use shm register "bridge" with MCU secondary feature
+#else
+    int mcu_update_power_control(void); //read/update power_control register, return 0 on success, -1 on error
+    int mcu_update_battery_capacity(void); //read/update battery_capacity register, return 0 on success, -1 on error
 #endif
 
 #ifndef DIAG_PROGRAM
@@ -77,7 +80,7 @@ bool i2c_disabled = false, uhid_disabled = false;
 bool quiet_mode = false;
 
 //IRQ
-bool irq_enable = true; //is set during runtime, do not edit
+bool irq_enable = false; //is set during runtime, do not edit
 int irq_gpio = def_irq_gpio; //gpio pin used for IRQ, limited to 31 for pigpio, set to -1 to disable
 
 //Program related
@@ -142,6 +145,8 @@ const uint8_t mcu_i2c_register_config0 = offsetof(struct i2c_joystick_register_s
     const uint8_t mcu_sec_register_joystick_i2c_addr = offsetof(struct i2c_secondary_address_register_struct, joystick_i2c_addr) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, joystick_i2c_addr
     const uint8_t mcu_sec_register_secondary_i2c_addr = offsetof(struct i2c_secondary_address_register_struct, secondary_i2c_addr) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, secondary_i2c_addr
     const uint8_t mcu_sec_register_status_led_control = offsetof(struct i2c_secondary_address_register_struct, status_led_control) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, status_led_control
+    const uint8_t mcu_sec_register_power_control = offsetof(struct i2c_secondary_address_register_struct, power_control) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, power_control
+    const uint8_t mcu_sec_register_battery_capacity = offsetof(struct i2c_secondary_address_register_struct, battery_capacity) / sizeof(uint8_t); //defined at runtime, based on i2c_secondary_registers, battery_capacity
 #endif
 
 //MCU config
@@ -149,10 +154,16 @@ int digital_debounce = def_digital_debounce; //debounce filtering to mitigate po
 bool mcu_adc_enabled[4] = {0}; //adc enabled on mcu, set during runtime
 bool mcu_adc_read[2] = {0}; //read mcu adc0-1/2-3 during poll
 mcu_config0_t mcu_config0 = {0};
+bool battery_gpio_enable = false;
 #ifdef ALLOW_MCU_SEC_I2C
     int mcu_backlight = 255; //current backlight level, set during runtime
     int mcu_backlight_steps = 255; //maximum amount of backlight steps, set during runtime
+
+    double battery_clock_start = -1.; //sec
+    int battery_interval = def_battery_interval; //todo, in sec
     int battery_report_type = def_battery_report_type; //todo
+    int lowbattery_gpio = def_lowbattery_gpio; //todo, -1 to disable
+    mcu_power_control_t mcu_power_control = {0};
 #endif
 
 //ADC related
@@ -232,7 +243,9 @@ const char mcu_search_desc[] = "Try to correct wrong I2C bus number and enable s
 const char mcu_addr_desc[] = "MCU I2C address.";
 #ifdef ALLOW_MCU_SEC_I2C
     const char mcu_addr_sec_desc[] = "MCU Secondary I2C address for additionnal features.";
+    const char battery_interval_desc[] = "TODO, (in sec), require Battery Gauge IC or GPIO low battery pin.";
     const char battery_report_type_desc[] = "TODO.";
+    const char lowbattery_gpio_desc[] = "TODO, -1 to disable.";
 #endif
 const char irq_gpio_desc[] = "GPIO pin to use for interrupt, default:40 (-1 to disable)."; //gpio pin used for irq, limited to 31 for pigpio, set to -1 to disable
 
@@ -269,7 +282,10 @@ cfg_vars_t cfg_vars[] = {
     {"mcu_address", mcu_addr_desc, 6, &mcu_addr},
 #ifdef ALLOW_MCU_SEC_I2C
     {"mcu_address_sec", mcu_addr_sec_desc, 6, &mcu_addr_sec},
-    {"\nbattery_report_type", battery_report_type_desc, 0, &battery_report_type},
+
+    {"\nbattery_interval", battery_interval_desc, 0, &battery_interval},
+    {"battery_report_type", battery_report_type_desc, 0, &battery_report_type},
+    {"lowbattery_gpio", lowbattery_gpio_desc, 0, &lowbattery_gpio},
 #endif
 
     {"\ndigital_debounce", debounce_desc, 0, &digital_debounce},

@@ -8,7 +8,7 @@
 
 #pragma once
 
-#define mcu_version_even 17 //what version of mcu is even with this file 
+#define mcu_version_even 18 //what version of mcu is even with this file 
 
 struct i2c_joystick_register_struct {
     uint8_t input0;         // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
@@ -53,6 +53,11 @@ struct i2c_joystick_register_struct {
         uint8_t device_ID;          // Reg: 0x0E -
         uint8_t version_ID;         // Reg: 0x0F - 
     };
+
+    typedef union { //power_control register bitfield structure
+        struct {uint8_t low_batt:1, unused1:1, unused2:1, unused3:1, unused4:1, unused5:1, unused6:1, unused7:1;} vals;
+        uint8_t bits;
+    } mcu_power_control_t;
 #endif
 
 //common structures, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
