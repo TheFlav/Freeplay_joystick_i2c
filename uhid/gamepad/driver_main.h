@@ -93,6 +93,7 @@ bool diag_postmessagetest = false; //only output "first run" post message and cl
 bool diag_noinputs = false; //disable mcu inputs in menus
 bool allow_diag_run = true; //avoid diag loop at driver start
 bool driver_lock = false; //lock driver if shm_path/status set to 2, stop i2c poll and uhid update
+bool cfg_delete = false; //program arg prohibe create of a config file but one was created
 
 //UHID related
 int uhid_fd = -1;

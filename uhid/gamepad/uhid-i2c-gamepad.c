@@ -583,17 +583,6 @@ int mcu_update_battery_capacity(){ //read/update battery_capacity register, retu
         fclose(filehandle);
     }
 
-/*
-    struct stat battery_stat; int percent = 0; static int percent_prev = -1;
-    if (stat(battery_rsoc_file, &battery_stat) != 0){percent = 255; goto funct_end;} //file not exist
-
-    FILE *filehandle = fopen(battery_rsoc_file, "r"); if (filehandle == NULL){percent = 255; goto funct_end;} //went wrong
-    if (ferror(filehandle)){fclose(filehandle); percent = 255; goto funct_end;} //went very wrong
-
-    char buffer[5]; fgets(buffer, 5, filehandle); fclose(filehandle); //read
-    percent = atoi(buffer); if (percent < 0 || percent > 255){percent = 255;} //how????
-    funct_end:;
-*/
     if (percent == percent_prev){return 0;} //nothing changed
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_disable) < 0){return -1;} //disable write protection
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_battery_capacity, (uint8_t)percent) < 0){return -1;} //update register
@@ -911,6 +900,7 @@ static void program_close(void){ //regroup all close functs
     #endif
     i2c_close_all();
     shm_close();
+    if (cfg_delete){remove(config_path);}
     already_killed = true;
 }
 
@@ -1094,10 +1084,13 @@ int main(int argc, char** argv){
     #endif
 
     //config
-    if (cfg_no_create){struct stat file_stat = {0}; if (stat(config_path, &file_stat) != 0){return EXIT_FAILED_CONFIG;}} //config file not exist
+    //if (cfg_no_create){struct stat file_stat = {0}; if (stat(config_path, &file_stat) != 0){cfg_delete = true;}} //config file not exist
     int tmp_ret = config_parse(cfg_vars, cfg_vars_arr_size, config_path, user_uid, user_gid); //parse config file, create if needed
     if (tmp_ret < 0){print_stderr("failed to parse config file, errno:%d (%s)\n", -tmp_ret, strerror(-tmp_ret)); return EXIT_FAILED_CONFIG; //config parse failed
-    } else if (tmp_ret == 1){diag_first_run = true;} //config file created
+    } else if (tmp_ret == 1){ //config file created
+        diag_first_run = true;
+        if (cfg_no_create){cfg_delete = true;} //args prohibe creation of config file
+    }
     
     //shm
     sprintf(shm_fullpath, "%s%s%d", shm_path, shm_path[strlen(shm_path)-1]=='/'?"":"/", uhid_device_id); //build shm path incl driver id
@@ -1161,7 +1154,8 @@ int main(int argc, char** argv){
 
         if (mcu_check_manufacturer() < 0 && !diag_mode){return EXIT_FAILED_MANUF;} //invalid manufacturer
         if (mcu_version_even > mcu_version && !diag_mode && program_close_on_warn){return EXIT_FAILED_VERSION;} //outdated mcu version
-
+        if (cfg_delete){return EXIT_FAILED_CONFIG;} //config file just create but prohibed by args, done in this order to allow mcu related error before missing config error
+        
         #ifndef DIAG_PROGRAM
             if (io_fd_valid(mcu_fd) && input_searching){ //check for specific mcu input
                 if (i2c_smbus_read_i2c_block_data(mcu_fd, 0, input_registers_count, (uint8_t *)&i2c_joystick_registers) >= 0){ //read input register
