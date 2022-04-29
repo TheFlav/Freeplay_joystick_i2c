@@ -1154,8 +1154,11 @@ int main(int argc, char** argv){
 
         if (mcu_check_manufacturer() < 0 && !diag_mode){return EXIT_FAILED_MANUF;} //invalid manufacturer
         if (mcu_version_even > mcu_version && !diag_mode && program_close_on_warn){return EXIT_FAILED_VERSION;} //outdated mcu version
-        if (cfg_delete){return EXIT_FAILED_CONFIG;} //config file just create but prohibed by args, done in this order to allow mcu related error before missing config error
+    }
+
+    if (cfg_delete){return EXIT_FAILED_CONFIG;} //config file just create but prohibed by args, done in this order to allow mcu related error before missing config error
         
+    if (!i2c_disabled){
         #ifndef DIAG_PROGRAM
             if (io_fd_valid(mcu_fd) && input_searching){ //check for specific mcu input
                 if (i2c_smbus_read_i2c_block_data(mcu_fd, 0, input_registers_count, (uint8_t *)&i2c_joystick_registers) >= 0){ //read input register
