@@ -22,17 +22,22 @@ In "Raspberry Pi Imager"
 		- Check "Set hostname" and make a hostname that you prefer (if you don't want the default of "retropie")
 		- Check the "Enable SSH" box and choose "Use password authentication" (unless you prefer to do some key auth)
 	- Click "SAVE" at the bottom
-	![plot](./raspi_imager.jpg) 
+	![plot](./raspi_imager.jpg)
 
 - Click the "WRITE" button
 - When it's done writing, you will want to open the "boot" drive on your computer which is the /boot partition of the newly created SD card.  If you don't see this drive, make sure that Raspberry Pi Imager is done writing.  If it's done writing, you may need to eject the SD card and re-insert it to get the "boot" drive to show up on your machine.
 	- In this "boot" drive you will edit 2 files and add some files.
-		- Open the config.txt file and copy/paste the "Freeplay Additions" to the end of the file
+		- Open the config.txt file and copy/paste the "[Freeplay Additions](#freeplay-additions)" (below) to the end of the file
 			- If you are using a plastic shell intended for a GBA, then it's recommended to delete the # from the overscan lines that you just pasted in.  [Note that there are also overscan lines that were already in the file.]  This will allow you to use a GBA glass/plastic lens with a smaller viewable area then the full LCD.  You can tweak these lines to your liking.
 		- Save the changes and close the config.txt file.
 		- Copy the the fpjoy_binary_package.zip file (downloaded from https://github.com/TheFlav/Freeplay_joystick_i2c/releases) into the boot drive.
-		- Unzip the fpjoy_binary_package.zip file (double-click on it).
-		- This should create a fpjoy directory in the root of the 'boot' drive.
+		- Unzip the fpjoy_binary_package.zip file
+			- Mac:  double-click on the fpjoy_binary_package.zip file to automatically unzip the file
+			- Windows:  double-click on the fpjoy_binary_package.zip file to open it and then drag the "fpjoy" folder from the newly opened window to the 'boot' drive. 
+		- This should create a directory named "fpjoy" in the root of the 'boot' drive.
+			- If you do not have this directory, the Freeplay portion install will fail.
+			- If you have a directory named something like "fpjoy_binary_package_2022-04-26-15-03-53," the Freeplay portion install will fail.
+			- ![plot](./fpjoy_directory.png)
 		- Open the firstrun.sh file with a text editor.
 			- In firstrun.sh, near the end of the file, you should find a line that says something like 
 				```
@@ -51,9 +56,15 @@ In "Raspberry Pi Imager"
 	- Eject the boot drive (SD card).
 	- Pop the SD card into your Freeplay.
 	- Boot it up!
+		- On the first boot it will expand the partition to use the entire SD card.
+			- It will automatically shut itself down when it's done.
+		- On the second boot it will do some initial setup stuff (like the config choices you made in Raspberry Pi Imager)
+			- It will automatically shut itself down when it's done.
+		- On the third boot, you should see RetroPie and then get a Joystick setup screen where you can detect and define analog parameters if you chose to add analog to your system.  If not, you can use the DPAD down to go to the SKIP option.
 	- Cleanup
 		- After your system is working, you may want to delete the fpjoy_binary_package.zip and fpjoy from the "boot" drive.
 
+<a name="freeplay-additions"></a>
 ```
 ##### Freeplay Additions #####
 

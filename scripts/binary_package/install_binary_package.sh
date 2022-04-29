@@ -17,3 +17,6 @@ cp -r $CONTENTSDIR/* $DESTDIR
 
 chown pi:pi /home/pi/Freeplay/
 chown -R pi:pi $DESTDIR
+
+$CONTENTSDIR/scripts/install_to_retropie.sh
+$CONTENTSDIR/scripts/setup_linux.sh
