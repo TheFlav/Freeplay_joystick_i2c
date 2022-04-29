@@ -530,6 +530,8 @@ int mcu_update_config0(){ //read/update config0 register, return 0 on success, -
     }
     mcu_config0.bits = (uint8_t)ret;
     mcu_config0.vals.debounce_level = digital_debounce;
+
+    if (mcu_config0.bits == (uint8_t)ret){return 0;} //nothing changed
     ret = i2c_smbus_write_byte_data(mcu_fd, mcu_i2c_register_config0, mcu_config0.bits); //update i2c config
     if (ret < 0){
         i2c_allerrors_count++;
@@ -541,6 +543,29 @@ int mcu_update_config0(){ //read/update config0 register, return 0 on success, -
 
 #ifdef ALLOW_MCU_SEC_I2C
 int mcu_update_power_control(){ //read/update power_control register, return 0 on success, -1 on error
+    int ret = i2c_smbus_read_byte_data(mcu_fd_sec, mcu_sec_register_power_control);
+    if (ret < 0){
+        i2c_allerrors_count++;
+        print_stderr("FATAL: reading MCU sec power_control (register:0x%02X) failed, errno:%d (%m)\n", mcu_sec_register_power_control, -ret);
+        return -1;
+    }
+    mcu_power_control.bits = (uint8_t)ret;
+
+    if (battery_gpio_enable){ //low_batt gpio check
+        int state = -1;
+        #ifdef USE_WIRINGPI
+            state = digitalRead(lowbattery_gpio);
+            if (lowbattery_gpio_invert){state = !state;}
+        #elif defined(USE_GPIOD)
+            if (gpiod_lowbatt_fd >= 0){
+                state = gpiod_line_get_value(gpiod_lowbatt_line);
+                if (state >= 0 && lowbattery_gpio_invert){state = !state;}
+            }
+        #endif
+        if (state > -1){mcu_power_control.vals.low_batt = (uint8_t)state;}
+    }
+
+    if (mcu_power_control.bits == (uint8_t)ret){return 0;} //nothing changed
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_disable) < 0){return -1;} //disable write protection
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_power_control, mcu_power_control.bits) < 0){return -1;} //update register
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_enable) < 0){return -1;} //enable write protection
@@ -548,19 +573,21 @@ int mcu_update_power_control(){ //read/update power_control register, return 0 o
 }
 
 int mcu_update_battery_capacity(){ //read/update battery_capacity register, return 0 on success, -1 on error
-    struct stat battery_stat; unsigned int percent = 0;
+    struct stat battery_stat; int percent = 0; static int percent_prev = -1;
     if (stat(battery_rsoc_file, &battery_stat) != 0){percent = 255; goto funct_end;} //file not exist
 
     FILE *filehandle = fopen(battery_rsoc_file, "r"); if (filehandle == NULL){percent = 255; goto funct_end;} //went wrong
     if (ferror(filehandle)){fclose(filehandle); percent = 255; goto funct_end;} //went very wrong
 
     char buffer[5]; fgets(buffer, 5, filehandle); fclose(filehandle); //read
-    percent = atoi(buffer); if (percent > 255){percent = 255;} //how????
+    percent = atoi(buffer); if (percent < 0 || percent > 255){percent = 255;} //how????
     funct_end:;
 
+    if (percent == percent_prev){return 0;} //nothing changed
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_disable) < 0){return -1;} //disable write protection
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_battery_capacity, (uint8_t)percent) < 0){return -1;} //update register
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_enable) < 0){return -1;} //enable write protection
+    percent_prev = percent;
     return 0;
 }
 #endif
@@ -1352,20 +1379,7 @@ int main(int argc, char** argv){
                 //battery
                 if (poll_clock_start - battery_clock_start > (double)battery_interval){
                     mcu_update_battery_capacity(); //update rsoc <> register if possible
-
-                    if (battery_gpio_enable){ //low_batt gpio check
-                        int state = -1;
-                        #ifdef USE_WIRINGPI
-                            state = digitalRead(lowbattery_gpio);
-                            if (lowbattery_gpio_invert){state = !state;}
-                        #elif defined(USE_GPIOD)
-                            if (gpiod_lowbatt_fd >= 0){
-                                state = gpiod_line_get_value(gpiod_lowbatt_line);
-                                if (state >= 0 && lowbattery_gpio_invert){state = !state;}
-                            }
-                        #endif
-                        if (state > -1){mcu_power_control.vals.low_batt = (uint8_t)state; mcu_update_power_control();}
-                    }
+                    mcu_update_power_control(); //low_batt gpio
                     battery_clock_start = poll_clock_start;
                 }
             #endif

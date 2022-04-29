@@ -159,12 +159,12 @@ bool battery_gpio_enable = false;
     int mcu_backlight = 255; //current backlight level, set during runtime
     int mcu_backlight_steps = 255; //maximum amount of backlight steps, set during runtime
 
-    double battery_clock_start = -1.; //sec
-    int battery_interval = def_battery_interval; //todo, in sec
+    double battery_clock_start = -1.; //set during runtime, used for mcu battery interval update
+    int battery_interval = def_battery_interval; //MCU battery related stuff update interval in sec
     int battery_report_type = def_battery_report_type; //todo
-    int lowbattery_gpio = def_lowbattery_gpio; //todo, -1 to disable
-    bool lowbattery_gpio_invert = def_lowbattery_gpio_invert; //todo
-    mcu_power_control_t mcu_power_control = {0};
+    int lowbattery_gpio = def_lowbattery_gpio; //low battery gpio pin, set to -1 to disable
+    bool lowbattery_gpio_invert = def_lowbattery_gpio_invert; //invert low battery gpio pin signal
+    mcu_power_control_t mcu_power_control = {0}; //mcu power_control register bitfield structure
 #endif
 
 //ADC related
@@ -244,7 +244,7 @@ const char mcu_search_desc[] = "Try to correct wrong I2C bus number and enable s
 const char mcu_addr_desc[] = "MCU I2C address.";
 #ifdef ALLOW_MCU_SEC_I2C
     const char mcu_addr_sec_desc[] = "MCU Secondary I2C address for additionnal features.";
-    const char battery_interval_desc[] = "TODO, (in sec), require Battery Gauge IC installed (incl. kernel driver) or GPIO low battery pin.";
+    const char battery_interval_desc[] = "MCU battery related stuff update interval in sec, require Battery Gauge IC installed (incl. kernel driver) or GPIO low battery pin.";
     const char battery_report_type_desc[] = "TODO.";
     const char lowbattery_gpio_desc[] = "Low battery GPIO pin, -1 to disable.";
     const char lowbattery_gpio_invert_desc[] = "Invert Low battery GPIO signal (0:disable, 1:enable).";
