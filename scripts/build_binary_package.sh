@@ -34,6 +34,7 @@ mkdir -p $CONTENTS_DIR/arduino/Freeplay_joystick_i2c_megatinycore/Freeplay_joyst
 mkdir -p $CONTENTS_DIR/arduino/Freeplay_joystick_i2c_megatinycore/bin/
 mkdir -p $CONTENTS_DIR/uhid/gamepad/
 mkdir -p $CONTENTS_DIR/uhid/digital/
+mkdir -p $CONTENTS_DIR/uhid/analog/
 mkdir -p $CONTENTS_DIR/kernel/
 cp -L $SOURCE_DIR/../arduino/Freeplay_joystick_i2c_megatinycore/Freeplay_joystick_i2c_megatinycore_build_1627/Freeplay_joystick_i2c_megatinycore.ino.hex $CONTENTS_DIR/arduino/Freeplay_joystick_i2c_megatinycore/Freeplay_joystick_i2c_megatinycore_build_1627/
 cp -L $SOURCE_DIR/../arduino/Freeplay_joystick_i2c_megatinycore/bin/avrdude* $CONTENTS_DIR/arduino/Freeplay_joystick_i2c_megatinycore/bin/

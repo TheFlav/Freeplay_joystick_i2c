@@ -69,9 +69,13 @@ Notes specific to driver part:
     #include <gpiod.h>
 	struct gpiod_chip *gpiod_input_chip;
 	struct gpiod_line *gpiod_input_line;
-	struct gpiod_line_event gpiod_event;
     int gpiod_fd = -1;
     char gpiod_consumer_name[128];
+    #ifdef ALLOW_MCU_SEC_I2C
+        struct gpiod_line *gpiod_lowbatt_line;
+        int gpiod_lowbatt_fd = -1;
+        char gpiod_consumer_lowbatt_name[128];
+    #endif
 #endif
 
 #include "driver_main.h"
@@ -118,9 +122,7 @@ static int uhid_create(int fd){ //create uhid device
     return uhid_write(fd, &ev);
 }
 
-
-static void uhid_destroy(int fd){ //close uhid devic
-    //TODO EmulationStation looks to crash from time to time when closing driver
+static void uhid_destroy(int fd){ //close uhid device
     if (!io_fd_valid(fd)){return;} //already closed
     struct uhid_event ev; memset(&ev, 0, sizeof(ev));
     ev.type = UHID_DESTROY;
@@ -325,6 +327,7 @@ void i2c_poll_joystick(bool force_update){ //poll data from i2c device
             #ifdef USE_WIRINGPI
                 if(digitalRead(irq_gpio) == HIGH){irq_triggered = false;} //no button pressed
             #elif defined(USE_GPIOD)
+	            struct gpiod_line_event gpiod_event;
                 if (gpiod_fd >= 0 && gpiod_line_event_read_fd(gpiod_fd, &gpiod_event) >= 0 && gpiod_event.event_type != GPIOD_LINE_EVENT_FALLING_EDGE){irq_triggered = false;}
             #endif
         }
@@ -527,6 +530,8 @@ int mcu_update_config0(){ //read/update config0 register, return 0 on success, -
     }
     mcu_config0.bits = (uint8_t)ret;
     mcu_config0.vals.debounce_level = digital_debounce;
+
+    if (mcu_config0.bits == (uint8_t)ret){return 0;} //nothing changed
     ret = i2c_smbus_write_byte_data(mcu_fd, mcu_i2c_register_config0, mcu_config0.bits); //update i2c config
     if (ret < 0){
         i2c_allerrors_count++;
@@ -535,6 +540,68 @@ int mcu_update_config0(){ //read/update config0 register, return 0 on success, -
     }
     return 0;
 }
+
+#ifdef ALLOW_MCU_SEC_I2C
+int mcu_update_power_control(){ //read/update power_control register, return 0 on success, -1 on error
+    int ret = i2c_smbus_read_byte_data(mcu_fd_sec, mcu_sec_register_power_control);
+    if (ret < 0){
+        i2c_allerrors_count++;
+        print_stderr("FATAL: reading MCU sec power_control (register:0x%02X) failed, errno:%d (%m)\n", mcu_sec_register_power_control, -ret);
+        return -1;
+    }
+    mcu_power_control.bits = (uint8_t)ret;
+
+    if (battery_gpio_enable){ //low_batt gpio check
+        int state = -1;
+        #ifdef USE_WIRINGPI
+            state = digitalRead(lowbattery_gpio);
+            if (lowbattery_gpio_invert){state = !state;}
+        #elif defined(USE_GPIOD)
+            if (gpiod_lowbatt_fd >= 0){
+                state = gpiod_line_get_value(gpiod_lowbatt_line);
+                if (state >= 0 && lowbattery_gpio_invert){state = !state;}
+            }
+        #endif
+        if (state > -1){mcu_power_control.vals.low_batt = (uint8_t)state;}
+    }
+
+    if (mcu_power_control.bits == (uint8_t)ret){return 0;} //nothing changed
+    if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_disable) < 0){return -1;} //disable write protection
+    if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_power_control, mcu_power_control.bits) < 0){return -1;} //update register
+    if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_enable) < 0){return -1;} //enable write protection
+    return 0;
+}
+
+int mcu_update_battery_capacity(){ //read/update battery_capacity register, return 0 on success, -1 on error
+    struct stat battery_stat; int percent = 255; static int percent_prev = -1; FILE *filehandle;
+    if (stat(battery_rsoc_file, &battery_stat) == 0){
+        filehandle = fopen(battery_rsoc_file, "r");
+        if (filehandle != NULL && !ferror(filehandle)){
+            char buffer[5]; fgets(buffer, 5, filehandle);
+            percent = atoi(buffer); if (percent < 0 || percent > 255){percent = 255;}
+        }
+        fclose(filehandle);
+    }
+
+/*
+    struct stat battery_stat; int percent = 0; static int percent_prev = -1;
+    if (stat(battery_rsoc_file, &battery_stat) != 0){percent = 255; goto funct_end;} //file not exist
+
+    FILE *filehandle = fopen(battery_rsoc_file, "r"); if (filehandle == NULL){percent = 255; goto funct_end;} //went wrong
+    if (ferror(filehandle)){fclose(filehandle); percent = 255; goto funct_end;} //went very wrong
+
+    char buffer[5]; fgets(buffer, 5, filehandle); fclose(filehandle); //read
+    percent = atoi(buffer); if (percent < 0 || percent > 255){percent = 255;} //how????
+    funct_end:;
+*/
+    if (percent == percent_prev){return 0;} //nothing changed
+    if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_disable) < 0){return -1;} //disable write protection
+    if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_battery_capacity, (uint8_t)percent) < 0){return -1;} //update register
+    if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_enable) < 0){return -1;} //enable write protection
+    percent_prev = percent;
+    return 0;
+}
+#endif
 
 int mcu_update_register(int* fd, uint8_t reg, uint8_t value, bool check){ //update and check register, return 0 on success, -1 on error
     if(!io_fd_valid(*fd)){return -1;}
@@ -956,17 +1023,6 @@ int main(int argc, char** argv){
     program_get_path(argv, program_path, program_name); //get current program path and filename
     if (getuid() != 0){program_usage(); return EXIT_FAILED_GENERIC;} //show help if not running as root
 
-    #ifndef MULTI_INSTANCES
-        if (program_instances_count(program_path, program_name) > 1){ //check if program already running
-            print_stderr("program is already running\n");
-            return EXIT_FAILED_ALREADY_RUN;
-        }
-    #endif
-
-    int main_return = EXIT_SUCCESS; //program return
-    bool cfg_no_create = false; //disable creation of config file
-    bool program_close_on_warn = false; //close program on major warnings
-
     if (argc > 2 && strcmp(argv[1],"-config") == 0){
         if (argv[2][0] == '/'){strcpy(config_path, argv[2]); //absolute path
         } else {sprintf(config_path, "%s/%s", program_path, argv[2]);} //relative path
@@ -989,6 +1045,10 @@ int main(int argc, char** argv){
         bool input_searching = false;
         int input_search[2] = {-1, -1}; //input to search
     #endif
+
+    int main_return = EXIT_SUCCESS; //program return
+    bool cfg_no_create = false; //disable creation of config file
+    bool program_close_on_warn = false; //close program on major warnings
 
     //program arguments parse
     for(int i=1; i<argc; ++i){
@@ -1025,6 +1085,13 @@ int main(int argc, char** argv){
         } else if (strcmp(argv[i],"-postmessagetest") == 0){diag_postmessagetest = true;} //only output "first run" post message and close
 #endif
     }
+
+    #ifndef MULTI_INSTANCES
+        if (program_instances_count(program_path, program_name) > 1){ //check if program already running
+            print_stderr("Program is already running\n");
+            return EXIT_FAILED_ALREADY_RUN;
+        }
+    #endif
 
     //config
     if (cfg_no_create){struct stat file_stat = {0}; if (stat(config_path, &file_stat) != 0){return EXIT_FAILED_CONFIG;}} //config file not exist
@@ -1134,7 +1201,7 @@ int main(int argc, char** argv){
         }
 
         if (i2c_disabled || uhid_disabled){
-            i2c_poll_rate_disable = true; irq_enable = false;
+            i2c_poll_rate_disable = true; /*irq_enable = false;*/
             print_stderr("running in a specific mode (no-i2c:%d, no-uhid:%d), pollrate disabled\n", i2c_disabled, uhid_disabled);
             if (irq_gpio >= 0){print_stderr("IRQ disabled\n");}
         }
@@ -1152,20 +1219,71 @@ int main(int argc, char** argv){
             print_stderr("new uhid device created\n");
         }
 
-        //interrupt
-        if (irq_gpio >= 0 && irq_enable/* && !diag_first_run*/){
-            irq_enable = false;
+        //interrupt/low battery gpio
+        #ifdef ALLOW_MCU_SEC_I2C
+            battery_gpio_enable = (lowbattery_gpio >= 0);
+        #endif
+
+        if ((irq_gpio >= 0 && !i2c_disabled && !uhid_disabled) || battery_gpio_enable/* && !diag_first_run*/){
+            irq_enable = battery_gpio_enable = false;
             #ifdef USE_WIRINGPI
                 #define WIRINGPI_CODES 1 //allow error code return
                 int err;
                 if ((err = wiringPiSetupGpio()) < 0){ //use BCM numbering
                     print_stderr("failed to initialize wiringPi, errno:%d\n", -err);
                 } else {
-                    pinMode(irq_gpio, INPUT);
-                    print_stderr("using wiringPi to poll GPIO%d\n", irq_gpio);
-                    irq_enable = true;
+                    if (irq_gpio >= 0){
+                        pinMode(irq_gpio, INPUT);
+                        print_stderr("using wiringPi to poll GPIO%d (IRQ))\n", irq_gpio);
+                        irq_enable = true;
+                    }
+
+                    #ifdef ALLOW_MCU_SEC_I2C
+                        if (lowbattery_gpio >= 0){
+                            pinMode(lowbattery_gpio, INPUT);
+                            print_stderr("using wiringPi to poll GPIO%d (LOW BATT)\n", lowbattery_gpio);
+                            battery_gpio_enable = true;
+                        }
+                    #endif
                 }
             #elif defined(USE_GPIOD)
+                if ((gpiod_input_chip = gpiod_chip_open_lookup("0")) == NULL){
+                    print_stderr("gpiod_chip_open_lookup failed\n");
+                } else {
+                    if (irq_gpio >= 0){
+                        sprintf(gpiod_consumer_name, "%s %d IRQ", uhid_device_name, uhid_device_id);
+                        if ((gpiod_input_line = gpiod_chip_get_line(gpiod_input_chip, irq_gpio)) == NULL){
+                            print_stderr("gpiod_chip_get_line failed, consumer:%s\n", gpiod_consumer_name);
+                        } else if (gpiod_line_request_both_edges_events(gpiod_input_line, gpiod_consumer_name) < 0){
+                            print_stderr("gpiod_line_request_both_edges_events failed. chip:%s(%s), consumer:%s\n", gpiod_chip_name(gpiod_input_chip), gpiod_chip_label(gpiod_input_chip), gpiod_consumer_name);
+                        } else if ((gpiod_fd = gpiod_line_event_get_fd(gpiod_input_line)) < 0){
+                            print_stderr("gpiod_line_event_get_fd failed. errno:%d, consumer:%s\n", -gpiod_fd, gpiod_consumer_name);
+                        } else {
+                            fcntl(gpiod_fd, F_SETFL, fcntl(gpiod_fd, F_GETFL, 0) | O_NONBLOCK); //set gpiod fd to non blocking
+                            print_stderr("using libGPIOd to poll GPIO%d, chip:%s(%s), consumer:%s\n", irq_gpio, gpiod_chip_name(gpiod_input_chip), gpiod_chip_label(gpiod_input_chip), gpiod_consumer_name);
+                            irq_enable = true;
+                        }
+                    }
+
+                    #ifdef ALLOW_MCU_SEC_I2C
+                        if (lowbattery_gpio >= 0){
+                            sprintf(gpiod_consumer_lowbatt_name, "%s %d IRQ", uhid_device_name, uhid_device_id);
+                            if ((gpiod_lowbatt_line = gpiod_chip_get_line(gpiod_input_chip, lowbattery_gpio)) == NULL){
+                                print_stderr("gpiod_chip_get_line failed, consumer:%s\n", gpiod_consumer_lowbatt_name);
+                            } else if (gpiod_line_request_both_edges_events(gpiod_lowbatt_line, gpiod_consumer_lowbatt_name) < 0){
+                                print_stderr("gpiod_line_request_both_edges_events failed. chip:%s(%s), consumer:%s\n", gpiod_chip_name(gpiod_input_chip), gpiod_chip_label(gpiod_input_chip), gpiod_consumer_lowbatt_name);
+                            } else if ((gpiod_lowbatt_fd = gpiod_line_event_get_fd(gpiod_lowbatt_line)) < 0){
+                                print_stderr("gpiod_line_event_get_fd failed. errno:%d, consumer:%s\n", -gpiod_lowbatt_fd, gpiod_consumer_lowbatt_name);
+                            } else {
+                                fcntl(gpiod_lowbatt_fd, F_SETFL, fcntl(gpiod_lowbatt_fd, F_GETFL, 0) | O_NONBLOCK); //set gpiod fd to non blocking
+                                print_stderr("using libGPIOd to poll GPIO%d, chip:%s(%s), consumer:%s\n", lowbattery_gpio, gpiod_chip_name(gpiod_input_chip), gpiod_chip_label(gpiod_input_chip), gpiod_consumer_lowbatt_name);
+                                battery_gpio_enable = true;
+                            }
+                        }
+                    #endif
+                }
+
+/*
                 sprintf(gpiod_consumer_name, "%s %d", uhid_device_name, uhid_device_id);
                 if ((gpiod_input_chip = gpiod_chip_open_lookup("0")) == NULL){
                     print_stderr("gpiod_chip_open_lookup failed\n");
@@ -1180,8 +1298,9 @@ int main(int argc, char** argv){
                     print_stderr("using libGPIOd to poll GPIO%d, chip:%s(%s)\n", irq_gpio, gpiod_chip_name(gpiod_input_chip), gpiod_chip_label(gpiod_input_chip));
                     irq_enable = true;
                 }
+*/
             #endif
-        } else {irq_enable = false;}
+        }/* else {irq_enable = false;}*/
     #endif
 
     //initial poll
@@ -1267,6 +1386,15 @@ int main(int argc, char** argv){
             if (shm_clock_start < -0.1){shm_clock_start = poll_clock_start;} //interval reset
             if (poll_clock_start - shm_clock_start > shm_update_interval){shm_update(); shm_clock_start = -1.;} //shm update
 
+            #ifdef ALLOW_MCU_SEC_I2C
+                //battery
+                if (poll_clock_start - battery_clock_start > (double)battery_interval){
+                    mcu_update_battery_capacity(); //update rsoc <> register if possible
+                    mcu_update_power_control(); //low_batt gpio
+                    battery_clock_start = poll_clock_start;
+                }
+            #endif
+
             if (kill_requested){break;}
 
             if (!i2c_poll_rate_disable){ //pollrate
@@ -1307,6 +1435,9 @@ int main(int argc, char** argv){
 
         #ifdef USE_GPIOD
             if (irq_enable){gpiod_line_release(gpiod_input_line);}
+            #ifdef ALLOW_MCU_SEC_I2C
+                if (battery_gpio_enable){gpiod_line_release(gpiod_lowbatt_line);}
+            #endif
         #endif
     #else //diag program
         struct stat status_stat = {0}; char status_buffer[3];

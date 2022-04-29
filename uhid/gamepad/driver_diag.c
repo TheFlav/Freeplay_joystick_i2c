@@ -420,7 +420,7 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
     tty_line++;
 
     //bool i2c_update = false, i2c_failed = false;
-    bool term_go_screen_firstrun = false, term_go_screen_i2c = false, term_go_screen_adc = false, term_go_screen_digital = false, term_go_screen_debug = false;
+    bool term_go_screen_firstrun = false, term_go_screen_i2c = false, term_go_screen_adc = false, term_go_screen_digital = false, term_go_screen_debug = false, term_go_screen_addons = false;
     #ifdef ALLOW_MCU_SEC_I2C
         bool term_go_screen_advanced = false;
     #endif
@@ -441,8 +441,9 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
         {.str=" I2C/UHID Configuration ", .ptrbool=&term_go_screen_i2c, .ptrhint="Define I2C settings"},
         {.str=" Digital Configuration ", .ptrbool=&term_go_screen_digital, .ptrhint="Digital inputs specific settings, display registers state", .disabled=mcu_failed},
         {.str=" Analog Configuration ", .ptrbool=&term_go_screen_adc, .ptrhint="ADC inputs specific settings", .disabled=mcu_failed},
+        {.str=" Addons Configuration ", .ptrbool=&term_go_screen_addons, .ptrhint="Addons specific settings", .disabled=mcu_failed},
         #ifdef ALLOW_MCU_SEC_I2C
-            {.str=" Advanced Configuration ", .ptrbool=&term_go_screen_advanced, .ptrhint="Edit MCU internal settings", .disabled=!io_fd_valid(mcu_fd_sec)},
+            {.str=" Advanced Configuration ", .ptrbool=&term_go_screen_advanced, .ptrhint="\e[91mEdit MCU internal settings\e[0m", .disabled=!io_fd_valid(mcu_fd_sec)},
         #endif
     };
 
@@ -497,6 +498,7 @@ void term_screen_main(int tty_line, int tty_last_width, int tty_last_height){
         if (term_go_screen_i2c){term_screen_current = SCREEN_I2C; goto funct_end;} //go to adc screen requested
         if (term_go_screen_digital){term_screen_current = SCREEN_DIGITAL; goto funct_end;} //go to digital screen requested
         if (term_go_screen_adc){term_screen_current = SCREEN_ADC; goto funct_end;} //go to adc screen requested
+        if (term_go_screen_addons){term_screen_current = SCREEN_ADDONS; goto funct_end;} //go to addons screen requested
         #ifdef ALLOW_MCU_SEC_I2C
             if (term_go_screen_advanced){term_screen_current = SCREEN_ADVANCED; goto funct_end;} //go to advanced screen requested
         #endif
@@ -1002,13 +1004,13 @@ void term_screen_digital(int tty_line, int tty_last_width, int tty_last_height){
 
     //pollrate
     int i2c_poll_rate_default = def_i2c_poll_rate;
-    fprintf(stdout, "\e[%d;%dH\e[%dmPollrate (digital):_____ (in hz, set to 0 for unlimited)\e[0m", tty_line, tmp_col, term_esc_col_normal);
+    fprintf(stdout, "\e[%d;%dH\e[%dmPollrate (digital):_____ hz (set to 0 for unlimited)\e[0m", tty_line, tmp_col, term_esc_col_normal);
     term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+19, .y=tty_line++, .size=5}, .type=0, .value={.min=0, .max=9999, .ptrint=&i2c_poll_rate}, .defval={.ptrint=&i2c_poll_rate_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
 
     //irq
     int irq_gpio_default = def_irq_gpio;
-    fprintf(stdout, "\e[%d;%dH\e[%dmIRQ:___ (GPIO pin used for digital input interrupts, -1 to disable)\e[0m", tty_line, tmp_col, term_esc_col_normal);
-    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+4, .y=tty_line++, .size=3}, .type=0, .value={.min=-1, .max=45, .ptrint=&irq_gpio}, .defval={.ptrint=&irq_gpio_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+    fprintf(stdout, "\e[%d;%dH\e[%dmGPIO IRQ pin:___ (used for digital input interrupts, -1 to disable)\e[0m", tty_line, tmp_col, term_esc_col_normal);
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+13, .y=tty_line++, .size=3}, .type=0, .value={.min=-1, .max=45, .ptrint=&irq_gpio}, .defval={.ptrint=&irq_gpio_default, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
 
     //debounce
     int digital_debounce_default = def_digital_debounce, digital_debounce_back = digital_debounce;
@@ -1753,7 +1755,7 @@ void term_screen_firstrun(int tty_line, int tty_last_width, int tty_last_height)
 }
 
 
-void term_screen_debug(int tty_line, int tty_last_width, int tty_last_height){ //generic screen function for future implement
+void term_screen_debug(int tty_line, int tty_last_width, int tty_last_height){
     char buffer[buffer_size]; int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2;
     bool term_go_screen_main = false;
 
@@ -1874,6 +1876,105 @@ void term_screen_debug(int tty_line, int tty_last_width, int tty_last_height){ /
             close(tmp_fd);
             benchmark_uhid = false; term_force_update = true;
         }
+
+        fprintf(stdout, "\e[0;0H\n"); //force tty update
+        usleep (1000000/30); //limit to 30hz max to limit risk of i2c colision if driver is running
+    }
+
+    funct_end:; //jump point for fast exit
+    free(term_select);
+}
+
+
+void term_screen_addons(int tty_line, int tty_last_width, int tty_last_height){
+    //char buffer[buffer_size], buffer1[buffer_size], buffer2[buffer_size];
+    int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2;
+    bool term_go_screen_main = false;
+
+    const int select_max = 255; //TODO proper count
+    term_select_t* term_select = NULL; term_select = (term_select_t*) malloc(select_max * sizeof(term_select_t)); assert(term_select != NULL);
+    int select_limit = 0;
+
+    char* screen_name = "Addons settings";
+    fprintf(stdout, "\e[%d;%dH\e[1;%dm%s\e[0m", tty_line, (tty_last_width - strlen(screen_name))/2, term_esc_col_normal, screen_name);
+    tty_line+=2;
+
+#ifdef ALLOW_MCU_SEC_I2C
+    term_pos_generic_t term_battery_rsoc = {.x=tmp_col+14, .y=tty_line};
+    fprintf(stdout, "\e[%d;%dH\e[%d;4mBattery (RSOC:none):\e[0m", tty_line++, tmp_col, term_esc_col_normal);
+
+    int battery_interval_def = def_battery_interval;
+    fprintf(stdout, "\e[%d;%dH\e[%dmUpdate interval:____ seconds\e[0m", tty_line, tmp_col, term_esc_col_normal);
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+16, .y=tty_line++, .size=4}, .type=0, .value={.min=1, .max=999, .ptrint=&battery_interval}, .defval={.ptrint=&battery_interval_def, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+
+    int battery_report_type_def = def_battery_report_type;
+    fprintf(stdout, "\e[%d;%dH\e[%dmBehave:____ (0:TODO, 1:TODO, 2:TODO, 3:TODO)\e[0m", tty_line, tmp_col, term_esc_col_normal);
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+7, .y=tty_line++, .size=4}, .type=0, .value={.min=0, .max=255, .ptrint=&battery_report_type}, .defval={.ptrint=&battery_report_type_def, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+
+
+    int lowbattery_gpio_def = def_lowbattery_gpio;
+    fprintf(stdout, "\e[%d;%dH\e[%dmLow battery GPIO pin:___ (-1 to disable)(*)\e[0m", tty_line, tmp_col, term_esc_col_normal);
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+21, .y=tty_line++, .size=3}, .type=0, .value={.min=-1, .max=45, .ptrint=&lowbattery_gpio}, .defval={.ptrint=&lowbattery_gpio_def, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[1]}};
+
+    bool lowbattery_gpio_invert_def = def_lowbattery_gpio_invert;
+    fprintf(stdout, "\e[%d;%dH\e[%dmInvert pin state:_ (*)\e[0m", tty_line, tmp_col, term_esc_col_normal);
+    term_select[select_limit++] = (term_select_t){.position={.x=tmp_col+17, .y=tty_line++, .size=1}, .type=2, .value={.ptrbool=&lowbattery_gpio_invert}, .defval={.ptrbool=&lowbattery_gpio_invert_def, .y=hint_def_line}, .hint={.y=hint_line, .str=term_hint_nav_str[2]}};
+
+    fprintf(stdout, "\e[%d;%dH\e[%dm(*) Require driver to be compiled with GPIO support.\e[0m", tty_line++, tmp_col, term_esc_col_error);
+
+    tty_line+=2;
+#else
+    fprintf(stdout, "\e[%d;%dH\e[%dmBattery addon require program set compiled with MCU secondary address support\e[0m", tty_line, tmp_col, term_esc_col_error);
+    tty_line+=2;
+#endif
+
+
+    //footer
+    fprintf(stdout, "\e[%d;%dH\e[2K%s", tty_last_height-3, (tty_last_width - strcpy_noescape(NULL, term_hint_nav_str[0], 20)) / 2, term_hint_nav_str[0]); //nav hint
+
+    //buttons
+    term_pos_button_t term_footer_buttons[] = {
+        {.str="Back", .ptrbool=&term_go_screen_main, .ptrhint="Go to main menu"},
+    };
+    int term_footer_buttons_count = sizeof(term_footer_buttons) / sizeof(term_footer_buttons[0]);
+    int term_buttons_pad = (tty_last_width - term_footer_buttons_width * term_footer_buttons_count) / (term_footer_buttons_count + 1);
+    for (int i=0; i<term_footer_buttons_count; i++){
+        int x = term_buttons_pad + (term_footer_buttons_width + term_buttons_pad) * i;
+        array_pad(term_footer_buttons[i].str, strlen(term_footer_buttons[i].str), term_footer_buttons_width, ' ', 0);
+        term_select[select_limit++] = (term_select_t){.position={.x=x, .y=tty_last_height-1, .size=term_footer_buttons_width}, .type=1, .disabled=term_footer_buttons[i].disabled, .value={.ptrchar=term_footer_buttons[i].str, .ptrbool=term_footer_buttons[i].ptrbool}, .hint={.y=hint_line, .str=term_footer_buttons[i].ptrhint}};
+    }
+
+    if (debug){fprintf(stdout, "\e[1;%dH\e[100mselect_limit:%d\e[0m", tty_last_width-17, select_limit);}
+    assert(select_limit <= select_max); //failsafe
+
+    while (!kill_requested){
+        ioctl(STDIN_FILENO, TIOCGWINSZ, &ws); if(tty_last_width != ws.ws_col || tty_last_height != ws.ws_row){term_screen_update = true; goto funct_end;} //"redraw" if tty size changed
+
+        term_user_input(&term_input, false, NULL, NULL); //handle terminal user input
+        term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
+
+        if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
+
+        #ifdef ALLOW_MCU_SEC_I2C
+            //battery rsoc
+            poll_clock_start = get_time_double();
+            if (poll_clock_start - battery_clock_start > (double)battery_interval){
+                struct stat battery_stat; int percent = -1; FILE *filehandle;
+                if (stat(battery_rsoc_file, &battery_stat) == 0){
+                    filehandle = fopen(battery_rsoc_file, "r");
+                    if (filehandle != NULL && !ferror(filehandle)){
+                        char buffer[5]; fgets(buffer, 5, filehandle);
+                        percent = atoi(buffer); if (percent > 100){percent = 100;}
+                    }
+                    fclose(filehandle);
+                }
+                if (percent < 0){fprintf(stdout, "\e[%d;%dH\e[%d;4mnone\e[0m", term_battery_rsoc.y, term_battery_rsoc.x, term_esc_col_normal);
+                } else {fprintf(stdout, "\e[%d;%dH\e[%d;1;4m%3d%%\e[0m", term_battery_rsoc.y, term_battery_rsoc.x, term_esc_col_normal, percent);}
+                battery_clock_start = poll_clock_start;
+            }          
+        #endif
+
+
 
         fprintf(stdout, "\e[0;0H\n"); //force tty update
         usleep (1000000/30); //limit to 30hz max to limit risk of i2c colision if driver is running
