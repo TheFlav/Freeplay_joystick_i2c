@@ -204,6 +204,7 @@ double term_read_mcu_start = -1.;
     extern int mcu_backlight; //current backlight level, set during runtime
     extern int mcu_backlight_steps; //maximum amount of backlight steps, set during runtime
 
+    extern double battery_clock_start; //set during runtime, used for mcu battery interval update
     extern int battery_interval; //MCU battery related stuff update interval in sec
     extern int battery_report_type; //todo
     extern int lowbattery_gpio; //low battery gpio pin, set to -1 to disable

@@ -1900,7 +1900,8 @@ void term_screen_addons(int tty_line, int tty_last_width, int tty_last_height){
     tty_line+=2;
 
 #ifdef ALLOW_MCU_SEC_I2C
-    fprintf(stdout, "\e[%d;%dH\e[%d;4mBattery:\e[0m", tty_line++, tmp_col, term_esc_col_normal);
+    term_pos_generic_t term_battery_rsoc = {.x=tmp_col+14, .y=tty_line};
+    fprintf(stdout, "\e[%d;%dH\e[%d;4mBattery (RSOC:none):\e[0m", tty_line++, tmp_col, term_esc_col_normal);
 
     int battery_interval_def = def_battery_interval;
     fprintf(stdout, "\e[%d;%dH\e[%dmUpdate interval:____ seconds\e[0m", tty_line, tmp_col, term_esc_col_normal);
@@ -1953,6 +1954,27 @@ void term_screen_addons(int tty_line, int tty_last_width, int tty_last_height){
         term_select_update(term_select, &select_index_current, &select_index_last, select_limit, &term_input, tty_last_width, tty_last_height, false); //update selectible elements
 
         if (term_go_screen_main || term_input.escape){term_screen_current = SCREEN_MAIN; goto funct_end;} //escape key pressed, go back to main menu
+
+        #ifdef ALLOW_MCU_SEC_I2C
+            //battery rsoc
+            poll_clock_start = get_time_double();
+            if (poll_clock_start - battery_clock_start > (double)battery_interval){
+                struct stat battery_stat; int percent = -1; FILE *filehandle;
+                if (stat(battery_rsoc_file, &battery_stat) == 0){
+                    filehandle = fopen(battery_rsoc_file, "r");
+                    if (filehandle != NULL && !ferror(filehandle)){
+                        char buffer[5]; fgets(buffer, 5, filehandle);
+                        percent = atoi(buffer); if (percent > 100){percent = 100;}
+                    }
+                    fclose(filehandle);
+                }
+                if (percent < 0){fprintf(stdout, "\e[%d;%dH\e[%d;4mnone\e[0m", term_battery_rsoc.y, term_battery_rsoc.x, term_esc_col_normal);
+                } else {fprintf(stdout, "\e[%d;%dH\e[%d;1;4m%3d%%\e[0m", term_battery_rsoc.y, term_battery_rsoc.x, term_esc_col_normal, percent);}
+                battery_clock_start = poll_clock_start;
+            }          
+        #endif
+
+
 
         fprintf(stdout, "\e[0;0H\n"); //force tty update
         usleep (1000000/30); //limit to 30hz max to limit risk of i2c colision if driver is running

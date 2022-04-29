@@ -573,6 +573,17 @@ int mcu_update_power_control(){ //read/update power_control register, return 0 o
 }
 
 int mcu_update_battery_capacity(){ //read/update battery_capacity register, return 0 on success, -1 on error
+    struct stat battery_stat; int percent = 255; static int percent_prev = -1; FILE *filehandle;
+    if (stat(battery_rsoc_file, &battery_stat) == 0){
+        filehandle = fopen(battery_rsoc_file, "r");
+        if (filehandle != NULL && !ferror(filehandle)){
+            char buffer[5]; fgets(buffer, 5, filehandle);
+            percent = atoi(buffer); if (percent < 0 || percent > 255){percent = 255;}
+        }
+        fclose(filehandle);
+    }
+
+/*
     struct stat battery_stat; int percent = 0; static int percent_prev = -1;
     if (stat(battery_rsoc_file, &battery_stat) != 0){percent = 255; goto funct_end;} //file not exist
 
@@ -582,7 +593,7 @@ int mcu_update_battery_capacity(){ //read/update battery_capacity register, retu
     char buffer[5]; fgets(buffer, 5, filehandle); fclose(filehandle); //read
     percent = atoi(buffer); if (percent < 0 || percent > 255){percent = 255;} //how????
     funct_end:;
-
+*/
     if (percent == percent_prev){return 0;} //nothing changed
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_disable) < 0){return -1;} //disable write protection
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_battery_capacity, (uint8_t)percent) < 0){return -1;} //update register
