@@ -163,6 +163,7 @@ bool battery_gpio_enable = false;
     int battery_interval = def_battery_interval; //todo, in sec
     int battery_report_type = def_battery_report_type; //todo
     int lowbattery_gpio = def_lowbattery_gpio; //todo, -1 to disable
+    bool lowbattery_gpio_invert = def_lowbattery_gpio_invert; //todo
     mcu_power_control_t mcu_power_control = {0};
 #endif
 
@@ -243,9 +244,10 @@ const char mcu_search_desc[] = "Try to correct wrong I2C bus number and enable s
 const char mcu_addr_desc[] = "MCU I2C address.";
 #ifdef ALLOW_MCU_SEC_I2C
     const char mcu_addr_sec_desc[] = "MCU Secondary I2C address for additionnal features.";
-    const char battery_interval_desc[] = "TODO, (in sec), require Battery Gauge IC or GPIO low battery pin.";
+    const char battery_interval_desc[] = "TODO, (in sec), require Battery Gauge IC installed (incl. kernel driver) or GPIO low battery pin.";
     const char battery_report_type_desc[] = "TODO.";
-    const char lowbattery_gpio_desc[] = "TODO, -1 to disable.";
+    const char lowbattery_gpio_desc[] = "Low battery GPIO pin, -1 to disable.";
+    const char lowbattery_gpio_invert_desc[] = "Invert Low battery GPIO signal (0:disable, 1:enable).";
 #endif
 const char irq_gpio_desc[] = "GPIO pin to use for interrupt, default:40 (-1 to disable)."; //gpio pin used for irq, limited to 31 for pigpio, set to -1 to disable
 
@@ -286,6 +288,7 @@ cfg_vars_t cfg_vars[] = {
     {"\nbattery_interval", battery_interval_desc, 0, &battery_interval},
     {"battery_report_type", battery_report_type_desc, 0, &battery_report_type},
     {"lowbattery_gpio", lowbattery_gpio_desc, 0, &lowbattery_gpio},
+    {"lowbattery_gpio_invert", lowbattery_gpio_invert_desc, 4, &lowbattery_gpio_invert},
 #endif
 
     {"\ndigital_debounce", debounce_desc, 0, &digital_debounce},

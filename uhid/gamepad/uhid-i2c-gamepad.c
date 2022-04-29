@@ -1357,8 +1357,12 @@ int main(int argc, char** argv){
                         int state = -1;
                         #ifdef USE_WIRINGPI
                             state = digitalRead(lowbattery_gpio);
+                            if (lowbattery_gpio_invert){state = !state;}
                         #elif defined(USE_GPIOD)
-                            if (gpiod_lowbatt_fd >= 0){state = gpiod_line_get_value(gpiod_lowbatt_line);}
+                            if (gpiod_lowbatt_fd >= 0){
+                                state = gpiod_line_get_value(gpiod_lowbatt_line);
+                                if (state >= 0 && lowbattery_gpio_invert){state = !state;}
+                            }
                         #endif
                         if (state > -1){mcu_power_control.vals.low_batt = (uint8_t)state; mcu_update_power_control();}
                     }
