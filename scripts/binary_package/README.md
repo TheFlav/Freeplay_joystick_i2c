@@ -119,7 +119,10 @@ gpio=10=np
 #dtoverlay=disable-bt
 
 dtparam=act_led_trigger=none
-dtparam=act_led_activelow=on
+dtparam=act_led_activelow=off
+
+dtparam=pwr_led_trigger=none
+dtparam=pwr_led_activelow=off
 
 audio_pwm_mode=2
 ##### END Freeplay Additions #####
