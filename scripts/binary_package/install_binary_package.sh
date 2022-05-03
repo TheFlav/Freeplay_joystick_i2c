@@ -11,8 +11,12 @@ CONTENTSDIR=$SCRIPTDIR/contents
 
 DESTDIR=/home/pi/Freeplay/Freeplay_joystick_i2c/
 
+sudo killall $DESTDIR/uhid/gamepad/uhid-i2c-gamepad
 mkdir -p $DESTDIR
 cp -r $CONTENTSDIR/* $DESTDIR
 
 chown pi:pi /home/pi/Freeplay/
 chown -R pi:pi $DESTDIR
+
+$CONTENTSDIR/scripts/install_to_retropie.sh
+$CONTENTSDIR/scripts/setup_linux.sh

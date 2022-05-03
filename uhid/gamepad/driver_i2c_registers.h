@@ -8,7 +8,7 @@
 
 #pragma once
 
-#define mcu_version_even 17 //what version of mcu is even with this file 
+#define mcu_version_even 18 //what version of mcu is even with this file 
 
 struct i2c_joystick_register_struct {
     uint8_t input0;         // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
@@ -36,23 +36,28 @@ struct i2c_joystick_register_struct {
     #define mcu_write_protect_disable 0x55 //write_protect register value to remove write protection
 
     struct i2c_secondary_address_register_struct {
-        uint8_t config_backlight;  // Reg: 0x00
-        uint8_t backlight_max;     // Reg: 0x01 
-        uint8_t power_control;     // Reg: 0x02 - host can tell us stuff about the state of the power (like low-batt or shutdown imminent) or even tell us to force a shutdown
-        uint8_t features_available;// Reg: 0x03 - bit define if ADCs are available or interrups are in use, etc.
-        uint8_t rfu0;              // Reg: 0x04 - reserved for future use (or device-specific use)
-        uint8_t rfu1;              // Reg: 0x05 - reserved for future use (or device-specific use)
-        uint8_t rfu2;              // Reg: 0x06 - reserved for future use (or device-specific use)
-        uint8_t rfu3;              // Reg: 0x07 - reserved for future use (or device-specific use)
-        uint8_t rfu4;              // Reg: 0x08 - reserved for future use (or device-specific use)
-        uint8_t status_led_control;// Reg: 0x09 - turn on/off/blinkSlow/blinkFast/etc the blue status LED  (this is actuall a WRITE-ONLY "virtual" register)
-        uint8_t write_protect;     // Reg: 0x0A - write 0x00 to make protected registers writeable
+        uint8_t config_backlight;   // Reg: 0x00
+        uint8_t backlight_max;      // Reg: 0x01 
+        uint8_t power_control;      // Reg: 0x02 - host can tell us stuff about the state of the power (like low-batt or shutdown imminent) or even tell us to force a shutdown
+        uint8_t features_available; // Reg: 0x03 - bit define if ADCs are available or interrups are in use, etc.
+        uint8_t rfu0;               // Reg: 0x04 - reserved for future use (or device-specific use)
+        uint8_t rfu1;               // Reg: 0x05 - reserved for future use (or device-specific use)
+        uint8_t rfu2;               // Reg: 0x06 - reserved for future use (or device-specific use)
+        uint8_t rfu3;               // Reg: 0x07 - reserved for future use (or device-specific use)
+        uint8_t battery_capacity;   // Reg: 0x08 - battery capacity (0-100 = battery %, 255 = UNKNOWN)
+        uint8_t status_led_control; // Reg: 0x09 - turn on/off/blinkSlow/blinkFast/etc the blue status LED  (this is actuall a WRITE-ONLY "virtual" register)
+        uint8_t write_protect;      // Reg: 0x0A - write 0x00 to make protected registers writeable
         uint8_t secondary_i2c_addr; // Reg: 0x0B - this holds the secondary i2c address (the address where this struct can be found)
-        uint8_t joystick_i2c_addr; // Reg: 0x0C - this holds the primary (joystick's) i2c address
-        uint8_t manuf_ID;          // Reg: 0x0D - manuf_ID:device_ID:version_ID needs to be a unique ID that defines a specific device and how it will use above registers
-        uint8_t device_ID;         // Reg: 0x0E -
-        uint8_t version_ID;        // Reg: 0x0F - 
+        uint8_t joystick_i2c_addr;  // Reg: 0x0C - this holds the primary (joystick's) i2c address
+        uint8_t manuf_ID;           // Reg: 0x0D - manuf_ID:device_ID:version_ID needs to be a unique ID that defines a specific device and how it will use above registers
+        uint8_t device_ID;          // Reg: 0x0E -
+        uint8_t version_ID;         // Reg: 0x0F - 
     };
+
+    typedef union { //power_control register bitfield structure
+        struct {uint8_t low_batt:1, unused1:1, unused2:1, unused3:1, unused4:1, unused5:1, unused6:1, unused7:1;} vals;
+        uint8_t bits;
+    } mcu_power_control_t;
 #endif
 
 //common structures, DO NOT EDIT UNTIL YOU KNOW WHAT YOU ARE DOING
