@@ -19,5 +19,7 @@ cp -r $CONTENTSDIR/* $DESTDIR
 chown pi:pi /home/pi/Freeplay/
 chown -R pi:pi $DESTDIR
 
+cp $CONTENTSDIR/scripts/freeplay_i2c_joystick.sh /home/pi/RetroPie-Setup/scriptmodules/supplementary
+
 $CONTENTSDIR/scripts/install_to_retropie.sh
 $CONTENTSDIR/scripts/setup_linux.sh
