@@ -9,7 +9,7 @@ done
 SCRIPTDIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 CONTENTSDIR=$SCRIPTDIR/contents
 
-DESTDIR=/home/pi/Freeplay/Freeplay_joystick_i2c/
+DESTDIR=/home/pi/Freeplay/Freeplay_joystick_i2c
 
 sudo killall $DESTDIR/uhid/gamepad/uhid-i2c-gamepad
 mkdir -p $DESTDIR
