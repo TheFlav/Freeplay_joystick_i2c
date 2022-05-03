@@ -54,7 +54,7 @@
 
 #define MANUF_ID         0xED
 #define DEVICE_ID        0x00
-#define VERSION_NUMBER   18
+#define VERSION_NUMBER   19
 
 #define CONFIG_PERIODIC_TASK_TIMER_MILLIS 5000
 #define CONFIG_INPUT_READ_TIMER_MICROS 500        //set to 0 for NO delay reading inputs, otherwise try to read inputs at least every CONFIG_INPUT_READ_TIMER_MICROS microseconds
@@ -175,6 +175,8 @@ enum hotkey_mode_enum {
  #define CONFIG_BACKLIGHT_STEP_DEFAULT  5
 
  byte g_pwm_step = 0x00;  //100% on
+ bool g_lcd_dimming_mode = false;
+ bool g_lcd_sleep_mode = false;
 #endif
 
 #ifdef USE_ADC0
@@ -273,6 +275,18 @@ struct /*i2c_secondary_address_register_struct */
   uint8_t device_ID;         // Reg: 0x0E -
   uint8_t version_ID;        // Reg: 0x0F - 
 } i2c_secondary_registers;
+
+struct joy_power_control_bit_struct
+{
+    uint8_t low_batt_mode : 1;
+    uint8_t lcd_dimming_mode : 1;
+    uint8_t lcd_sleep_mode : 1;
+    uint8_t unused3 : 1;
+    uint8_t unused4 : 1;
+    uint8_t unused5 : 1;
+    uint8_t unused6 : 1;
+    uint8_t unused7 : 1;  
+}  * const joy_power_control_ptr = (struct joy_power_control_bit_struct*)&i2c_secondary_registers.power_control;
 
 struct eeprom_data_struct
 {
@@ -1314,7 +1328,8 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
       //power_control bits 1-7 are currently unused
       
       //we would use this as a way for the i2c master (host system) to tell us about power related stuff (like if the battery is getting low)
-      i2c_secondary_registers.power_control = temp & 0x01;    //only bit 0x01 is currently used
+      //low_batt_mode   SEE joy_power_control_bit_struct above
+      i2c_secondary_registers.power_control = temp;
     }
     else if(x == REGISTER_SEC_BATTERY_CAPACITY && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
@@ -1607,6 +1622,20 @@ void loop()
 
 #ifdef PIN_BACKLIGHT_PWM
 
+  if(g_lcd_dimming_mode != joy_power_control_ptr->lcd_dimming_mode)
+  {
+    uint8_t dim_val = i2c_secondary_registers.config_backlight >> 1;
+    dim_val++;
+    analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[dim_val]);
+
+    g_lcd_dimming_mode = joy_power_control_ptr->lcd_dimming_mode;
+  }
+  if(g_lcd_sleep_mode != joy_power_control_ptr->lcd_sleep_mode)
+  {
+    analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[0]);
+
+    g_lcd_sleep_mode = joy_power_control_ptr->lcd_sleep_mode;
+  }
   if(g_pwm_step != i2c_secondary_registers.config_backlight)
   {
     //output the duty cycle to the pwm pin (PA3?)
