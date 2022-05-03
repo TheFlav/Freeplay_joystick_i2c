@@ -2,6 +2,7 @@
 
 #power button GPIO pin
 GPIO=27
+I2C_SEC_ADDR=0x40
 
 sudo /home/pi/Freeplay/Freeplay_joystick_i2c/uhid/gamepad/uhid-i2c-gamepad -confignocreate -closeonwarn -inputsearch 0x13b
 
@@ -138,6 +139,18 @@ if [ $JOY_NEEDS_NEW_FIRMWARE -eq 1 ]; then
 	fi
 fi
 
+
+LCDON=$(/opt/vc/bin/tvservice -s | grep -c "[\bLCD\b]")
+if [[ "$LCDON" == "1" ]]; then
+	#write unprotect
+	i2cset -y 0 $I2C_SEC_ADDR 0x0A 0x55
+	#set lcd_sleep_mode
+	i2cset -y 0 $I2C_SEC_ADDR 0x02 0x04
+	#write protect
+	i2cset -y 0 $I2C_SEC_ADDR 0x0A 0xAA
+fi
+
 echo "Freeplay i2c Joystick Found!"
 echo "Freeplay i2c Joystick driver starting."
 sudo /home/pi/Freeplay/Freeplay_joystick_i2c/uhid/gamepad/uhid-i2c-gamepad --quiet > /dev/null &
+sleep 1
