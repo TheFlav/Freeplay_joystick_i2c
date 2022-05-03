@@ -5,7 +5,7 @@ wget -O /tmp/fpjoy_binary_package.zip $(curl -s https://api.github.com/repos/The
 cd /tmp
 unzip fpjoy_binary_package.zip
 diff /tmp/fpjoy/contents/builddate.txt /home/pi/Freeplay/Freeplay_joystick_i2c/builddate.txt
-if [ "$?" != "0" ]; then
+if [ "$?" == "0" ]; then
   echo "Build dates match.  No need to upgrade."
   exit 1
 fi
