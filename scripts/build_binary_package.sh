@@ -8,7 +8,7 @@ while [ -h "$SOURCE" ]; do # resolve $SOURCE until the file is no longer a symli
 done
 SOURCE_DIR=$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )
 
-BUILD_DIR=/home/pi/Freeplay/fpjoy/
+BUILD_DIR=/home/pi/Freeplay/fpjoy
 CONTENTS_DIR=$BUILD_DIR/contents
 
 rm -rf $BUILD_DIR
@@ -48,4 +48,6 @@ cp -rL $SOURCE_DIR/../kernel/* $CONTENTS_DIR/kernel/
 cp -L $SOURCE_DIR/../uhid/gamepad/README.md $CONTENTS_DIR/uhid/gamepad/
 
 cd $BUILD_DIR/..
-zip -r fpjoy_binary_package_$(date +"%Y-%m-%d-%H-%M-%S").zip fpjoy
+DATETIME=$(date +"%Y-%m-%d-%H-%M-%S")
+echo $DATETIME > $CONTENTS_DIR/builddate.txt
+zip -r fpjoy_binary_package_$DATETIME.zip fpjoy
