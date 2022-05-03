@@ -255,7 +255,7 @@ struct /*i2c_secondary_address_register_struct */
   uint8_t config_backlight;  // Reg: 0x00
   uint8_t backlight_max;     // Reg: 0x01 
 #define REGISTER_SEC_POWER_CONTROL      0x02    //this one is writeable
-  uint8_t power_control;     // Reg: 0x02 - host can tell us stuff about the state of the power (like low-batt or shutdown imminent) or even tell us to force a shutdown
+  uint8_t power_control;     // Reg: 0x02 - host can tell us stuff about the state of the power (like low-batt, lcd_dimming, lcd_sleep, or shutdown imminent) or even tell us to force a shutdown
   uint8_t features_available;// Reg: 0x03 - bit define if ADCs are available or interrups are in use, etc.
   uint8_t rfu0;              // Reg: 0x04 - reserved for future use (or device-specific use)
   uint8_t rfu1;              // Reg: 0x05 - reserved for future use (or device-specific use)
@@ -1624,17 +1624,25 @@ void loop()
 
   if(g_lcd_dimming_mode != joy_power_control_ptr->lcd_dimming_mode)
   {
-    uint8_t dim_val = i2c_secondary_registers.config_backlight >> 1;
-    dim_val++;
-    analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[dim_val]);
-
     g_lcd_dimming_mode = joy_power_control_ptr->lcd_dimming_mode;
+
+    if(g_lcd_dimming_mode)
+    {
+      uint8_t dim_val = i2c_secondary_registers.config_backlight >> 1;
+      dim_val++;
+      analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[dim_val]);
+    }
+    else
+      analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
   }
   if(g_lcd_sleep_mode != joy_power_control_ptr->lcd_sleep_mode)
   {
-    analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[0]);
-
     g_lcd_sleep_mode = joy_power_control_ptr->lcd_sleep_mode;
+
+    if(g_lcd_sleep_mode)
+      analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[0]);
+    else
+      analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
   }
   if(g_pwm_step != i2c_secondary_registers.config_backlight)
   {
