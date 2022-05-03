@@ -141,7 +141,7 @@ fi
 
 
 LCDON=$(/opt/vc/bin/tvservice -s | grep -c "[\bLCD\b]")
-if [[ "$LCDON" == "1" ]]; then
+if [[ "$LCDON" != "1" ]]; then
 	#write unprotect
 	i2cset -y 0 $I2C_SEC_ADDR 0x0A 0x55
 	#set lcd_sleep_mode
