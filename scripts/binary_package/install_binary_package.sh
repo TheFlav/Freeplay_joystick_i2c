@@ -11,7 +11,8 @@ CONTENTSDIR=$SCRIPTDIR/contents
 
 DESTDIR=/home/pi/Freeplay/Freeplay_joystick_i2c
 
-sudo killall $DESTDIR/uhid/gamepad/uhid-i2c-gamepad
+sudo killall uhid-i2c-gamepad
+
 mkdir -p $DESTDIR
 cp -r $CONTENTSDIR/* $DESTDIR
 
