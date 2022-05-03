@@ -10,5 +10,10 @@ if [ "$?" == "0" ]; then
   exit 1
 fi
 
+/home/pi/Freeplay/Freeplay_joystick_i2c/scripts/lcd_on.sh
+
 cp -r /home/pi/Freeplay/Freeplay_joystick_i2c /home/pi/Freeplay/Freeplay_joystick_i2c_BAK_$(date +"%Y-%m-%d-%H-%M-%S")
 /tmp/fpjoy/install_binary_package.sh
+
+sudo killall uhid-i2c-gamepad
+sudo /home/pi/Freeplay/Freeplay_joystick_i2c/uhid/gamepad/uhid-i2c-gamepad --quiet > /dev/null &
