@@ -47,8 +47,6 @@ cp -L $SOURCE_DIR/../uhid/analog/uhid-i2c-analog-joystick $CONTENTS_DIR/uhid/ana
 cp -rL $SOURCE_DIR/../kernel/* $CONTENTS_DIR/kernel/
 cp -L $SOURCE_DIR/../uhid/gamepad/README.md $CONTENTS_DIR/uhid/gamepad/
 
-git clone --recursive --depth 1 "https://github.com/rxbrad/es-theme-freeplay.git" "$CONTENTS_DIR/themes/freeplay"
-
 cd $BUILD_DIR/..
 DATETIME=$(date +"%Y-%m-%d-%H-%M-%S")
 echo $DATETIME > $CONTENTS_DIR/builddate.txt
