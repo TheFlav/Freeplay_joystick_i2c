@@ -38,6 +38,10 @@ In "Raspberry Pi Imager"
 			- If you do not have this directory, the Freeplay portion install will fail.
 			- If you have a directory named something like "fpjoy_binary_package_2022-04-26-15-03-53," the Freeplay portion install will fail.
 			- ![plot](./fpjoy_directory.png)
+		- Once you are SURE that you have the directory named "fpjoy" in the root of the 'boot' drive, then it is recommended to delete the fpjoy_binary_package.zip to save space.
+			- You can also do this after you have tested the SD card in the Freeplay Zero.  
+			- In fact, once the full installation is complete, and you are satisfied with how the Freeplay Zero is running, you may also delete the "fpjoy" directory from the 'boot' drive.
+				- Note that your Windows/Mac operating system may not actually delete these files from the SD until you empty them from your trash.
 		- Open the firstrun.sh file with a text editor.
 			- In firstrun.sh, near the end of the file, you should find a line that says something like 
 				```
