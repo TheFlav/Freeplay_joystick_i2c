@@ -541,16 +541,17 @@ int mcu_update_config0(){ //read/update config0 register, return 0 on success, -
     return 0;
 }
 
-#ifdef ALLOW_MCU_SEC_I2C
+#if defined(ALLOW_MCU_SEC_I2C) && !defined(DIAG_PROGRAM)
 int mcu_update_power_control(){ //read/update power_control register, return 0 on success, -1 on error
-    int ret = i2c_smbus_read_byte_data(mcu_fd_sec, mcu_sec_register_power_control);
-    if (ret < 0){
+    int power_control_ret = i2c_smbus_read_byte_data(mcu_fd_sec, mcu_sec_register_power_control);
+    if (power_control_ret < 0){
         i2c_allerrors_count++;
-        print_stderr("FATAL: reading MCU sec power_control (register:0x%02X) failed, errno:%d (%m)\n", mcu_sec_register_power_control, -ret);
+        print_stderr("FATAL: reading MCU sec power_control (register:0x%02X) failed, errno:%d (%m)\n", mcu_sec_register_power_control, -power_control_ret);
         return -1;
     }
-    mcu_power_control.bits = (uint8_t)ret;
-
+    mcu_power_control.bits = (uint8_t)power_control_ret;
+    mcu_power_control_t mcu_power_control_back = {.bits=mcu_power_control.bits};
+    
     if (battery_gpio_enable){ //low_batt gpio check
         int state = -1;
         #ifdef USE_WIRINGPI
@@ -562,13 +563,53 @@ int mcu_update_power_control(){ //read/update power_control register, return 0 o
                 if (state >= 0 && lowbattery_gpio_invert){state = !state;}
             }
         #endif
-        if (state > -1){mcu_power_control.vals.low_batt = (uint8_t)state;}
+        if (state > -1){mcu_power_control.vals.low_batt_mode = (uint8_t)state;}
     }
 
-    if (mcu_power_control.bits == (uint8_t)ret){return 0;} //nothing changed
+#ifdef USE_SHM_REGISTERS
+    if (shm_enable){ //write to shm path
+        char buffer[5]={"\0"}, buffer1[5]={"\0"}; struct stat file_stat = {0}; int buffer_int = 0;
+
+        //low_batt_mode
+        sprintf(buffer, "%d", mcu_power_control.vals.low_batt_mode); file_write(shm_low_batt_mode, buffer); //write
+
+        //lcd_dimming_mode
+        sprintf(buffer, "%d", mcu_power_control.vals.lcd_dimming_mode);
+        if (stat(shm_lcd_dimming_mode, &file_stat) == 0){ //file exist
+            file_read(shm_lcd_dimming_mode, buffer1, 5); buffer_int = atoi(buffer1); //read current file
+            if (mcu_power_control.vals.lcd_dimming_mode != buffer_int){ //file or register changed
+                bool reg_update = false;
+                if (memcmp(&lcd_dimming_mode_mtime, &file_stat.st_mtim, sizeof(struct timespec)) != 0){ //file changed
+                    mcu_power_control.vals.lcd_dimming_mode = buffer_int; //update register
+                    lcd_dimming_mode_mtime = file_stat.st_mtim; //update mtime
+                    reg_update = true;
+                } else {file_write(shm_lcd_dimming_mode, buffer); stat(shm_lcd_dimming_mode, &file_stat); lcd_dimming_mode_mtime = file_stat.st_mtim;} //update file
+                if (debug){print_stderr("lcd_dimming_mode (%s) set to %d\n", reg_update?"register":"file", mcu_power_control.vals.lcd_dimming_mode);}
+            }
+        } else {file_write(shm_lcd_dimming_mode, buffer); stat(shm_lcd_dimming_mode, &file_stat); lcd_dimming_mode_mtime = file_stat.st_mtim;} //create file
+        
+        //lcd_sleep_mode
+        sprintf(buffer, "%d", mcu_power_control.vals.lcd_sleep_mode);
+        if (stat(shm_lcd_sleep_mode, &file_stat) == 0){ //file exist
+            file_read(shm_lcd_sleep_mode, buffer1, 5); buffer_int = atoi(buffer1); //read current file
+            if (mcu_power_control.vals.lcd_sleep_mode != buffer_int){ //file or register changed
+                bool reg_update = false;
+                if (memcmp(&lcd_sleep_mode_mtime, &file_stat.st_mtim, sizeof(struct timespec)) != 0){ //file changed
+                    mcu_power_control.vals.lcd_sleep_mode = buffer_int; //update register
+                    lcd_sleep_mode_mtime = file_stat.st_mtim; //update mtime
+                    reg_update = true;
+                } else {file_write(shm_lcd_sleep_mode, buffer); stat(shm_lcd_sleep_mode, &file_stat); lcd_sleep_mode_mtime = file_stat.st_mtim;} //update file
+                if (debug){print_stderr("lcd_sleep_mode (%s) set to %d\n", reg_update?"register":"file", mcu_power_control.vals.lcd_sleep_mode);}
+            }
+        } else {file_write(shm_lcd_sleep_mode, buffer); stat(shm_lcd_sleep_mode, &file_stat); lcd_sleep_mode_mtime = file_stat.st_mtim;} //create file
+    }
+#endif
+
+    if (mcu_power_control.bits == mcu_power_control_back.bits){return 0;} //nothing changed
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_disable) < 0){return -1;} //disable write protection
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_power_control, mcu_power_control.bits) < 0){return -1;} //update register
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_enable) < 0){return -1;} //enable write protection
+
     return 0;
 }
 
@@ -587,6 +628,14 @@ int mcu_update_battery_capacity(){ //read/update battery_capacity register, retu
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_disable) < 0){return -1;} //disable write protection
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_battery_capacity, (uint8_t)percent) < 0){return -1;} //update register
     if (i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_enable) < 0){return -1;} //enable write protection
+
+#ifdef USE_SHM_REGISTERS
+    if (shm_enable){ //write to shm path
+        char buffer[5]; sprintf(buffer, "%d", percent);
+        file_write(shm_battery_capacity, buffer);
+    }
+#endif
+
     percent_prev = percent;
     return 0;
 }
@@ -769,6 +818,23 @@ static void shm_init(bool first){ //init shm related things, folders and files c
         if (logs_fh != NULL){print_stderr("logs: %s\n", curr_path);
         } else {print_stderr("failed to open '%s' (%m)\n", curr_path);}
 
+        #ifdef USE_SHM_REGISTERS
+            struct stat file_stat = {0}; char buffer[2] = "0";
+
+            sprintf(shm_lcd_dimming_mode, "%s/lcd_dimming_mode", shm_fullpath);
+            file_write(shm_lcd_dimming_mode, buffer); stat(shm_lcd_dimming_mode, &file_stat); lcd_dimming_mode_mtime = file_stat.st_mtim;
+
+            sprintf(shm_lcd_sleep_mode, "%s/lcd_sleep_mode", shm_fullpath);
+            file_write(shm_lcd_sleep_mode, buffer); stat(shm_lcd_sleep_mode, &file_stat); lcd_sleep_mode_mtime = file_stat.st_mtim;
+
+            sprintf(shm_status_led, "%s/status_led", shm_fullpath);
+            file_write(shm_status_led, buffer); stat(shm_status_led, &file_stat); status_led_mtime = file_stat.st_mtim;
+
+            sprintf(shm_battery_capacity, "%s/battery_capacity", shm_fullpath);
+
+            sprintf(shm_low_batt_mode, "%s/low_batt_mode", shm_fullpath);
+        #endif
+
         shm_enable=true;
     } else if (shm_enable) {
         #ifndef DIAG_PROGRAM
@@ -839,7 +905,9 @@ static void shm_update(void){ //update registers/files linked to shm things
                         } else if (shm_vars[i].rw && *(shm_vars[i].ptr) != (uint8_t)ret_read){ //file modification
                             if (debug){print_stderr("'%s' changed, file:'%d', stored:'%d'\n", shm_vars[i].path, ret_read, *(shm_vars[i].ptr));}
                             *(shm_vars[i].ptr) = (uint8_t)ret_read; //backup new register value
+                            if (shm_vars[i].mcu_wp){i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_disable);} //disable write protection
                             ret = i2c_smbus_write_byte_data(*(shm_vars[i].i2c_fd), shm_vars[i].i2c_register, (uint8_t)ret_read);
+                            if (shm_vars[i].mcu_wp){i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_enable);} //enable write protection
                             if (ret < 0){i2c_allerrors_count++; print_stderr("failed to update register 0x%02X, errno:%d (%m)\n", shm_vars[i].i2c_register, -ret);
                             } else {print_stderr("register 0x%02X updated with value:%d\n", shm_vars[i].i2c_register, ret_read);}
                         }
@@ -900,7 +968,7 @@ static void program_close(void){ //regroup all close functs
     #endif
     i2c_close_all();
     shm_close();
-    if (cfg_delete){remove(config_path);}
+    //if (cfg_delete){remove(config_path);}
     already_killed = true;
 }
 
@@ -1039,6 +1107,7 @@ int main(int argc, char** argv){
     int main_return = EXIT_SUCCESS; //program return
     bool cfg_no_create = false; //disable creation of config file
     bool program_close_on_warn = false; //close program on major warnings
+    bool cfg_deleted = false; //program arg prohibe create of a config file but one was created
 
     //program arguments parse
     for(int i=1; i<argc; ++i){
@@ -1089,7 +1158,7 @@ int main(int argc, char** argv){
     if (tmp_ret < 0){print_stderr("failed to parse config file, errno:%d (%s)\n", -tmp_ret, strerror(-tmp_ret)); return EXIT_FAILED_CONFIG; //config parse failed
     } else if (tmp_ret == 1){ //config file created
         diag_first_run = true;
-        if (cfg_no_create){cfg_delete = true;} //args prohibe creation of config file
+        if (cfg_no_create){remove(config_path); cfg_deleted = true;} //args prohibe creation of config file
     }
     
     //shm
@@ -1156,8 +1225,8 @@ int main(int argc, char** argv){
         if (mcu_version_even > mcu_version && !diag_mode && program_close_on_warn){return EXIT_FAILED_VERSION;} //outdated mcu version
     }
 
-    if (cfg_delete){return EXIT_FAILED_CONFIG;} //config file just create but prohibed by args, done in this order to allow mcu related error before missing config error
-        
+    if (cfg_deleted && program_close_on_warn){return EXIT_FAILED_CONFIG;} //config file was created but prohibed by args, done in this order to allow mcu related error before missing config error
+
     if (!i2c_disabled){
         #ifndef DIAG_PROGRAM
             if (io_fd_valid(mcu_fd) && input_searching){ //check for specific mcu input
@@ -1264,7 +1333,7 @@ int main(int argc, char** argv){
 
                     #ifdef ALLOW_MCU_SEC_I2C
                         if (lowbattery_gpio >= 0){
-                            sprintf(gpiod_consumer_lowbatt_name, "%s %d IRQ", uhid_device_name, uhid_device_id);
+                            sprintf(gpiod_consumer_lowbatt_name, "%s %d Lbatt", uhid_device_name, uhid_device_id);
                             if ((gpiod_lowbatt_line = gpiod_chip_get_line(gpiod_input_chip, lowbattery_gpio)) == NULL){
                                 print_stderr("gpiod_chip_get_line failed, consumer:%s\n", gpiod_consumer_lowbatt_name);
                             } else if (gpiod_line_request_both_edges_events(gpiod_lowbatt_line, gpiod_consumer_lowbatt_name) < 0){
@@ -1353,6 +1422,7 @@ int main(int argc, char** argv){
 
         if (config_reload){
             if (mcu_update_config0() != 0 || init_adc() < 0){print_stderr("critical failure after configuration reload\n"); return EXIT_FAILED_MCU;} //read/update of config0 register or init adc data failed
+            adc_firstrun = true; i2c_poll_joystick(true);
             print_stderr("new configuration reloaded\n"); config_reload = false;
         }
 

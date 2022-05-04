@@ -1888,7 +1888,7 @@ void term_screen_debug(int tty_line, int tty_last_width, int tty_last_height){
 
 void term_screen_addons(int tty_line, int tty_last_width, int tty_last_height){
     //char buffer[buffer_size], buffer1[buffer_size], buffer2[buffer_size];
-    int hint_line = tty_last_height - 4, hint_def_line = hint_line - 1, tmp_col = 2;
+    int hint_line = tty_last_height - 4, tmp_col = 2;
     bool term_go_screen_main = false;
 
     const int select_max = 255; //TODO proper count
@@ -1900,6 +1900,7 @@ void term_screen_addons(int tty_line, int tty_last_width, int tty_last_height){
     tty_line+=2;
 
 #ifdef ALLOW_MCU_SEC_I2C
+    int hint_def_line = hint_line - 1;
     term_pos_generic_t term_battery_rsoc = {.x=tmp_col+14, .y=tty_line};
     fprintf(stdout, "\e[%d;%dH\e[%d;4mBattery (RSOC:none):\e[0m", tty_line++, tmp_col, term_esc_col_normal);
 
