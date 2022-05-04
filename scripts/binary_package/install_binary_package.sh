@@ -20,6 +20,7 @@ chown pi:pi /home/pi/Freeplay/
 chown -R pi:pi $DESTDIR
 
 cp $CONTENTSDIR/scripts/freeplay_i2c_joystick.sh /home/pi/RetroPie-Setup/scriptmodules/supplementary
+mv $CONTENTSDIR/themes/freeplay /etc/emulationstation/themes/
 
 $CONTENTSDIR/scripts/install_to_retropie.sh
 $CONTENTSDIR/scripts/setup_linux.sh

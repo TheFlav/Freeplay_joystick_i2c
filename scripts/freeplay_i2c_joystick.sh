@@ -7,7 +7,7 @@ rp_module_help="Use this to download and install the latest Freeplay Joystick bi
 rp_module_help+="More info at https://github.com/TheFlav/Freeplay_joystick_i2c"
 rp_module_licence="Freeplaytech https://github.com/TheFlav/Freeplay_joystick_i2c/blob/main/LICENSE"
 rp_module_section="driver"
-rp_module_flags="noinstclean !x86 !osmc !xbian !mali !kms"
+rp_module_flags="!all rpi"
 
 function depends_freeplay_i2c_joystick() {
     getDepends i2c-tools
@@ -34,5 +34,5 @@ function install_bin_freeplay_i2c_joystick() {
 }
 
 function configure_freeplay_i2c_joystick() {
-    addPort "$md_id" "Freeplay i2c Joystick" "Dowload latest driver binary package for Freeplay i2c Joystick" "pushd /home/pi/Freeplay/Freeplay_joystick_i2c/scripts; /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/download_install_latest_binary_package.sh; popd"
+    #addPort "$md_id" "Freeplay i2c Joystick" "Freeplay Joystick" "pushd /home/pi/Freeplay/Freeplay_joystick_i2c/scripts; /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/config_menu.sh; popd"
 }
