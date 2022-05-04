@@ -35,11 +35,18 @@ fi
 
 mkdir -p "/home/pi/RetroPie/retropiemenu/Freeplay Options"
 cp /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/config_menu.sh "/home/pi/RetroPie/retropiemenu/Freeplay Options/"
+cp /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/download_install_latest_binary_package.sh "/home/pi/RetroPie/retropiemenu/Freeplay Options/"
 
 if grep -q "Freeplay Configuration" /opt/retropie/configs/all/emulationstation/gamelists/retropie/gamelist.xml ; then
 	echo "Freeplay Configuration already in menu"
 else
 	sudo sed -i 's|</gameList>|\t<game>\n\t\t<path>./Freeplay Options/config_menu.sh</path>\n\t\t<name>Freeplay Configuration</name>\n\t\t<desc>Configure settings for the Freeplay system</desc>\n\t\t<image></image>\n\t\t<playcount>0</playcount>\n\t\t<lastplayed>20220501T205700</lastplayed>\n\t</game>\n</gameList>|' /opt/retropie/configs/all/emulationstation/gamelists/retropie/gamelist.xml
+fi
+
+if grep -q "Freeplay Joystick Driver Update" /opt/retropie/configs/all/emulationstation/gamelists/retropie/gamelist.xml ; then
+	echo "Freeplay Joystick Driver Update already in menu"
+else
+	sudo sed -i 's|</gameList>|\t<game>\n\t\t<path>./Freeplay Options/download_install_latest_binary_package.sh</path>\n\t\t<name>Freeplay Joystick Driver Update</name>\n\t\t<desc>Download and install latest drivers for the Freeplay system</desc>\n\t\t<image></image>\n\t\t<playcount>0</playcount>\n\t\t<lastplayed>20220501T205700</lastplayed>\n\t</game>\n</gameList>|' /opt/retropie/configs/all/emulationstation/gamelists/retropie/gamelist.xml
 fi
 
 exit 0

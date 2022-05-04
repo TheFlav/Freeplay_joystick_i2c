@@ -55,7 +55,7 @@ struct i2c_joystick_register_struct {
     };
 
     typedef union { //power_control register bitfield structure
-        struct {uint8_t low_batt:1, unused1:1, unused2:1, unused3:1, unused4:1, unused5:1, unused6:1, unused7:1;} vals;
+        struct {uint8_t low_batt_mode:1, lcd_dimming_mode:1, lcd_sleep_mode:1, unused3:1, unused4:1, unused5:1, unused6:1, unused7:1;} vals;
         uint8_t bits;
     } mcu_power_control_t;
 #endif

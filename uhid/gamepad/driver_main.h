@@ -51,8 +51,10 @@ bool io_fd_valid(int /*fd*/); //check if a file descriptor is valid
 #ifndef ALLOW_MCU_SEC_I2C
     #undef USE_SHM_REGISTERS //can't use shm register "bridge" with MCU secondary feature
 #else
-    int mcu_update_power_control(void); //read/update power_control register, return 0 on success, -1 on error
-    int mcu_update_battery_capacity(void); //read/update battery_capacity register, return 0 on success, -1 on error
+    #ifndef DIAG_PROGRAM
+        int mcu_update_power_control(void); //read/update power_control register, return 0 on success, -1 on error
+        int mcu_update_battery_capacity(void); //read/update battery_capacity register, return 0 on success, -1 on error
+    #endif
 #endif
 
 #ifndef DIAG_PROGRAM
@@ -93,7 +95,7 @@ bool diag_postmessagetest = false; //only output "first run" post message and cl
 bool diag_noinputs = false; //disable mcu inputs in menus
 bool allow_diag_run = true; //avoid diag loop at driver start
 bool driver_lock = false; //lock driver if shm_path/status set to 2, stop i2c poll and uhid update
-bool cfg_delete = false; //program arg prohibe create of a config file but one was created
+//bool cfg_deleted = false; //program arg prohibe create of a config file but one was created
 
 //UHID related
 int uhid_fd = -1;
@@ -196,25 +198,51 @@ FILE *logs_fh;
 bool shm_enable = false; //set during runtime
 char shm_fullpath[PATH_MAX] = {'\0'}; //path to shm incl uhid id
 char* shm_status_path_ptr; //pointer to shm status path var
+
 #ifndef DIAG_PROGRAM
     int shm_status = 1; //shm_path/status content
     double shm_clock_start = -1., shm_update_interval = 0.25; //sec
 #endif
 
 #ifdef USE_SHM_REGISTERS
+    struct timespec lcd_dimming_mode_mtime = {0};
+    struct timespec lcd_sleep_mode_mtime = {0};
+    struct timespec status_led_mtime = {0};
+
+    char shm_lcd_dimming_mode[PATH_MAX] = {'\0'}; //path to shm lcd_dimming_mode
+    char shm_lcd_sleep_mode[PATH_MAX] = {'\0'}; //path to shm lcd_sleep_mode
+    char shm_status_led[PATH_MAX] = {'\0'}; //path to shm status_led
+
+    char shm_battery_capacity[PATH_MAX] = {'\0'}; //path to shm battery_capacity
+    char shm_low_batt_mode[PATH_MAX] = {'\0'}; //path to shm low_batt_mode
+
     struct shm_vars_t {
         char path [PATH_MAX];
         char* file;
         bool rw; //true: read/write, false:read only
+        bool mcu_wp; //mcu write protected, require ALLOW_MCU_SEC_I2C
         int* i2c_fd;
         int i2c_register;
-        int* ptr; //pointer to var
+        uint8_t* ptr; //pointer to var
     } shm_vars[] = {
+#ifdef ALLOW_MCU_SEC_I2C
         {
-            "", "config_backlight", true, &mcu_fd_sec,
+            "", "backlight", true, true, &mcu_fd_sec,
             mcu_sec_register_backlight,
-            (int*)&(i2c_secondary_registers.config_backlight)
+            (uint8_t*)&(i2c_secondary_registers.config_backlight)
         },
+        {
+            "", "backlight_max", false, false, &mcu_fd_sec,
+            mcu_sec_register_backlight_max,
+            (uint8_t*)&(i2c_secondary_registers.backlight_max)
+        },
+        {
+            "", "status_led", true, true, &mcu_fd_sec,
+            mcu_sec_register_status_led_control,
+            (uint8_t*)&(i2c_secondary_registers.status_led_control)
+        },
+#endif
+
         /*{
             "", "poweroff_control", false, &mcu_fd_sec,
             offsetof(struct i2c_secondary_address_register_struct, power_control) / sizeof(uint8_t),
