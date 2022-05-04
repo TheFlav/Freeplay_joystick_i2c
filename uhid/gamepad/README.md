@@ -44,9 +44,8 @@ Note about IRQ related variables : Only one kind will be allowed at once.
   <br>
 
   - ``USE_SHM_REGISTERS``
-    * Preimplement.
-    * Allow to interface I2C device register(s) to given file(s).
-    * Require programming of specific ADC ICs interfacing.  
+    * Allow to interface I2C device register(s) to given file(s), please refer to ``SHM to MCU registers`` section.
+    * Will require programming of specific ADC ICs interfacing if additional features needed.  
     * Please refer to [driver_main.h](driver_main.h) (shm_vars[] var) for structure.  
   <br>
 
@@ -122,7 +121,7 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
     <br>
 
     * ``-confignocreate`` : Disable creation of configuration file if it doesn't exist.  
-    Program closes and returns specific error code if so (next section).  
+    If ``-closeonwarn`` also set, program will close with specific error code (next section).  
 
     * ``-configreset`` (*) : Reset configuration file to default defined in [driver_config.h](driver_config.h).  
     
@@ -190,7 +189,7 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
   * ``-4`` : MCU version (**version_ID** register) under **mcu_version_even** variable ([driver_i2c_registers.h](driver_i2c_registers.h)), should be considered as outdated MCU (*).  
     
   * ``-5`` : Failed to read, write or parse configuration file.  
-  If this happen when ``-confignocreate`` argument used, this mainly mean configuration file doesn't exist.  
+  If this happen when ``-confignocreate`` and ``-closeonwarn`` arguments are set, this mainly mean configuration file doesn't exist.  
   This return code can be used to send user to Setup/Diag program first run mode.  
     
   * ``-6`` : Undefined or generic MCU related failure.  
@@ -216,9 +215,28 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
 - Needs to running drivers at once with multiple MCUs (to be tested):
   * Programs to be compiled with preprocessor variable ``MULTI_INSTANCES``.
   * Each instance to have its own configuration file set with ``-config`` argument.
-  * Run each once to create configuration file, close driver, edit ``uhid_device_id`` variable in config. files to have different driver IDs, this ID will be added after driver name report to EV/JS dev.
-<br><br>
-  
+  * Run each once to create configuration file, close driver, edit ``uhid_device_id`` variable in config. files to have different driver IDs, this ID will be added after driver name report to EV/JS dev.  
+<br>
+
+### SHM to MCU registers
+  Note: Require driver to be compiled with ``ALLOW_MCU_SEC_I2C`` and ``USE_SHM_REGISTERS`` preprocessor variables.
+
+  Files will be placed in ``PATH``/``ID``/``FILES``  
+  ``PATH`` is defined by **shm_path** variable ([driver_config.h].  
+  ``ID`` is defined by **uhid_device_id** variable in config file.  
+  ``FILES``:
+  - **~/backlight** : Read/Write : Direct control on backlight current step.
+  - **~/backlight_max** : Read only : Max amount of backlight steps possible.
+  - **~/battery_capacity** : Write only : Keep MCU aware of current battery RSOC is a I2C battery gauge is installed (kernel driver compatible with power_supply report). Value will be set to 255 is no gauge detected. Value from 0 to 255 (incl.).
+  - **~/lcd_dimming_mode** : Read/Write : Set backlight into dimming mode, Yes(**1**) / No(**0**).
+  - **~/lcd_sleep_mode** : Read/Write : Turn backlight On(**0**) / Off(**1**).
+  - **~/low_batt_mode** : Write only : Report LOW BATT GPIO pin state (defined by **lowbattery_gpio** variable in config file). Require driver to be compiled with ``USE_WIRINGPI`` or ``USE_GPIOD`` preprocessor variable.
+  - **~/status_led** : Read/Write : Set LED ouput mode. Off(**0**), On(**1**), Blink slow(**2**), Blink fast(**3**).
+  - **~/status** : Read/Write : Driver current state. **0**:closed(gracefully), **1**:noraml run mode, **2**:deadlock mode(no report update, last report centers all axis, buttons all unpressed).
+
+  Note on Read/Write: If file changes, register will be updated but the opposite is true as well.  
+<br>
+
 ## Repository files
 - **driver_config.h** : User default driver settings.
 - **driver_hid_desc.h** : HID descriptor definition.
@@ -234,9 +252,4 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
 - EmulationStation can crash will waiting for a user input on Welcome screen (no input device binded) if driver is killed and restart in a short span (liked to JS/EV dev unregistering, no clue if ES or UHID related).
 <br><br>
 
-## TODO, memo to dev
-- battery report: require ALLOW_MCU_SEC_I2C
-  * mcu sec power_control register <> gpio require USE_WIRINGPI or USE_GPIOD.
-  * mcu sec battery_capacity register require fuel gauge ic.
-  * diag part implement.
 

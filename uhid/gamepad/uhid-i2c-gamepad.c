@@ -843,7 +843,7 @@ static void shm_init(bool first){ //init shm related things, folders and files c
 
         //registers to files "bridge"
         #ifdef USE_SHM_REGISTERS
-            char buffer[128]; int ret;
+            char buffer[128]; int ret; struct stat file_stat = {0};
             for (unsigned int i = 0; i < shm_vars_arr_size; i++){
                 ret = i2c_smbus_read_byte_data(*(shm_vars[i].i2c_fd), shm_vars[i].i2c_register);
                 if (ret < 0){i2c_allerrors_count++; print_stderr("failed to read register 0x%02X, errno:%d (%m)\n", shm_vars[i].i2c_register, -ret); continue;
@@ -854,6 +854,7 @@ static void shm_init(bool first){ //init shm related things, folders and files c
                     if (file_write(shm_vars[i].path, buffer) == 0){
                         chown(shm_vars[i].path, (uid_t) user_uid, (gid_t) user_gid);
                         print_stderr("'%s' content set to '%s'\n", shm_vars[i].path, buffer);
+                        stat(shm_vars[i].path, &file_stat); shm_vars[i].mtime = file_stat.st_mtim;
                     } else {continue;}
                 }
             }
@@ -881,9 +882,7 @@ static void shm_update(void){ //update registers/files linked to shm things
 
             for (unsigned int i = 0; i < shm_vars_arr_size; i++){
                 if (stat(shm_vars[i].path, &file_stat) == 0){ //file exist
-                    ret_read = file_read(shm_vars[i].path, buffer, 127);
-                    if (ret_read >= 0){ret_read = atoi(buffer);}
-
+                    ret_read = file_read(shm_vars[i].path, buffer, 127); if (ret_read >= 0){ret_read = atoi(buffer);}
                     ret = i2c_smbus_read_byte_data(*(shm_vars[i].i2c_fd), shm_vars[i].i2c_register);
                     if (ret < 0){i2c_allerrors_count++; print_stderr("failed to read register 0x%02X, errno:%d (%m)\n", shm_vars[i].i2c_register, -ret); continue;
                     } else {
@@ -893,16 +892,20 @@ static void shm_update(void){ //update registers/files linked to shm things
                                 if (debug){print_stderr("register 0x%02X changed, stored:'%d', i2c:'%d'\n", shm_vars[i].i2c_register, *(shm_vars[i].ptr), ret);}
                                 *(shm_vars[i].ptr) = (uint8_t)ret; //backup new register value
                             }
-                            if (file_write (shm_vars[i].path, buffer) == 0){
+                            if (file_write(shm_vars[i].path, buffer) == 0){
+                                stat(shm_vars[i].path, &file_stat); shm_vars[i].mtime = file_stat.st_mtim;
                                 chown(shm_vars[i].path, (uid_t) user_uid, (gid_t) user_gid);
                                 if (debug){print_stderr("'%s' content set to '%s' because %s\n", shm_vars[i].path, buffer, (ret_read<0)?"file was missing":"I2C value changed");}
                             }
                         } else if (!shm_vars[i].rw && ret_read != ret){
-                            if (file_write (shm_vars[i].path, buffer) == 0){
+                            if (file_write(shm_vars[i].path, buffer) == 0){
+                                stat(shm_vars[i].path, &file_stat); shm_vars[i].mtime = file_stat.st_mtim;
                                 chown(shm_vars[i].path, (uid_t) user_uid, (gid_t) user_gid);
                                 if (debug){print_stderr("'%s' content restore to '%s' because register 0x%02X is read only\n", shm_vars[i].path, buffer, shm_vars[i].i2c_register);}
                             }
-                        } else if (shm_vars[i].rw && *(shm_vars[i].ptr) != (uint8_t)ret_read){ //file modification
+                        //} else if (shm_vars[i].rw && *(shm_vars[i].ptr) != (uint8_t)ret_read){ //file modification
+                        } else if (shm_vars[i].rw && memcmp(&shm_vars[i].mtime, &file_stat.st_mtim, sizeof(struct timespec)) != 0){ //file modification
+                            shm_vars[i].mtime = file_stat.st_mtim;
                             if (debug){print_stderr("'%s' changed, file:'%d', stored:'%d'\n", shm_vars[i].path, ret_read, *(shm_vars[i].ptr));}
                             *(shm_vars[i].ptr) = (uint8_t)ret_read; //backup new register value
                             if (shm_vars[i].mcu_wp){i2c_smbus_write_byte_data(mcu_fd_sec, mcu_sec_register_write_protect, mcu_write_protect_disable);} //disable write protection
@@ -1050,7 +1053,7 @@ static void program_usage(void){ //display help
     #ifndef DIAG_PROGRAM
         fprintf(stderr,
         "(*) : close program after function executed (incl failure).\n"
-        "\t-confignocreate : disable creation of configuration file if not exist, returns specific errno if so.\n"
+        "\t-confignocreate : disable creation of configuration file if not exist, returns specific errno if is along -closeonwarn.\n"
         "\t-configreset : reset configuration file to default (*).\n"
         "\t-configset : set custom configuration variable with specific variable, format: 'VAR=VALUE' (e.g. debug=1) (*).\n"
         "\t-configlist : list all configuration variables (*).\n"
