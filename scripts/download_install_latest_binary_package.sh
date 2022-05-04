@@ -11,4 +11,14 @@ if [ "$?" == "0" ]; then
 fi
 
 cp -r /home/pi/Freeplay/Freeplay_joystick_i2c /home/pi/Freeplay/Freeplay_joystick_i2c_BAK_$(date +"%Y-%m-%d-%H-%M-%S")
+sudo killall uhid-i2c-gamepad
+
 /tmp/fpjoy/install_binary_package.sh
+
+echo "Freeplay i2c Joystick driver starting."
+sudo /home/pi/Freeplay/Freeplay_joystick_i2c/uhid/gamepad/uhid-i2c-gamepad --quiet > /dev/null &
+sleep 3
+sudo chmod a+x /dev/shm/uhid_i2c_driver
+sudo chmod a+x /dev/shm/uhid_i2c_driver/0
+sudo chmod a+w /dev/shm/uhid_i2c_driver/0/*
+
