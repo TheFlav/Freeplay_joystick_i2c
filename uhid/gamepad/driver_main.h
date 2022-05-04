@@ -219,6 +219,7 @@ char* shm_status_path_ptr; //pointer to shm status path var
     struct shm_vars_t {
         char path [PATH_MAX];
         char* file;
+        struct timespec mtime;
         bool rw; //true: read/write, false:read only
         bool mcu_wp; //mcu write protected, require ALLOW_MCU_SEC_I2C
         int* i2c_fd;
@@ -227,17 +228,20 @@ char* shm_status_path_ptr; //pointer to shm status path var
     } shm_vars[] = {
 #ifdef ALLOW_MCU_SEC_I2C
         {
-            "", "backlight", true, true, &mcu_fd_sec,
+            "", "backlight", {0},
+            true, true, &mcu_fd_sec,
             mcu_sec_register_backlight,
             (uint8_t*)&(i2c_secondary_registers.config_backlight)
         },
         {
-            "", "backlight_max", false, false, &mcu_fd_sec,
+            "", "backlight_max", {0},
+            false, false, &mcu_fd_sec,
             mcu_sec_register_backlight_max,
             (uint8_t*)&(i2c_secondary_registers.backlight_max)
         },
         {
-            "", "status_led", true, true, &mcu_fd_sec,
+            "", "status_led", {0},
+            true, true, &mcu_fd_sec,
             mcu_sec_register_status_led_control,
             (uint8_t*)&(i2c_secondary_registers.status_led_control)
         },
