@@ -551,19 +551,19 @@ int mcu_update_power_control(){ //read/update power_control register, return 0 o
     }
     mcu_power_control.bits = (uint8_t)power_control_ret;
     mcu_power_control_t mcu_power_control_back = {.bits=mcu_power_control.bits};
-    
+
+    int gpio_state = -1;
     if (battery_gpio_enable){ //low_batt gpio check
-        int state = -1;
         #ifdef USE_WIRINGPI
-            state = digitalRead(lowbattery_gpio);
-            if (lowbattery_gpio_invert){state = !state;}
+            gpio_state = digitalRead(lowbattery_gpio);
+            if (lowbattery_gpio_invert){gpio_state = !gpio_state;}
         #elif defined(USE_GPIOD)
             if (gpiod_lowbatt_fd >= 0){
-                state = gpiod_line_get_value(gpiod_lowbatt_line);
-                if (state >= 0 && lowbattery_gpio_invert){state = !state;}
+                gpio_state = gpiod_line_get_value(gpiod_lowbatt_line);
+                if (gpio_state >= 0 && lowbattery_gpio_invert){gpio_state = !gpio_state;}
             }
         #endif
-        if (state > -1){mcu_power_control.vals.low_batt_mode = (uint8_t)state;}
+        if (gpio_state > -1){mcu_power_control.vals.low_batt_mode = (uint8_t)gpio_state;}
     }
 
 #ifdef USE_SHM_REGISTERS
@@ -571,7 +571,18 @@ int mcu_update_power_control(){ //read/update power_control register, return 0 o
         char buffer[5]={"\0"}, buffer1[5]={"\0"}; struct stat file_stat = {0}; int buffer_int = 0;
 
         //low_batt_mode
-        sprintf(buffer, "%d", mcu_power_control.vals.low_batt_mode); file_write(shm_low_batt_mode, buffer); //write
+        file_read(shm_low_batt_mode, buffer1, 5); buffer_int = atoi(buffer1); //read current file
+        if (mcu_power_control.vals.low_batt_mode != buffer_int){
+            if (battery_gpio_enable){
+                sprintf(buffer, "%d", mcu_power_control.vals.low_batt_mode);
+                file_write(shm_low_batt_mode, buffer);
+            } else {
+                int buffer_int1 = buffer_int; int_constrain(&buffer_int1, 0, 1);
+                mcu_power_control.vals.low_batt_mode = buffer_int1;
+                if (buffer_int != buffer_int1){sprintf(buffer, "%d", buffer_int1); file_write(shm_low_batt_mode, buffer);}
+            }
+            if (debug){print_stderr("low_batt_mode set to %d\n", mcu_power_control.vals.low_batt_mode);}
+        } //write
 
         //lcd_dimming_mode
         sprintf(buffer, "%d", mcu_power_control.vals.lcd_dimming_mode);
@@ -788,6 +799,7 @@ static int folder_create(char* path, int rights, int uid, int gid) { //create fo
             ret = mkdir(sub_path, tmp_rights);
             if (ret < 0){if (debug){print_stderr("failed to create directory '%s', errno:%d (%m)\n", sub_path, -ret);} return ret;}
             print_stderr("directory '%s' created\n", sub_path);
+            if (chmod(sub_path, tmp_rights) < 0 && debug){print_stderr("failed to set directory '%s' rights, err: %m\n", sub_path);}
             if (uid != -1 || gid != -1){if (chown(sub_path, uid, gid) < 0 && debug){print_stderr("failed to set directory '%s' owner, err: %m\n", sub_path);}}
         } else if (debug){print_stderr("directory '%s' already exist\n", sub_path);}
 
@@ -812,33 +824,49 @@ static void shm_init(bool first){ //init shm related things, folders and files c
     if (first){ //initial run, skip i2c part
         if (folder_create(shm_fullpath, 0666, user_uid, user_gid) < 0){return;} //recursive folder create
 
-        char curr_path[strlen(shm_fullpath)+256]; //current path with additionnal 255 chars for filename
-        sprintf(curr_path, "%s/driver.log", shm_fullpath); //log file
-        logs_fh = fopen(curr_path, "w+");
-        if (logs_fh != NULL){print_stderr("logs: %s\n", curr_path);
-        } else {print_stderr("failed to open '%s' (%m)\n", curr_path);}
+        char shm_logs[strlen(shm_fullpath)+13]; //current path with additionnal 255 chars for filename
+        sprintf(shm_logs, "%s/driver.log", shm_fullpath); //log file
+        logs_fh = fopen(shm_logs, "w+");
+        if (logs_fh != NULL){print_stderr("logs: %s\n", shm_logs);
+        } else {print_stderr("failed to open '%s' (%m)\n", shm_logs);}
 
         #ifdef USE_SHM_REGISTERS
-            struct stat file_stat = {0}; char buffer[2] = "0";
+            struct stat file_stat = {0}; //char buffer[2] = "0";
 
             sprintf(shm_lcd_dimming_mode, "%s/lcd_dimming_mode", shm_fullpath);
-            file_write(shm_lcd_dimming_mode, buffer); stat(shm_lcd_dimming_mode, &file_stat); lcd_dimming_mode_mtime = file_stat.st_mtim;
+            file_write(shm_lcd_dimming_mode, "0"); //stat(shm_lcd_dimming_mode, &file_stat); lcd_dimming_mode_mtime = file_stat.st_mtim;
 
             sprintf(shm_lcd_sleep_mode, "%s/lcd_sleep_mode", shm_fullpath);
-            file_write(shm_lcd_sleep_mode, buffer); stat(shm_lcd_sleep_mode, &file_stat); lcd_sleep_mode_mtime = file_stat.st_mtim;
+            file_write(shm_lcd_sleep_mode, "0"); //stat(shm_lcd_sleep_mode, &file_stat); lcd_sleep_mode_mtime = file_stat.st_mtim;
 
             sprintf(shm_status_led, "%s/status_led", shm_fullpath);
-            file_write(shm_status_led, buffer); stat(shm_status_led, &file_stat); status_led_mtime = file_stat.st_mtim;
+            file_write(shm_status_led, "0"); //stat(shm_status_led, &file_stat); status_led_mtime = file_stat.st_mtim;
 
             sprintf(shm_battery_capacity, "%s/battery_capacity", shm_fullpath);
+            file_write(shm_battery_capacity, "255");
 
             sprintf(shm_low_batt_mode, "%s/low_batt_mode", shm_fullpath);
+            file_write(shm_low_batt_mode, "0");
+
+            char* paths[]={shm_logs, shm_lcd_dimming_mode, shm_lcd_sleep_mode, shm_status_led, shm_battery_capacity, shm_low_batt_mode};
+            struct timespec* files_ts[]={NULL, &lcd_dimming_mode_mtime, &lcd_sleep_mode_mtime, &status_led_mtime, NULL, NULL};
+            const int paths_count = sizeof(paths)/sizeof(paths[0]);
+
+            for (int i=0; i<paths_count; i++){
+                if (stat(paths[i], &file_stat) == 0){
+                    chmod(paths[i], 0666); chown(paths[i], (uid_t) user_uid, (gid_t) user_gid);
+                    if (files_ts[i] != NULL){*files_ts[i] = file_stat.st_mtim;}
+                }
+            }
         #endif
 
         shm_enable=true;
     } else if (shm_enable) {
         #ifndef DIAG_PROGRAM
-            if (file_write(shm_status_path_ptr, "1") == 0){print_stderr("'%s' content set to 1\n", shm_status_path_ptr);} //status file
+            if (file_write(shm_status_path_ptr, "1") == 0){ //status file
+                print_stderr("'%s' content set to 1\n", shm_status_path_ptr);
+                chmod(shm_status_path_ptr, 0666); chown(shm_status_path_ptr, (uid_t) user_uid, (gid_t) user_gid);
+            }
         #endif
 
         //registers to files "bridge"
@@ -852,7 +880,7 @@ static void shm_init(bool first){ //init shm related things, folders and files c
                     sprintf(shm_vars[i].path, "%s/%s", shm_fullpath, shm_vars[i].file); //set path
                     sprintf(buffer, "%d", ret);
                     if (file_write(shm_vars[i].path, buffer) == 0){
-                        chown(shm_vars[i].path, (uid_t) user_uid, (gid_t) user_gid);
+                        chmod(shm_vars[i].path, 0666); chown(shm_vars[i].path, (uid_t) user_uid, (gid_t) user_gid);
                         print_stderr("'%s' content set to '%s'\n", shm_vars[i].path, buffer);
                         stat(shm_vars[i].path, &file_stat); shm_vars[i].mtime = file_stat.st_mtim;
                     } else {continue;}
