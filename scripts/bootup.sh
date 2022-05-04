@@ -142,12 +142,7 @@ fi
 
 LCDON=$(/opt/vc/bin/tvservice -s | grep -c "\[LCD\]")
 if [[ "$LCDON" == "0" ]]; then
-	#write unprotect
-	i2cset -y 0 $I2C_SEC_ADDR 0x0A 0x55
-	#set lcd_sleep_mode
-	i2cset -y 0 $I2C_SEC_ADDR 0x02 0x04
-	#write protect
-	i2cset -y 0 $I2C_SEC_ADDR 0x0A 0xAA
+	echo 1 > /dev/shm/uhid_i2c_driver/0/lcd_sleep_mode
 fi
 
 echo "Freeplay i2c Joystick Found!"
