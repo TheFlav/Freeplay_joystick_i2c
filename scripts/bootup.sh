@@ -154,3 +154,7 @@ echo "Freeplay i2c Joystick Found!"
 echo "Freeplay i2c Joystick driver starting."
 sudo /home/pi/Freeplay/Freeplay_joystick_i2c/uhid/gamepad/uhid-i2c-gamepad --quiet > /dev/null &
 sleep 3
+sudo chmod a+x /dev/shm/uhid_i2c_driver
+sudo chmod a+x /dev/shm/uhid_i2c_driver/0
+sudo chmod a+w /dev/shm/uhid_i2c_driver/0/*
+
