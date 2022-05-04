@@ -786,7 +786,7 @@ static int folder_create(char* path, int rights, int uid, int gid) { //create fo
     int ret, depth = 0; //security
     struct stat file_stat = {0};
     char curr_path[strlen(path)+1], sub_path[strlen(path)+2]; sub_path[0]='\0';
-    int tmp_rights = (rights==-1)?0644:rights;
+    int tmp_rights = (rights==-1)?0755:rights;
 
     strcpy(curr_path, path);
     if(curr_path[strlen(curr_path)-1] == '/'){curr_path[strlen(curr_path)-1] = '\0';}
@@ -822,7 +822,7 @@ static int logs_write(const char* format, ...){ //write to log, return chars wri
 
 static void shm_init(bool first){ //init shm related things, folders and files creation
     if (first){ //initial run, skip i2c part
-        if (folder_create(shm_fullpath, 0666, user_uid, user_gid) < 0){return;} //recursive folder create
+        if (folder_create(shm_fullpath, 0755, user_uid, user_gid) < 0){return;} //recursive folder create
 
         char shm_logs[strlen(shm_fullpath)+13]; //current path with additionnal 255 chars for filename
         sprintf(shm_logs, "%s/driver.log", shm_fullpath); //log file
