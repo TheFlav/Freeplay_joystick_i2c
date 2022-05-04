@@ -230,7 +230,7 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
   - **~/battery_capacity** : Write only : Keep MCU aware of current battery RSOC is a I2C battery gauge is installed (kernel driver compatible with power_supply report). Value will be set to 255 is no gauge detected. Value from 0 to 255 (incl.).
   - **~/lcd_dimming_mode** : Read/Write : Set backlight into dimming mode, Yes(**1**) / No(**0**).
   - **~/lcd_sleep_mode** : Read/Write : Turn backlight On(**0**) / Off(**1**).
-  - **~/low_batt_mode** : Write only : Report LOW BATT GPIO pin state (defined by **lowbattery_gpio** variable in config file). Require driver to be compiled with ``USE_WIRINGPI`` or ``USE_GPIOD`` preprocessor variable.
+  - **~/low_batt_mode** : Read only/Write only : LOW BATT GPIO pin state (pin defined by **lowbattery_gpio** variable in config file). Require driver to be compiled with ``USE_WIRINGPI`` or ``USE_GPIOD`` preprocessor variable to have value set by driver itself. Otherwise, value can be set by editing file.
   - **~/status_led** : Read/Write : Set LED ouput mode. Off(**0**), On(**1**), Blink slow(**2**), Blink fast(**3**).
   - **~/status** : Read/Write : Driver current state. **0**:closed(gracefully), **1**:noraml run mode, **2**:deadlock mode(no report update, last report centers all axis, buttons all unpressed).
 
