@@ -1,0 +1,2 @@
+Now, please select "CONFIGURE INPUT" in the MAIN MENU of your emulation system (RetroPie).
+Hold START during console bootup to re-enter the Freeplay Joystick configuration system if you wish to add or change analog stick parameters.
