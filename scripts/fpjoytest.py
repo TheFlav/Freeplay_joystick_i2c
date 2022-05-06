@@ -304,24 +304,35 @@ os.system("echo 1 > /dev/shm/uhid_i2c_driver/0/lcd_sleep_mode");
 print ""
 print ""
 print ""
-print "BACKLIGHT DIMMER TESTS: OFF"
+print "BACKLIGHT DIMMER TESTS: Backlight OFF"
 sleep(3)
 
 os.system("echo 0 > /dev/shm/uhid_i2c_driver/0/lcd_sleep_mode");
 print ""
 print ""
 print ""
-print "BACKLIGHT DIMMER TESTS: ON"
+print "BACKLIGHT DIMMER TESTS: Backlight ON"
 sleep(3)
 
-os.system("echo 1 > /dev/shm/uhid_i2c_driver/0/lcd_dimming_mode");
+#os.system("echo 1 > /dev/shm/uhid_i2c_driver/0/lcd_dimming_mode");
 print ""
 print ""
 print ""
-print "BACKLIGHT DIMMER TESTS: dimming"
-sleep(3)
+print "BACKLIGHT DIMMER TESTS: Backlight DIMMING"
 
-os.system("echo 0 > /dev/shm/uhid_i2c_driver/0/lcd_dimming_mode");
+os.system("echo 10 > /dev/shm/uhid_i2c_driver/0/backlight");
+sleep(1)
+os.system("echo 8 > /dev/shm/uhid_i2c_driver/0/backlight");
+sleep(1)
+os.system("echo 6 > /dev/shm/uhid_i2c_driver/0/backlight");
+sleep(1)
+os.system("echo 4 > /dev/shm/uhid_i2c_driver/0/backlight");
+sleep(1)
+os.system("echo 2 > /dev/shm/uhid_i2c_driver/0/backlight");
+sleep(1)
+os.system("cat /dev/shm/uhid_i2c_driver/0/backlight_max > /dev/shm/uhid_i2c_driver/0/backlight");
+
+#os.system("echo 0 > /dev/shm/uhid_i2c_driver/0/lcd_dimming_mode");
 print ""
 print ""
 print ""
