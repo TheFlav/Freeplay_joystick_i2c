@@ -54,7 +54,7 @@
 
 #define MANUF_ID         0xED
 #define DEVICE_ID        0x00
-#define VERSION_NUMBER   19
+#define VERSION_NUMBER   20
 
 #define CONFIG_PERIODIC_TASK_TIMER_MILLIS 5000
 #define CONFIG_INPUT_READ_TIMER_MICROS 500        //set to 0 for NO delay reading inputs, otherwise try to read inputs at least every CONFIG_INPUT_READ_TIMER_MICROS microseconds
@@ -285,7 +285,7 @@ struct joy_power_control_bit_struct
     uint8_t unused4 : 1;
     uint8_t unused5 : 1;
     uint8_t unused6 : 1;
-    uint8_t unused7 : 1;  
+    uint8_t kill_power_now : 1;
 }  * const joy_power_control_ptr = (struct joy_power_control_bit_struct*)&i2c_secondary_registers.power_control;
 
 struct eeprom_data_struct
@@ -1330,6 +1330,9 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
       //we would use this as a way for the i2c master (host system) to tell us about power related stuff (like if the battery is getting low)
       //low_batt_mode   SEE joy_power_control_bit_struct above
       i2c_secondary_registers.power_control = temp;
+
+      if(joy_power_control_ptr->kill_power_now)
+        digitalWrite(PIN_POWEROFF_OUT,HIGH);
     }
     else if(x == REGISTER_SEC_BATTERY_CAPACITY && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
