@@ -1,0 +1,8 @@
+\e[1mUHID driver setup/diagnostic tool\e[22m
+
+\e[4mIf you wish to add or change analog stick parameters:\e[24m
+Start this program by Holding \e[1;4;100m(START)\e[22;24;49m during console bootup.
+Once started, select \e[1;4;100m[Start ADC to Joystick detection]\e[22;24;49m.
+
+\e[4mUpdating analog sticks configuration may require emulators rebind:\e[24m
+Once emulation system (RetroPie) started, please select \e[1;4;100m[CONFIGURE INPUT]\e[22;24;49m.

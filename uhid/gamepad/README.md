@@ -219,7 +219,9 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
 <br>
 
 ### SHM to MCU registers
-  Note: Require driver to be compiled with ``ALLOW_MCU_SEC_I2C`` and ``USE_SHM_REGISTERS`` preprocessor variables.
+  Notes:
+  - Require driver to be compiled with ``ALLOW_MCU_SEC_I2C`` AND ``USE_SHM_REGISTERS`` preprocessor variables.  
+  - Values limited by design from 0 to 255 as this feature is only be used with I2C device with 8bits registers values.
 
   Files will be placed in ``PATH``/``ID``/``FILES``  
   ``PATH`` is defined by **shm_path** variable ([driver_config.h].  
@@ -234,7 +236,10 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
   - **~/status_led** : Read/Write : Set LED ouput mode. Off(**0**), On(**1**), Blink slow(**2**), Blink fast(**3**).
   - **~/status** : Read/Write : Driver current state. **0**:closed(gracefully), **1**:noraml run mode, **2**:deadlock mode(no report update, last report centers all axis, buttons all unpressed).
 
-  Note on Read/Write: If file changes, register will be updated but the opposite is true as well.  
+  Note about values update priority (dev):
+  1. Variables updated by program will update file and register values.
+  2. File modification time changes, program variable and register values will be updated IF field allow RW. If not, file will be overwrite with current program variable value.
+  3. If register value changes, both file value and program variable will be updated.  
 <br>
 
 ## Repository files
