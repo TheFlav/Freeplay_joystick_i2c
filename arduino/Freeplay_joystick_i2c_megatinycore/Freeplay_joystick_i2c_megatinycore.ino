@@ -276,6 +276,7 @@ struct /*i2c_secondary_address_register_struct */
   uint8_t version_ID;        // Reg: 0x0F - 
 } i2c_secondary_registers;
 
+#define KILL_POWER_NOW 0x81
 struct joy_power_control_bit_struct
 {
     uint8_t low_batt_mode : 1;
@@ -285,7 +286,7 @@ struct joy_power_control_bit_struct
     uint8_t unused4 : 1;
     uint8_t unused5 : 1;
     uint8_t unused6 : 1;
-    uint8_t kill_power_now : 1;
+    uint8_t kill_power_now : 1;       //actually must write 0x81 to this entire byte to kill power (as a safety measure)
 }  * const joy_power_control_ptr = (struct joy_power_control_bit_struct*)&i2c_secondary_registers.power_control;
 
 struct eeprom_data_struct
@@ -1322,6 +1323,9 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
     }    
     else if(x == REGISTER_SEC_POWER_CONTROL && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
+      if(temp == KILL_POWER_NOW)
+        digitalWrite(PIN_POWEROFF_OUT,HIGH);
+
       //backlight_start_flashing(temp);     //change this at some point!
 
       //power_control bit 0 indicates LOW_BATT status (true/false)
@@ -1330,9 +1334,6 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
       //we would use this as a way for the i2c master (host system) to tell us about power related stuff (like if the battery is getting low)
       //low_batt_mode   SEE joy_power_control_bit_struct above
       i2c_secondary_registers.power_control = temp;
-
-      if(joy_power_control_ptr->kill_power_now)
-        digitalWrite(PIN_POWEROFF_OUT,HIGH);
     }
     else if(x == REGISTER_SEC_BATTERY_CAPACITY && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
