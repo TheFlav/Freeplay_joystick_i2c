@@ -32,7 +32,7 @@ static void program_usage(void); //display help
 static void tty_signal_handler (int /*sig*/); //handle signal func
 
 void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
-void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value
+int int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value, return 0 if val within min and max, -1 under min, 1 over max
 int int_digit_count(int /*num*/); //number of digit of a integer, negative sign is consider as a digit
 int in_array_int16(int16_t* /*arr*/, int16_t /*value*/, int /*arr_size*/); //search in value in int16 array, return index or -1 on failure
 

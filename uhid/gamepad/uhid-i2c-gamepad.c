@@ -805,7 +805,7 @@ static void shm_init(bool first){ //init shm related things, folders and files c
         #ifdef USE_SHM_REGISTERS //registers to files "bridge"
             for (int i=0; i<shm_vars_arr_size; i++){
                 int ret = i2c_smbus_read_byte_data(*(shm_vars[i].fd), shm_vars[i].reg); //read register value
-                if (ret < 0){i2c_allerrors_count++; print_stderr("failed to read register 0x%02X, errno:%d (%m)\n", shm_vars[i].reg, -ret); ret = 0;}
+                if (ret < 0){print_stderr("failed to read register 0x%02X, errno:%d (%m)\n", shm_vars[i].reg, -ret); ret = 0;}
                 for (int j=0; j<shm_vars[i].fields_count; j++){ //field loop
                     char* path = shm_vars[i].fields[j].filename;
                     if (path != NULL && strlen(path)){ //"valid" filename
@@ -836,7 +836,7 @@ static void shm_update(void){ //update registers/files linked to shm things
         //check shm_path/status update
         if (stat(shm_status_path_ptr, &file_stat) == -1){
             char buffer[3]; sprintf(buffer, "%d", shm_status); 
-            if (file_write(shm_status_path_ptr, buffer) == 0){print_stderr("missing '%s' content set to '%s'\n", shm_status_path_ptr, buffer);} //recreate missing status file
+            if (file_write(shm_status_path_ptr, buffer) == 0 && debug){print_stderr("missing '%s' content set to '%s'\n", shm_status_path_ptr, buffer);} //recreate missing status file
         } else {
             char buffer[3]; file_read(shm_status_path_ptr, buffer, 2);
             int shm_status_back = shm_status; if (buffer != NULL){shm_status = atoi(buffer);}
@@ -846,8 +846,8 @@ static void shm_update(void){ //update registers/files linked to shm things
         #ifdef USE_SHM_REGISTERS
             for (int i=0; i<shm_vars_arr_size; i++){
                 int register_value = i2c_smbus_read_byte_data(*(shm_vars[i].fd), shm_vars[i].reg); //read register value
-                if (register_value < 0){print_stderr("failed to read register 0x%02X, errno:%d (%m)\n", shm_vars[i].reg, -register_value); register_value = 0;}
-                int register_value_back = register_value;
+                if (register_value < 0){if (debug){print_stderr("failed to read register 0x%02X, errno:%d (%m)\n", shm_vars[i].reg, -register_value);} register_value = 0;}
+                bool register_update = false;
 
                 for (int j=0; j<shm_vars[i].fields_count; j++){
                     char* path = shm_vars[i].fields[j].filename, buffer[128];
@@ -860,12 +860,14 @@ static void shm_update(void){ //update registers/files linked to shm things
                     } else if (memcmp(mtime, &file_stat.st_mtim, sizeof(struct timespec)) != 0){ //file->var
                         if (shm_vars[i].reg_rw){ //allow update
                             if (file_read(path, buffer, 127) == 0){ //build updated value from file->reg,var
-                                int tmp_value = atoi(buffer); int_constrain(&tmp_value, 0, 0xFF >> (8 - bit_count));
+                                int tmp_value = atoi(buffer);
+                                if (int_constrain(&tmp_value, 0, 0xFF >> (8 - bit_count)) != 0){file_update = true;} //file value outside of range, force update file with proper value
                                 *var_ptr = tmp_value; *mtime = file_stat.st_mtim; reg_update = true;
-                                if(debug){print_stderr("'%s' var set to '%s'\n", path, buffer);}
+                                if(debug){print_stderr("'%s' var set to '%d'\n", path, tmp_value);}
                             }
                         } else {file_update = true;} //restore file value
                     } else if (*var_ptr != tmp_reg){*var_ptr = tmp_reg; file_update = true;} //reg->var,file
+
                     if (file_update){ //var->file
                         sprintf(buffer, "%d", *var_ptr);
                         if (file_write(path, buffer) == 0){ //write file
@@ -875,11 +877,11 @@ static void shm_update(void){ //update registers/files linked to shm things
                         }
                     }
 
-                    if (reg_update){register_value = bit_clear_uint8(register_value, bit_pos, bit_count); register_value |= *var_ptr << bit_pos;} //update register value
+                    if (reg_update){register_update = true; register_value = bit_clear_uint8(register_value, bit_pos, bit_count); register_value |= *var_ptr << bit_pos;} //update register value
                     shm_vars[i].fields[j].var_back = *var_ptr;
                 }
 
-                if (register_value_back != register_value){ //var,file->reg
+                if (register_update){ //var,file->reg
                     if (shm_vars[i].reg_wp != NULL){i2c_smbus_write_byte_data(*(shm_vars[i].fd), shm_vars[i].reg_wp->reg, shm_vars[i].reg_wp->disable);} //disable write protection
                     int ret = i2c_smbus_write_byte_data(*(shm_vars[i].fd), shm_vars[i].reg, (uint8_t)register_value);
                     if (shm_vars[i].reg_wp != NULL){i2c_smbus_write_byte_data(*(shm_vars[i].fd), shm_vars[i].reg_wp->reg, shm_vars[i].reg_wp->enable);} //enable write protection
@@ -928,8 +930,10 @@ void int_rollover(int* val, int min, int max){ //rollover int value between (inc
     if (*val < min){*val = max;} else if (*val > max){*val = min;}
 }
 
-void int_constrain(int* val, int min, int max){ //limit int value to given (incl) min and max value
-    if (*val < min){*val = min;} else if (*val > max){*val = max;}
+int int_constrain(int* val, int min, int max){ //limit int value to given (incl) min and max value, return 0 if val within min and max, -1 under min, 1 over max
+    int ret = 0;
+    if (*val < min){*val = min; ret = -1;} else if (*val > max){*val = max; ret = 1;}
+    return ret;
 }
 
 int int_digit_count(int num){ //number of digit of a integer, negative sign is consider as a digit
