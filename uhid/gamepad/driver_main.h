@@ -6,7 +6,7 @@
 #pragma once
 
 const char program_version[] = "0.1g"; //program version
-const char dev_webpage[] = "https://github.com/TheFlav/Freeplay_joystick_i2c";
+const char dev_webpage[] = "https://github.com/TheFlav/Freeplay_joystick_i2c"; //dev website
 
 //Prototypes
 double get_time_double (void); //get time in double (seconds)

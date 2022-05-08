@@ -67,7 +67,7 @@ Notes specific to driver part:
     #include <wiringPi.h>
 #elif defined(USE_GPIOD)
     #include <gpiod.h>
-	struct gpiod_chip *gpiod_input_chip;
+	struct gpiod_chip *gpiod_chip;
 	struct gpiod_line *gpiod_input_line;
     int gpiod_fd = -1;
     char gpiod_consumer_name[128];
@@ -1311,20 +1311,20 @@ int main(int argc, char** argv){
                     #endif
                 }
             #elif defined(USE_GPIOD)
-                if ((gpiod_input_chip = gpiod_chip_open_lookup("0")) == NULL){
+                if ((gpiod_chip = gpiod_chip_open_lookup("0")) == NULL){
                     print_stderr("gpiod_chip_open_lookup failed\n");
                 } else {
                     if (irq_gpio >= 0){
                         sprintf(gpiod_consumer_name, "%s %d IRQ", uhid_device_name, uhid_device_id);
-                        if ((gpiod_input_line = gpiod_chip_get_line(gpiod_input_chip, irq_gpio)) == NULL){
-                            print_stderr("gpiod_chip_get_line failed, consumer:'%s'\n", gpiod_consumer_name);
+                        if ((gpiod_input_line = gpiod_chip_get_line(gpiod_chip, irq_gpio)) == NULL){
+                            print_stderr("gpiod_chip_get_line failed, pin:%d, consumer:'%s'\n", irq_gpio, gpiod_consumer_name);
                         } else if (gpiod_line_request_both_edges_events(gpiod_input_line, gpiod_consumer_name) < 0){
-                            print_stderr("gpiod_line_request_both_edges_events failed. chip:%s(%s), consumer:'%s'\n", gpiod_chip_name(gpiod_input_chip), gpiod_chip_label(gpiod_input_chip), gpiod_consumer_name);
+                            print_stderr("gpiod_line_request_both_edges_events failed. chip:%s(%s), consumer:'%s'\n", gpiod_chip_name(gpiod_chip), gpiod_chip_label(gpiod_chip), gpiod_consumer_name);
                         } else if ((gpiod_fd = gpiod_line_event_get_fd(gpiod_input_line)) < 0){
                             print_stderr("gpiod_line_event_get_fd failed. errno:%d, consumer:'%s'\n", -gpiod_fd, gpiod_consumer_name);
                         } else {
                             fcntl(gpiod_fd, F_SETFL, fcntl(gpiod_fd, F_GETFL, 0) | O_NONBLOCK); //set gpiod fd to non blocking
-                            print_stderr("using libGPIOd to poll GPIO%d, chip:%s(%s), consumer:'%s'\n", irq_gpio, gpiod_chip_name(gpiod_input_chip), gpiod_chip_label(gpiod_input_chip), gpiod_consumer_name);
+                            print_stderr("using libGPIOd to poll GPIO%d, chip:%s(%s), consumer:'%s'\n", irq_gpio, gpiod_chip_name(gpiod_chip), gpiod_chip_label(gpiod_chip), gpiod_consumer_name);
                             irq_enable = true;
                         }
                     }
@@ -1332,15 +1332,15 @@ int main(int argc, char** argv){
                     #ifdef ALLOW_MCU_SEC_I2C
                         if (lowbattery_gpio >= 0){
                             sprintf(gpiod_consumer_lowbatt_name, "%s %d Lbatt", uhid_device_name, uhid_device_id);
-                            if ((gpiod_lowbatt_line = gpiod_chip_get_line(gpiod_input_chip, lowbattery_gpio)) == NULL){
-                                print_stderr("gpiod_chip_get_line failed, consumer:'%s'\n", gpiod_consumer_lowbatt_name);
+                            if ((gpiod_lowbatt_line = gpiod_chip_get_line(gpiod_chip, lowbattery_gpio)) == NULL){
+                                print_stderr("gpiod_chip_get_line failed, pin:%d, consumer:'%s'\n", lowbattery_gpio, gpiod_consumer_lowbatt_name);
                             } else if (gpiod_line_request_both_edges_events(gpiod_lowbatt_line, gpiod_consumer_lowbatt_name) < 0){
-                                print_stderr("gpiod_line_request_both_edges_events failed. chip:%s(%s), consumer:'%s'\n", gpiod_chip_name(gpiod_input_chip), gpiod_chip_label(gpiod_input_chip), gpiod_consumer_lowbatt_name);
+                                print_stderr("gpiod_line_request_both_edges_events failed. chip:%s(%s), consumer:'%s'\n", gpiod_chip_name(gpiod_chip), gpiod_chip_label(gpiod_chip), gpiod_consumer_lowbatt_name);
                             } else if ((gpiod_lowbatt_fd = gpiod_line_event_get_fd(gpiod_lowbatt_line)) < 0){
                                 print_stderr("gpiod_line_event_get_fd failed. errno:%d, consumer:'%s'\n", -gpiod_lowbatt_fd, gpiod_consumer_lowbatt_name);
                             } else {
                                 fcntl(gpiod_lowbatt_fd, F_SETFL, fcntl(gpiod_lowbatt_fd, F_GETFL, 0) | O_NONBLOCK); //set gpiod fd to non blocking
-                                print_stderr("using libGPIOd to poll GPIO%d, chip:%s(%s), consumer:'%s'\n", lowbattery_gpio, gpiod_chip_name(gpiod_input_chip), gpiod_chip_label(gpiod_input_chip), gpiod_consumer_lowbatt_name);
+                                print_stderr("using libGPIOd to poll GPIO%d, chip:%s(%s), consumer:'%s'\n", lowbattery_gpio, gpiod_chip_name(gpiod_chip), gpiod_chip_label(gpiod_chip), gpiod_consumer_lowbatt_name);
                                 battery_gpio_enable = true;
                             }
                         }
