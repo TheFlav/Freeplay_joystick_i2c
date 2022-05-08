@@ -9,7 +9,7 @@ const char program_version[] = "0.1g"; //program version
 const char dev_webpage[] = "https://github.com/TheFlav/Freeplay_joystick_i2c"; //dev website
 
 //Prototypes
-double get_time_double (void); //get time in double (seconds)
+double get_time_double(void); //get time in double (seconds), takes around 82 microseconds to run
 
 int i2c_check_bus(int /*bus*/, int* /*bus_found*/); //check I2C bus, return errno, set bus_found to NULL to disable bus searching
 int i2c_open_dev(int* /*fd*/, int /*bus*/, int /*addr*/); //open I2C device, return 0 on success, -1:bus, -2:addr, -3:generic error
