@@ -312,7 +312,9 @@ print ""
 print ""
 print ""
 print "BACKLIGHT DIMMER TESTS: Backlight ON"
-sleep(3)
+sleep(1)
+os.system("sudo fbi -T 1 -1 -t 6 /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/images/640x480_test_pattern.png");
+#sleep(2)
 
 #os.system("echo 1 > /dev/shm/uhid_i2c_driver/0/lcd_dimming_mode");
 print ""
@@ -337,6 +339,12 @@ print ""
 print ""
 print ""
 print "BACKLIGHT DIMMER TESTS: ON"
+
+print "Color Bars"
+os.system("sudo fbi -T 1 -1 -t 4 /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/images/640x480_color_bars.png");
+#sleep(2)
+#os.system("reset");
+btn_test('a', 1)
 
 print ""
 print ""

@@ -15,7 +15,7 @@ ln -s /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/lcd_on.sh /opt/retropie/co
 ln -s /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/lcd_on.sh /opt/retropie/configs/all/emulationstation/scripts/screensaver-stop/
 ln -s /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/lcd_dim.sh /opt/retropie/configs/all/emulationstation/scripts/screensaver-start/
 
-chmod -R a+x /opt/retropie/configs/all/emulationstation/scripts/
+sudo chmod -R a+x /opt/retropie/configs/all/emulationstation/scripts/
 
 if ! grep -Fxq "/home/pi/Freeplay/Freeplay_joystick_i2c/scripts/bootup.sh" /opt/retropie/configs/all/autostart.sh; then
 	sed -i '1 i /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/bootup.sh' /opt/retropie/configs/all/autostart.sh
@@ -34,8 +34,8 @@ fi
 
 
 mkdir -p "/home/pi/RetroPie/retropiemenu/Freeplay Options"
-cp /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/config_menu.sh "/home/pi/RetroPie/retropiemenu/Freeplay Options/"
-cp /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/download_install_latest_binary_package.sh "/home/pi/RetroPie/retropiemenu/Freeplay Options/"
+sudo cp /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/config_menu.sh "/home/pi/RetroPie/retropiemenu/Freeplay Options/"
+sudo cp /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/download_install_latest_binary_package.sh "/home/pi/RetroPie/retropiemenu/Freeplay Options/"
 
 if grep -q "Freeplay Configuration" /opt/retropie/configs/all/emulationstation/gamelists/retropie/gamelist.xml ; then
 	echo "Freeplay Configuration already in menu"
