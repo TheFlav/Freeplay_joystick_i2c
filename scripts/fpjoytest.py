@@ -195,11 +195,11 @@ def btn_test(btn_name, num_times):
         print '*** Skipping button "%s" test ***' % (btn_name)
         while(button_states['tr'] == 1 or button_states['tl'] == 1) :
           continue
-        return
+        return 1
     while (button_states[btn_name] == 1) :
       continue
     test_num+=1
-  return
+  return 0
 
 
 def dpad_test(num_times):
@@ -313,7 +313,7 @@ print ""
 print ""
 print "BACKLIGHT DIMMER TESTS: Backlight ON"
 sleep(1)
-os.system("sudo fbi -T 1 -1 -t 6 /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/images/640x480_test_pattern.png");
+os.system("sudo fbi -T 1 -1 -t 5 /home/pi/Freeplay/Freeplay_joystick_i2c/scripts/images/640x480_test_pattern.png");
 #sleep(2)
 
 #os.system("echo 1 > /dev/shm/uhid_i2c_driver/0/lcd_dimming_mode");
@@ -333,6 +333,7 @@ sleep(1)
 os.system("echo 2 > /dev/shm/uhid_i2c_driver/0/backlight");
 sleep(1)
 os.system("cat /dev/shm/uhid_i2c_driver/0/backlight_max > /dev/shm/uhid_i2c_driver/0/backlight");
+sleep(1)
 
 #os.system("echo 0 > /dev/shm/uhid_i2c_driver/0/lcd_dimming_mode");
 print ""
@@ -375,7 +376,12 @@ print "    Set volume wheel to full volume"
 print "    Actuate volume wheel during"
 print "      Center and WahWah"
 btn_test('a', 1)
-os.system("omxplayer /home/pi/Freeplay/Freeplay-Support/audiotest.mp4 -o alsa");
+
+retest=1
+while(retest == 1):
+  os.system("omxplayer /home/pi/Freeplay/Freeplay-Support/audiotest.mp4 -o alsa");
+  print "A to continue or L+R to retest"
+  retest=btn_test('a', 1)
 
 #print ""
 #print "Headphone Stereo Audio Test:"
