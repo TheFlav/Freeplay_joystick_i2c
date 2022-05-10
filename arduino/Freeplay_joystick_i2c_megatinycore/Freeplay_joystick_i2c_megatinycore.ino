@@ -671,6 +671,27 @@ void backlight_start_flashing(uint8_t num_flashes)
 #endif
 }
 
+void set_backlight_output()
+{
+  //check sleep/dimming settings
+
+  if(g_lcd_sleep_mode)
+  {
+    digitalWrite(PIN_BACKLIGHT_PWM, LOW);   //turn backlight off    //analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[0]);
+  }
+  else if(g_lcd_dimming_mode)
+  {
+    uint8_t dim_val = i2c_secondary_registers.config_backlight >> 1;
+    dim_val++;
+
+    analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[dim_val]);
+  }
+  
+
+  //otherwise, just write the PWM value
+  analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[g_pwm_step]); 
+}
+
 void backlight_process_flashing()
 {
 #ifdef PIN_BACKLIGHT_PWM  
@@ -704,7 +725,7 @@ void backlight_process_flashing()
       {
         backlight_flash_state = NOT_FLASHING;
 #ifdef USE_PWM_BACKLIGHT
-        analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
+        set_backlight_output();//analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
 #else
         digitalWrite(PIN_BACKLIGHT_PWM, HIGH);
 #endif
@@ -1646,24 +1667,10 @@ void loop()
   if(g_lcd_dimming_mode != joy_power_control_ptr->lcd_dimming_mode)
   {
     g_lcd_dimming_mode = joy_power_control_ptr->lcd_dimming_mode;
-
-    if(g_lcd_dimming_mode)
-    {
-      uint8_t dim_val = i2c_secondary_registers.config_backlight >> 1;
-      dim_val++;
-      analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[dim_val]);
-    }
-    else
-      analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
   }
   if(g_lcd_sleep_mode != joy_power_control_ptr->lcd_sleep_mode)
   {
     g_lcd_sleep_mode = joy_power_control_ptr->lcd_sleep_mode;
-
-    if(g_lcd_sleep_mode)
-      analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[0]);
-    else
-      analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
   }
   if(g_pwm_step != i2c_secondary_registers.config_backlight)
   {
@@ -1671,7 +1678,6 @@ void loop()
     if(i2c_secondary_registers.config_backlight >= NUM_BACKLIGHT_PWM_STEPS)
       i2c_secondary_registers.config_backlight = NUM_BACKLIGHT_PWM_STEPS-1;
     
-    analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
     g_pwm_step = i2c_secondary_registers.config_backlight;
 
     if(i2c_secondary_registers.config_backlight == 0)   //if the user chose backlight totally OFF, then bootup at default next time
@@ -1680,6 +1686,8 @@ void loop()
       eeprom_data.sec_config_backlight = i2c_secondary_registers.config_backlight;
     eeprom_save_deferred();
   }
+
+  set_backlight_output();
 #endif
 
   if(eeprom_data.sec_joystick_i2c_addr != i2c_secondary_registers.joystick_i2c_addr)
