@@ -54,7 +54,7 @@
 
 #define MANUF_ID         0xED
 #define DEVICE_ID        0x00
-#define VERSION_NUMBER   22
+#define VERSION_NUMBER   23
 
 #define CONFIG_PERIODIC_TASK_TIMER_MILLIS 5000
 #define CONFIG_INPUT_READ_TIMER_MICROS 500        //set to 0 for NO delay reading inputs, otherwise try to read inputs at least every CONFIG_INPUT_READ_TIMER_MICROS microseconds
@@ -177,6 +177,7 @@ enum hotkey_mode_enum {
  byte g_pwm_step = 0x00;  //100% on
  bool g_lcd_dimming_mode = false;
  bool g_lcd_sleep_mode = false;
+ bool g_special_input_lcd_off_mode = false;
 #endif
 
 #ifdef USE_ADC0
@@ -675,7 +676,7 @@ void set_backlight_output()
 {
   //check sleep/dimming settings
 
-  if(g_lcd_sleep_mode)
+  if(g_special_input_lcd_off_mode || g_lcd_sleep_mode)
   {
     digitalWrite(PIN_BACKLIGHT_PWM, LOW);   //turn backlight off    //analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[0]);
   }
@@ -1166,7 +1167,9 @@ void read_digital_inputs(void)
       {
         g_hotkey_mode = HOTKEY_OFF;
         status_led_off();
-        joy_power_control_ptr->lcd_sleep_mode = 0;  //wake it up, so the user is not confused (and if we were in special input sleep mode)
+        g_special_input_lcd_off_mode = false;
+        joy_power_control_ptr->lcd_sleep_mode = 0;  //wake it up, so the user is not confused
+        joy_power_control_ptr->lcd_dimming_mode = 0;//undim it, so the user is not confused
       }
       g_hotkey_input0 = input0;
       g_hotkey_input1 = input1;
@@ -1260,7 +1263,7 @@ void process_special_inputs()
       }
       else if(IS_PRESSED_SPECIAL_INPUT_TL())
       {
-        joy_power_control_ptr->lcd_sleep_mode = !joy_power_control_ptr->lcd_sleep_mode;
+        g_special_input_lcd_off_mode = !g_special_input_lcd_off_mode;
       }
     } 
   }

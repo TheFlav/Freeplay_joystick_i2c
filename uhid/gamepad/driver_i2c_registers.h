@@ -8,7 +8,7 @@
 
 #pragma once
 
-#define mcu_version_even 22 //what version of mcu is even with this file 
+#define mcu_version_even 23 //what version of mcu is even with this file 
 
 struct i2c_joystick_register_struct {
     uint8_t input0;         // Reg: 0x00 - INPUT port 0 (digital buttons/dpad)
