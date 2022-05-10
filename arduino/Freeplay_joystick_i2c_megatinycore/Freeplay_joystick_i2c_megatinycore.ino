@@ -686,10 +686,11 @@ void set_backlight_output()
 
     analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[dim_val]);
   }
-  
-
-  //otherwise, just write the PWM value
-  analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[g_pwm_step]); 
+  else
+  {
+    //otherwise, just write the PWM value
+    analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[g_pwm_step]); 
+  }
 }
 
 void backlight_process_flashing()
