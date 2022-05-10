@@ -1245,25 +1245,33 @@ void process_special_inputs()
     {
       special_inputs_loop_counter = SPECIAL_LOOP_DELAY;
 
-      if(IS_PRESSED_SPECIAL_INPUT_DPAD_UP())
+      if(IS_PRESSED_SPECIAL_INPUT_TL())
       {
-        if(i2c_secondary_registers.config_backlight < (NUM_BACKLIGHT_PWM_STEPS-1))
-        {
-          i2c_secondary_registers.config_backlight++;
-          //Serial.println("Backlight +");
-        }
-      }
-      else if(IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN())
-      {
-        if(i2c_secondary_registers.config_backlight > 0)
-        {
-          i2c_secondary_registers.config_backlight--;
-          //Serial.println("Backlight -");
-        }
-      }
-      else if(IS_PRESSED_SPECIAL_INPUT_TL())
-      {
+        //pressed TopL (L shoulder)
         g_special_input_lcd_off_mode = !g_special_input_lcd_off_mode;
+      }
+      else
+      {
+        //pressed any other special input button
+        g_special_input_lcd_off_mode = false;
+
+
+        if(IS_PRESSED_SPECIAL_INPUT_DPAD_UP())
+        {
+          if(i2c_secondary_registers.config_backlight < (NUM_BACKLIGHT_PWM_STEPS-1))
+          {
+            i2c_secondary_registers.config_backlight++;
+            //Serial.println("Backlight +");
+          }
+        }
+        else if(IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN())
+        {
+          if(i2c_secondary_registers.config_backlight > 0)
+          {
+            i2c_secondary_registers.config_backlight--;
+            //Serial.println("Backlight -");
+          }
+        }        
       }
     } 
   }
