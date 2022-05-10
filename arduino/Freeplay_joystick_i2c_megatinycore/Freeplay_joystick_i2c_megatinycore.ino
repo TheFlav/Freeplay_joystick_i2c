@@ -405,13 +405,26 @@ volatile bool g_read_analog_inputs_asap = true;
 #define IS_PRESSED_BTN_POWER_INPUT1(in1) ((in1 & INPUT1_BTN_POWER) != INPUT1_BTN_POWER)
 
 #ifdef USE_HOTKEY_TOGGLE_MODE
- #define IS_PRESSED_SPECIAL_INPUT_DPAD_UP()   (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP  ) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP))
- #define IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN() (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN))
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_UP()    (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_UP   ) != INPUT0_DPAD_UP   ) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP   ) != INPUT0_DPAD_UP))
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN()  (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_DOWN ) != INPUT0_DPAD_DOWN ) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN ) != INPUT0_DPAD_DOWN))
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_LEFT()  (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_LEFT ) != INPUT0_DPAD_LEFT ) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_LEFT ) != INPUT0_DPAD_LEFT))
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_RIGHT() (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_RIGHT) != INPUT0_DPAD_RIGHT) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_RIGHT) != INPUT0_DPAD_RIGHT))
+ 
+ #define IS_PRESSED_SPECIAL_INPUT_TL()         (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input1 & INPUT1_BTN_TL) != INPUT1_BTN_TL) : ((i2c_joystick_registers.input1 & INPUT1_BTN_TL) != INPUT1_BTN_TL))
+ #define IS_PRESSED_SPECIAL_INPUT_TR()         (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input1 & INPUT1_BTN_TR) != INPUT1_BTN_TR) : ((i2c_joystick_registers.input1 & INPUT1_BTN_TR) != INPUT1_BTN_TR))
+
+
+
 
  #define IS_SPECIAL_INPUT_MODE() (g_hotkey_mode == HOTKEY_SPECIAL_INPUT)
 #else
- #define IS_PRESSED_SPECIAL_INPUT_DPAD_UP()   ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP)
- #define IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN() ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN)
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_UP()    ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP   ) != INPUT0_DPAD_UP)
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN()  ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN ) != INPUT0_DPAD_DOWN)
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_LEFT()  ((i2c_joystick_registers.input0 & INPUT0_DPAD_LEFT ) != INPUT0_DPAD_LEFT)
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_RIGHT() ((i2c_joystick_registers.input0 & INPUT0_DPAD_RIGHT) != INPUT0_DPAD_RIGHT)
+
+ #define IS_PRESSED_SPECIAL_INPUT_TL() ((i2c_joystick_registers.input1 & INPUT1_BTN_TL) != INPUT1_BTN_TL)
+ #define IS_PRESSED_SPECIAL_INPUT_TR() ((i2c_joystick_registers.input1 & INPUT1_BTN_TR) != INPUT1_BTN_TR)
 
  #define IS_SPECIAL_INPUT_MODE() (IS_PRESSED_BTN_TL() && IS_PRESSED_BTN_TR() && IS_PRESSED_BTN_Y())
 #endif
@@ -1195,7 +1208,7 @@ void process_special_inputs()
 
 #ifdef USE_PWM_BACKLIGHT
   static uint16_t special_inputs_loop_counter = 0;
-  if(IS_SPECIAL_INPUT_MODE() && (IS_PRESSED_SPECIAL_INPUT_DPAD_UP() || IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN()))
+  if(IS_SPECIAL_INPUT_MODE() && (IS_PRESSED_SPECIAL_INPUT_DPAD_UP() || IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN() || IS_PRESSED_SPECIAL_INPUT_TL()))
   {
     if(special_inputs_loop_counter)   
     {
@@ -1221,6 +1234,10 @@ void process_special_inputs()
           i2c_secondary_registers.config_backlight--;
           //Serial.println("Backlight -");
         }
+      }
+      else if(IS_PRESSED_SPECIAL_INPUT_TL())
+      {
+        joy_power_control_ptr->lcd_sleep_mode = !joy_power_control_ptr->lcd_sleep_mode;
       }
     } 
   }
