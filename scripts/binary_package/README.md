@@ -137,3 +137,8 @@ audio_pwm_mode=2
 ## To install in an existing system
 SSH into the system.  Download the latest binary package from https://github.com/TheFlav/Freeplay_joystick_i2c/releases.  Unzip it and run ./fpjoy/install_binary_package.sh to install this Freeplay i2c Joystick binary package
 
+Open the config.txt file and copy/paste the "[Freeplay Additions](#freeplay-additions)" (above) to the end of the file:
+
+- NOTE:  Since you are adding this to an existing system, you may have non-standard items in your config.txt  This may require some manual intervention to sort out any conflicts.
+- If you are using a plastic shell intended for a GBA, then it's recommended to delete the # from the overscan lines that you just pasted in.  [Note that there are also overscan lines that were already in the file.]  This will allow you to use a GBA glass/plastic lens with a smaller viewable area then the full LCD.  You can tweak these lines to your liking.
+- Save the changes and close the config.txt file.
