@@ -117,21 +117,21 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
     <br>
     
   - Driver specific :  
-    (*) : close program after function executed (including failures).
+    (\*) : close program after function executed (including failures).
     <br>
 
     * ``-confignocreate`` : Disable creation of configuration file if it doesn't exist.  
     If ``-closeonwarn`` also set, program will close with specific error code (next section).  
 
-    * ``-configreset`` (*) : Reset configuration file to default defined in [driver_config.h](driver_config.h).  
+    * ``-configreset`` (\*) : Reset configuration file to default defined in [driver_config.h](driver_config.h).  
     
-    * ``-configset`` (*) : Set specified configuration variable with given value.  
+    * ``-configset`` (\*) : Set specified configuration variable with given value.  
     Format: ``VARIABLE=VALUE`` (no space, use argument once at a time)  
     Example: ``uhid-i2c-gamepad -configset debug=1``  
     
-    * ``-configlist`` (*) : List all configuration variables.  
+    * ``-configlist`` (\*) : List all configuration variables.  
     
-    * ``-inputsearch`` (*) : Check MCU input for pressed button, use [input-event-codes.h](https://elixir.bootlin.com/linux/latest/source/include/uapi/linux/input-event-codes.h) numbering.  
+    * ``-inputsearch`` (\*) : Check MCU input for pressed button, use [input-event-codes.h](https://elixir.bootlin.com/linux/latest/source/include/uapi/linux/input-event-codes.h) numbering.  
     Example for (START) and (SELECT) : ``-inputsearch 0x13b 0x13a``  
     This argument needs to be defined last.  
     Program returns **0** if none pressed, **1** for first input detected, **2** for second, **3** for both.  
@@ -177,16 +177,16 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
   Exception to following rules : ``-inputsearch`` (previous section).  
 
 - Return list:  
-  (*) Please consider to reflash MCU.  
+  (\*) Please consider to reflash MCU.  
   * ``0`` : Everything is fine.  
     
   * ``-1`` : Undefined or generic failure.  
     
-  * ``-2`` : I2C failed : This can be linked to multiple thing. Wrong Bus or Adress, Important read/write command failed (*).  
+  * ``-2`` : I2C failed : This can be linked to multiple thing. Wrong Bus or Adress, Important read/write command failed (\*).  
     
-  * ``-3`` : MCU **manuf_ID** register mismatched  **mcu_manuf** variable ([driver_config.h](driver_config.h)) (*).  
+  * ``-3`` : MCU **manuf_ID** register mismatched  **mcu_manuf** variable ([driver_config.h](driver_config.h)) (\*).  
     
-  * ``-4`` : MCU version (**version_ID** register) under **mcu_version_even** variable ([driver_i2c_registers.h](driver_i2c_registers.h)), should be considered as outdated MCU (*).  
+  * ``-4`` : MCU version (**version_ID** register) under **mcu_version_even** variable ([driver_i2c_registers.h](driver_i2c_registers.h)), should be considered as outdated MCU (\*).  
     
   * ``-5`` : Failed to read, write or parse configuration file.  
   If this happen when ``-confignocreate`` and ``-closeonwarn`` arguments are set, this mainly mean configuration file doesn't exist.  
