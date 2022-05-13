@@ -22,7 +22,7 @@ This page does mainly reference 2 programs:
   - ``libgpiod-dev`` : please refer to ``USE_GPIOD``  
 <br>
 
-### Preprocessor variable (gcc -D) to enable features:
+### Preprocessor variables (gcc -D) to enable features:
 Some parts of the driver are in place as preimplement to ease future additions and improvements or use outside of FreeplayTech products line.  
 Note about IRQ related variables : Only one kind will be allowed at once.  
 
