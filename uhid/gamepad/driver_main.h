@@ -5,11 +5,11 @@
 
 #pragma once
 
-const char program_version[] = "0.1f"; //program version
-const char dev_webpage[] = "https://github.com/TheFlav/Freeplay_joystick_i2c";
+const char program_version[] = "0.1g"; //program version
+const char dev_webpage[] = "https://github.com/TheFlav/Freeplay_joystick_i2c"; //dev website
 
 //Prototypes
-double get_time_double (void); //get time in double (seconds)
+double get_time_double(void); //get time in double (seconds), takes around 82 microseconds to run
 
 int i2c_check_bus(int /*bus*/, int* /*bus_found*/); //check I2C bus, return errno, set bus_found to NULL to disable bus searching
 int i2c_open_dev(int* /*fd*/, int /*bus*/, int /*addr*/); //open I2C device, return 0 on success, -1:bus, -2:addr, -3:generic error
@@ -30,10 +30,15 @@ static void program_close (void); //regroup all close functs
 static void program_get_path (char** /*args*/, char* /*path*/, char* /*program*/); //get current program path
 static void program_usage(void); //display help
 static void tty_signal_handler (int /*sig*/); //handle signal func
+
 void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
-void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value
+int int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value, return 0 if val within min and max, -1 under min, 1 over max
 int int_digit_count(int /*num*/); //number of digit of a integer, negative sign is consider as a digit
 int in_array_int16(int16_t* /*arr*/, int16_t /*value*/, int /*arr_size*/); //search in value in int16 array, return index or -1 on failure
+
+static uint8_t bit_extract_uint8(uint8_t /*value*/, uint8_t /*bit_pos*/, uint8_t /*bit_count*/); //warning, no security
+static uint8_t bit_clear_uint8(uint8_t /*value*/, uint8_t /*bit_pos*/, uint8_t /*bit_count*/); //warning, no security
+static char* int_bin_chararray(int /*val*/, int /*bits*/, char* /*var*/); //int to binary format char array
 
 //static void debug_print_binary_int (int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format
 //static void debug_print_binary_int_term (int /*line*/, int /*col*/, int /*val*/, int /*bits*/, char* /*var*/); //print given var in binary format at given term position
@@ -167,7 +172,7 @@ bool battery_gpio_enable = false;
     int battery_report_type = def_battery_report_type; //todo
     int lowbattery_gpio = def_lowbattery_gpio; //low battery gpio pin, set to -1 to disable
     bool lowbattery_gpio_invert = def_lowbattery_gpio_invert; //invert low battery gpio pin signal
-    mcu_power_control_t mcu_power_control = {0}; //mcu power_control register bitfield structure
+    //mcu_power_control_t mcu_power_control = {0}; //mcu power_control register bitfield structure
 #endif
 
 //ADC related
@@ -205,55 +210,74 @@ char* shm_status_path_ptr; //pointer to shm status path var
 #endif
 
 #ifdef USE_SHM_REGISTERS
-    struct timespec lcd_dimming_mode_mtime = {0};
-    struct timespec lcd_sleep_mode_mtime = {0};
-    struct timespec status_led_mtime = {0};
+    uint8_t power_control_low_batt_mode = 0; //mcu sec power_control low_batt_mode field value
+    uint8_t power_control_lcd_dimming_mode = 0; //mcu sec power_control lcd_dimming_mode field value
+    uint8_t power_control_lcd_sleep_mode = 0; //mcu sec power_control lcd_sleep_mode field value
 
-    char shm_lcd_dimming_mode[PATH_MAX] = {'\0'}; //path to shm lcd_dimming_mode
-    char shm_lcd_sleep_mode[PATH_MAX] = {'\0'}; //path to shm lcd_sleep_mode
-    char shm_status_led[PATH_MAX] = {'\0'}; //path to shm status_led
+    typedef struct shm_vars_protected_reg_struct {
+        uint8_t reg; //register
+        uint8_t enable, disable; //value to set to protect and unprotect
+    } shm_vars_protected_reg_t;
 
-    char shm_battery_capacity[PATH_MAX] = {'\0'}; //path to shm battery_capacity
-    char shm_low_batt_mode[PATH_MAX] = {'\0'}; //path to shm low_batt_mode
+    shm_vars_protected_reg_t shm_mcu_sec_write_protect = {
+        .reg=mcu_sec_register_write_protect,
+        .enable=mcu_write_protect_enable,
+        .disable=mcu_write_protect_disable,
+    };
 
     struct shm_vars_t {
-        char path [PATH_MAX];
-        char* file;
-        struct timespec mtime;
-        bool rw; //true: read/write, false:read only
-        bool mcu_wp; //mcu write protected, require ALLOW_MCU_SEC_I2C
-        int* i2c_fd;
-        int i2c_register;
-        uint8_t* ptr; //pointer to var
+        int* fd; //i2c fd
+        uint8_t reg; //register
+        bool reg_rw; //register allow read/write, is write protected
+        shm_vars_protected_reg_t* reg_wp;
+        struct {
+            char* filename;
+            struct timespec mtime;
+            uint8_t var_back; //backup to track modification
+            uint8_t* var_ptr; //pointer to current "bitfield" value
+            uint8_t bit_pos, bit_count; //"bitfield" bit start/amount, bit_count to 0 for no "bitfield"
+        } fields[8];
+        uint8_t fields_count;
     } shm_vars[] = {
-#ifdef ALLOW_MCU_SEC_I2C
-        {
-            "", "backlight", {0},
-            true, true, &mcu_fd_sec,
-            mcu_sec_register_backlight,
-            (uint8_t*)&(i2c_secondary_registers.config_backlight)
+        { //0:mcu sec config_backlight
+            .fd=&mcu_fd_sec, .reg=mcu_sec_register_backlight,
+            .reg_rw=true, .reg_wp=&shm_mcu_sec_write_protect,
+            .fields={{.filename="backlight", .var_ptr=(uint8_t*)&(i2c_secondary_registers.config_backlight)}},
+            .fields_count=1,
         },
-        {
-            "", "backlight_max", {0},
-            false, false, &mcu_fd_sec,
-            mcu_sec_register_backlight_max,
-            (uint8_t*)&(i2c_secondary_registers.backlight_max)
-        },
-        {
-            "", "status_led", {0},
-            true, true, &mcu_fd_sec,
-            mcu_sec_register_status_led_control,
-            (uint8_t*)&(i2c_secondary_registers.status_led_control)
-        },
-#endif
 
-        /*{
-            "", "poweroff_control", false, &mcu_fd_sec,
-            offsetof(struct i2c_secondary_address_register_struct, power_control) / sizeof(uint8_t),
-            (int*)&(i2c_secondary_registers.power_control)
-        },*/
+        { //1:mcu sec backlight_max
+            .fd=&mcu_fd_sec, .reg=mcu_sec_register_backlight_max,
+            .fields={{.filename="backlight_max", .var_ptr=(uint8_t*)&(i2c_secondary_registers.backlight_max)}},
+            .fields_count=1,
+        },
+
+        { //2:mcu sec status_led_control
+            .fd=&mcu_fd_sec, .reg=mcu_sec_register_status_led_control,
+            .reg_rw=true, .reg_wp=&shm_mcu_sec_write_protect,
+            .fields={{.filename="status_led", .var_ptr=(uint8_t*)&(i2c_secondary_registers.status_led_control)}},
+            .fields_count=1,
+        },
+
+        { //3:mcu sec battery_capacity
+            .fd=&mcu_fd_sec, .reg=mcu_sec_register_battery_capacity,
+            .reg_rw=true, .reg_wp=&shm_mcu_sec_write_protect,
+            .fields={{.filename="battery_capacity", .var_ptr=(uint8_t*)&(i2c_secondary_registers.battery_capacity)}},
+            .fields_count=1,
+        },
+
+        { //4:mcu sec power_control
+            .fd=&mcu_fd_sec, .reg=mcu_sec_register_power_control,
+            .reg_rw=true, .reg_wp=&shm_mcu_sec_write_protect,
+            .fields={
+                {.filename="low_batt_mode", .var_ptr=&power_control_low_batt_mode, .bit_pos=power_control_pos_low_batt, .bit_count=1},
+                {.filename="lcd_dimming_mode", .var_ptr=&power_control_lcd_dimming_mode, .bit_pos=power_control_pos_lcd_dimming, .bit_count=1},
+                {.filename="lcd_sleep_mode", .var_ptr=&power_control_lcd_sleep_mode, .bit_pos=power_control_pos_lcd_sleep, .bit_count=1},
+            },
+            .fields_count=3,
+        },
     };
-    const unsigned int shm_vars_arr_size = sizeof(shm_vars) / sizeof(shm_vars[0]); //shm array size
+    const int shm_vars_arr_size = sizeof(shm_vars) / sizeof(shm_vars[0]); //shm array size
 #endif
 
 //Config related vars

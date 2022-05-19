@@ -94,7 +94,7 @@ void term_splash_post_message(int /*tty_last_width*/, int /*tty_last_height*/); 
 
 //extern funct
 extern void int_rollover(int* /*val*/, int /*min*/, int /*max*/); //rollover int value between (incl) min and max, work both way
-extern void int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value
+extern int int_constrain(int* /*val*/, int /*min*/, int /*max*/); //limit int value to given (incl) min and max value, return 0 if val within min and max, -1 under min, 1 over max
 extern int int_digit_count(int /*num*/); //number of digit of a integer, negative sign is consider as a digit
 
 extern int i2c_check_bus(int /*bus*/, int* /*bus_found*/); //check I2C bus, return errno, set bus_found to NULL to disable bus searching
