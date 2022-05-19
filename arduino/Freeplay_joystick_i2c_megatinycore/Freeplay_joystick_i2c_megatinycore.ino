@@ -679,23 +679,30 @@ void set_backlight_output()
 	
   //check sleep/dimming settings
 
-  if(g_hotkey_mode != HOTKEY_SPECIAL_INPUT)
+  if(IS_SPECIAL_INPUT_MODE())
   {
-  	if(g_special_input_lcd_off_mode || g_lcd_sleep_mode)
+	if(g_special_input_lcd_off_mode)
+	{
+	  digitalWrite(PIN_BACKLIGHT_PWM, LOW);   //turn backlight off    //analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[0]);
+	  return;
+	}
+  }
+  else
+  {
+  	if(g_lcd_sleep_mode)
     {
       digitalWrite(PIN_BACKLIGHT_PWM, LOW);   //turn backlight off    //analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[0]);
 	  return;
     }
     else if(g_lcd_dimming_mode)
     {
-      uint8_t dim_val = i2c_secondary_registers.config_backlight >> 1;
+      uint8_t dim_val = g_pwm_step >> 1;		// divide by 2
       dim_val++;
 
       analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[dim_val]);
 	  return;
     }
   }
-  
   
   //otherwise, just write the PWM value
   analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[g_pwm_step]); 
