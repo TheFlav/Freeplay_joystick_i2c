@@ -117,6 +117,8 @@ upload: $(HEX)
 	raspi-gpio set 15 a0 pu ; \
 	raspi-gpio set 11 op dh ; \
 	bin/arduino-cli upload -b $(FQBN) -p $(SERIAL_DEV) -P $(PROGRAMMER) $(VFLAG) --input-dir $(BUILD_DIR); \
+	raspi-gpio set 14-15 a2 pn ; \
+	raspi-gpio set 11 op dl ; \
 	fi
 
 clean:

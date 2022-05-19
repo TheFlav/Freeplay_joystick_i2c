@@ -674,24 +674,31 @@ void backlight_start_flashing(uint8_t num_flashes)
 
 void set_backlight_output()
 {
+  if(g_backlight_is_flashing)
+    return;	
+	
   //check sleep/dimming settings
 
-  if(g_special_input_lcd_off_mode || g_lcd_sleep_mode)
+  if(g_hotkey_mode != HOTKEY_SPECIAL_INPUT)
   {
-    digitalWrite(PIN_BACKLIGHT_PWM, LOW);   //turn backlight off    //analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[0]);
-  }
-  else if(g_lcd_dimming_mode)
-  {
-    uint8_t dim_val = i2c_secondary_registers.config_backlight >> 1;
-    dim_val++;
+  	if(g_special_input_lcd_off_mode || g_lcd_sleep_mode)
+    {
+      digitalWrite(PIN_BACKLIGHT_PWM, LOW);   //turn backlight off    //analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[0]);
+	  return;
+    }
+    else if(g_lcd_dimming_mode)
+    {
+      uint8_t dim_val = i2c_secondary_registers.config_backlight >> 1;
+      dim_val++;
 
-    analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[dim_val]);
+      analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[dim_val]);
+	  return;
+    }
   }
-  else
-  {
-    //otherwise, just write the PWM value
-    analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[g_pwm_step]); 
-  }
+  
+  
+  //otherwise, just write the PWM value
+  analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[g_pwm_step]); 
 }
 
 void backlight_process_flashing()
