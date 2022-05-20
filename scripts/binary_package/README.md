@@ -27,7 +27,7 @@ In "Raspberry Pi Imager"
 - Click the "WRITE" button
 - When it's done writing, you will want to open the "boot" drive on your computer which is the /boot partition of the newly created SD card.  If you don't see this drive, make sure that Raspberry Pi Imager is done writing.  If it's done writing, you may need to eject the SD card and re-insert it to get the "boot" drive to show up on your machine.
 	- In this "boot" drive you will edit 2 files and add some files.
-		- Open the config.txt file and copy/paste the "[Freeplay Additions](#freeplay-additions)" (below) to the end of the file
+		- Open the config.txt file with a text editor and copy/paste the "[Freeplay Additions](#freeplay-additions)" (below) to the end of the file
 			- If you are using a plastic shell intended for a GBA, then it's recommended to delete the # from the overscan lines that you just pasted in.  [Note that there are also overscan lines that were already in the file.]  This will allow you to use a GBA glass/plastic lens with a smaller viewable area then the full LCD.  You can tweak these lines to your liking.
 		- Save the changes and close the config.txt file.
 		- Copy the the fpjoy_binary_package.zip file (downloaded from https://github.com/TheFlav/Freeplay_joystick_i2c/releases) into the boot drive.
@@ -42,7 +42,7 @@ In "Raspberry Pi Imager"
 			- You can also do this after you have tested the SD card in the Freeplay Zero.  
 			- In fact, once the full installation is complete, and you are satisfied with how the Freeplay Zero is running, you may also delete the "fpjoy" directory from the 'boot' drive.
 				- Note that your Windows/Mac operating system may not actually delete these files from the SD until you empty them from your trash.
-		- Open the firstrun.sh file with a text editor.
+		- Open the firstrun.sh file with a text editor.  This "firstrun.sh" file should be in the same directory as the "config.txt" file you previously edited.
 			- In firstrun.sh, near the end of the file, you should find a line that says something like 
 				```
 				rm -f /boot/firstrun.sh
