@@ -26,7 +26,7 @@ In "Raspberry Pi Imager"
 
 - Click the "WRITE" button
 - When it's done writing, you will want to open the "boot" drive on your computer which is the /boot partition of the newly created SD card.  If you don't see this drive, make sure that Raspberry Pi Imager is done writing.  If it's done writing, you may need to eject the SD card and re-insert it to get the "boot" drive to show up on your machine.
-	- In this "boot" drive you will edit 3 files and add some files.
+	- In this "boot" drive you will edit 3 files (cmdline.txt, config.txt, and firstrun.sh) and add some files.
 		- Open the cmdline.txt file with a text editor.  
 			- If you see the following text in the file, REMOVE it without editing any other text, save the file, and exit.
 				```
