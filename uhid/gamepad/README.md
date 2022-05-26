@@ -255,6 +255,7 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
   
 ## Known issue(s)
 - EmulationStation can crash will waiting for a user input on Welcome screen (no input device binded) if driver is killed and restart in a short span (liked to JS/EV dev unregistering, no clue if ES or UHID related).
+- If compiled with GPIOD support but GPIO pin already requested, program will NOT be able to read GPIO pins defined (even after config reload). There is currently no workaround as GPIOD isn't able to recover already opened fds.
 <br><br>
 
 
