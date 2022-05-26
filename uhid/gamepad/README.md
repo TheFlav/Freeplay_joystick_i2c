@@ -63,7 +63,8 @@ Note about IRQ related variables : Only one kind will be allowed at once.
 
   - ``MULTI_INSTANCES``
     * Allow driver and setup/diag program to run more than once at a time.
-    * New instance (once first already during) needs to use a different configuration file (no check for this, UHID may fail), please refer to argument ``-config`` to do so.  
+    * New instance needs to use a different configuration file (no check for this, UHID may fail), please refer to argument ``-config`` to do so.
+    * It is highly recommanded to compile both driver and diagnostic programs without GPIO support as GPIO library may fail because GPIO pins are already used by first instance that starts.  
   <br>
 
   - ``def_i2c_bus ***NUMBER***``
@@ -254,8 +255,11 @@ Use ``-l:libi2c.a`` instead of ``-li2c`` for static version of libi2c.
 <br><br>
   
 ## Known issue(s)
-- EmulationStation can crash will waiting for a user input on Welcome screen (no input device binded) if driver is killed and restart in a short span (liked to JS/EV dev unregistering, no clue if ES or UHID related).
-- If compiled with GPIOD support but GPIO pin already requested, program will NOT be able to read GPIO pins defined (even after config reload). There is currently no workaround as GPIOD isn't able to recover already opened fds.
+- GPIO specific:
+  - Will fail if GPIO pin already requested/used, program will NOT be able to read GPIO pins defined (low battery, input interrupt), even after config reload.
+  - If compiled with multiple instances support, second (and so on) instances will lack GPIO support. In this case, the best option is to compile both driver and diagnostic programs without GPIO support.
+  - Currently no workaround for this problem.
+- EmulationStation can crash will waiting for a user input on Welcome screen (no input device binded) if driver is killed and restart in a short amount of time (linked to JS/EV dev unregistering, no clue if ES or UHID related).
 <br><br>
 
 
