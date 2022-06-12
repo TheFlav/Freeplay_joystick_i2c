@@ -594,6 +594,7 @@ int mcu_update_battery_capacity(){ //read/update battery_capacity register, retu
             percent = atoi(buffer); if (percent < 0 || percent > 255){percent = 255;}
         }
         fclose(filehandle);
+        if (percent != 255){i2c_secondary_registers.battery_capacity = (uint8_t)percent;}
     }
 
     #ifndef USE_SHM_REGISTERS
