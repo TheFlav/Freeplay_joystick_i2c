@@ -784,6 +784,17 @@ static void shm_init(bool first){ //init shm related things, folders and files c
     if (first){ //initial run, skip i2c part
         if (folder_create(shm_fullpath, 0755, user_uid, user_gid) < 0){return;} //recursive folder create
 
+        //pid file
+        int pid = (int)getpid();
+        if (pid > 0){
+            sprintf(pid_path, "%s/pid.txt", shm_fullpath);
+            FILE *filehandle = fopen(pid_path, "w");
+            if (filehandle != NULL) {
+                fprintf(filehandle, "%d", pid); fclose(filehandle);
+                print_stderr("%s set to '%d'\n", pid_path, pid);
+            } else {pid_path[0] = '\0';} //failed to write pid file
+        }
+
         //todo: log part needs rework
         char shm_logs[strlen(shm_fullpath)+13]; //current path with additionnal 255 chars for filename
         sprintf(shm_logs, "%s/driver.log", shm_fullpath); //log file
@@ -960,6 +971,7 @@ bool io_fd_valid(int fd){ //check if a file descriptor is valid
 //Generic functions
 static void program_close(void){ //regroup all close functs
     if (already_killed){return;}
+    if (strlen(pid_path) > 0){remove(pid_path);} //delete pid file
     if (term_backup.c_cflag){tcsetattr(STDIN_FILENO, TCSANOW, &term_backup);} //restore terminal to original state funct
     #ifndef DIAG_PROGRAM
         uhid_destroy(uhid_fd);
