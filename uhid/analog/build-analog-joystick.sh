@@ -1,1 +1,1 @@
-gcc -o uhid-i2c-analog-joystick uhid-i2c-analog-joystick.c -l:libi2c.a
+gcc -o uhid-i2c-analog-joystick uhid-i2c-analog-joystick.c -li2c -lwiringPi

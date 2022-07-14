@@ -1,3 +1,0 @@
-es-theme-freeplay.tar.gz
-	See https://github.com/rxbrad/es-theme-freeplay
-	This gets installed to /etc/emulationstation/themes/freeplay

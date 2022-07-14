@@ -1,11 +1,14 @@
 /*
-
- This program sets up a gamepad device in the sytem, interfaces with the attiny i2c device as an analog joystick, and sends HID reports to the system.
-
- Setup:     sudo apt install libi2c-dev libgpiod-dev
- Compile:   gcc -o uhid-i2c-analog-joystick uhid-i2c-analog-joystick.c -l:libi2c.a
- Run:       sudo ./uhid-i2c-analog-joystick
-
+ 
+ This program sets up a gamepad device in the sytem, interfaces with the attiny i2c device as a gamepad (digital only), and sends HID reports to the system.
+ 
+ Setup:     sudo apt install libi2c-dev pigpio
+ Compile:   gcc -o uhid-i2c-gamepad uhid-i2c-gamepad.c -li2c -lpigpio
+ Run:       sudo ./uhid-i2c-gamepad
+ 
+ Notes:
+ On the Pi Zero 2 W, I had to use "git clone https://github.com/PinkFreud/WiringPi.git" to get a WiringPi that knew about the Pi02
+ 
  */
 
 
@@ -27,7 +30,7 @@
 
 int fd;
 
-#define I2C_BUSNAME "/dev/i2c-0"
+#define I2C_BUSNAME "/dev/i2c-1"
 #define I2C_ADDRESS 0x30
 int i2c_file = -1;
 
@@ -37,75 +40,79 @@ int i2c_file = -1;
  *
  * input0
  *
- * PC0 = IO0_0 = DPAD_UP
- * PC1 = IO0_1 = DPAD_DOWN
- * PC2 = IO0_2 = DPAD_LEFT
- * PC3 = IO0_3 = DPAD_RIGHT
- * PC4 = IO0_4 = BTN_START
- * PC5 = IO0_5 = BTN_SELECT
+ * PC0 = IO0_0 = BTN_X
+ * PC1 = IO0_1 = BTN_Y
+ * PC2 = IO0_2 = BTN_START
+ * PC3 = IO0_3 = BTN_SELECT
+ * PC4 = IO0_4 = BTN_L    (AKA BTN_TL in Linux)
+ * PC5 = IO0_5 = BTN_R    (AKA BTN_TR in Linux)
  * PB6 = IO0_6 = BTN_A
  * PB7 = IO0_7 = BTN_B
  *
- * input1
+ * input1       A18 means analog pin 18 (A7 = analog 7 aka PB4)
  *
- * PB5 = IO1_0 = BTN_POWER (AKA BTN_MODE)
- * PC1 = IO1_1 = BTN_THUMBR
- * PC2 = IO1_2 = BTN_TL2
- * PC3 = IO1_3 = BTN_TR2
- * PC4 = IO1_4 = BTN_X
- * PC5 = IO1_5 = BTN_Y
- * PB6 = IO1_6 = BTN_TL
- * PB7 = IO1_7 = BTN_TR
+ * A18 = IO1_0 = UP
+ * A18 = IO1_1 = DOWN
+ * A18 = IO1_2 = LEFT
+ * A18 = IO1_3 = RIGHT
+ * PB3 = IO1_4 = BTN_L2    (AKA BTN_TL2 in Linux)
+ * PB4 = IO1_5 = BTN_R2    (AKA BTN_TR2 in Linux)   //PB4 can be turned into A7 to do an analog resistor ladder if we need BTN_THUMBL and BTN_THUMBR buttons
+ * PB5 = IO1_6 = BTN_POWER
+ * --- = IO1_7 = always high
  *
  * input2       EXTENDED DIGITAL INPUT REGISTER
  *
- * PC0 = IO2_0 = BTN_THUMBL
- * ??? = IO2_1 =
- * PB2 = IO2_2 = BTN_C (when no Serial debugging)
- * PB3 = IO2_3 = BTN_Z (when no Serial debugging)
+ * A7  = IO2_0 = BTN_THUMBL
+ * A7  = IO2_1 = BTN_THUMBR
+ * --- = IO2_2 = always high
+ * --- = IO2_3 = always high
  * PA4 = IO2_4 = BTN_0 (when ADC0 not used)
  * PA5 = IO2_5 = BTN_1 (when ADC1 not used)
  * PA6 = IO2_6 = BTN_2 (when ADC2 not used)
  * PA7 = IO2_7 = BTN_3 (when ADC3 not used)
  *
  *
+ * POWER_BUTTON (Hotkey AKA poweroff_in) NEEDS TO BE IN HERE SOMEWHERE SOMEHOW
+ *
+ *
+ *
  *
  * PA2 =         POWEROFF_OUT
- * PB4 =         nINT OUT
- * PA3 =         PWM Backlight OUT
+ * PA3 =         nINT OUT
+ * PB2 =         PWM Backlight OUT
  *
  */
 
 struct input0_bit_struct
 {
-    uint8_t dpad_u : 1;
-    uint8_t dpad_d : 1;
-    uint8_t dpad_l : 1;
-    uint8_t dpad_r : 1;
+    uint8_t btn_x : 1;
+    uint8_t btn_y : 1;
     uint8_t btn_start : 1;
     uint8_t btn_select : 1;
+    uint8_t btn_tl : 1;
+    uint8_t btn_tr : 1;
     uint8_t btn_a : 1;
     uint8_t btn_b : 1;
 };
 
 struct input1_bit_struct
 {
-    uint8_t btn_mode : 1;
-    uint8_t btn_thumbr : 1;
+    uint8_t dpad_u : 1;
+    uint8_t dpad_d : 1;
+    uint8_t dpad_l : 1;
+    uint8_t dpad_r : 1;
     uint8_t btn_tl2 : 1;
     uint8_t btn_tr2 : 1;
-    uint8_t btn_x : 1;
-    uint8_t btn_y : 1;
-    uint8_t btn_tl : 1;
-    uint8_t btn_tr : 1;
+    uint8_t btn_mode : 1;
+    uint8_t unused7 : 1;
 };
 
 struct input2_bit_struct
 {
     uint8_t btn_thumbl : 1;
-    uint8_t unused1 : 1;
-    uint8_t btn_c : 1;
-    uint8_t btn_z : 1;
+    uint8_t btn_thumbr : 1;
+    uint8_t unused2 : 1;
+    uint8_t unused3 : 1;
     uint8_t btn_0 : 1;
     uint8_t btn_1 : 1;
     uint8_t btn_2 : 1;
@@ -395,14 +402,14 @@ void i2c_poll_joystick()
     
     ret = i2c_smbus_read_i2c_block_data(i2c_file, 0, sizeof(i2c_registers), (uint8_t *)&i2c_registers);
     if(ret < 0)
-        return;//exit(1);
+        exit(1);
     
     
-    gamepad_report.buttons7to0 = (IS_PRESSED(i2c_registers.input1.btn_tr) << 7)
-                                | (IS_PRESSED(i2c_registers.input1.btn_tl) << 6)
+    gamepad_report.buttons7to0 = (IS_PRESSED(i2c_registers.input0.btn_tr) << 7)
+                                | (IS_PRESSED(i2c_registers.input0.btn_tl) << 6)
                                 | (IS_PRESSED(i2c_registers.input0.btn_select) << 5)
-                                | (IS_PRESSED(i2c_registers.input1.btn_y) << 4)
-                                | (IS_PRESSED(i2c_registers.input1.btn_x) << 3)
+                                | (IS_PRESSED(i2c_registers.input0.btn_y) << 4)
+                                | (IS_PRESSED(i2c_registers.input0.btn_x) << 3)
                                 | (IS_PRESSED(i2c_registers.input1.btn_mode) << 2)
                                 | (IS_PRESSED(i2c_registers.input0.btn_b) << 1)
                                 | IS_PRESSED(i2c_registers.input0.btn_a);
@@ -410,14 +417,17 @@ void i2c_poll_joystick()
                                 | (IS_PRESSED(i2c_registers.input1.btn_tr2) << 1)
                                 | IS_PRESSED(i2c_registers.input1.btn_tl2);
     
-    gamepad_report.hat_x = IS_PRESSED(i2c_registers.input0.dpad_r) - IS_PRESSED(i2c_registers.input0.dpad_l);
-    gamepad_report.hat_y = IS_PRESSED(i2c_registers.input0.dpad_u) - IS_PRESSED(i2c_registers.input0.dpad_d);
+    gamepad_report.hat_x = IS_PRESSED(i2c_registers.input1.dpad_r) - IS_PRESSED(i2c_registers.input1.dpad_l);
+    gamepad_report.hat_y = IS_PRESSED(i2c_registers.input1.dpad_u) - IS_PRESSED(i2c_registers.input1.dpad_d);
     
-    gamepad_report.left_x = i2c_registers.a0_msb << 8 | (i2c_registers.a1a0_lsb.a0_lsb<<4);
-    gamepad_report.left_y = i2c_registers.a1_msb << 8 | (i2c_registers.a1a0_lsb.a1_lsb<<4);
+    gamepad_report.left_x = i2c_registers.a0_msb << 8 | i2c_registers.a1a0_lsb.a0_lsb;
+    gamepad_report.left_y = i2c_registers.a1_msb << 8 | i2c_registers.a1a0_lsb.a1_lsb;
     
-    gamepad_report.right_x = i2c_registers.a2_msb << 8 | (i2c_registers.a3a2_lsb.a2_lsb<<4);
-    gamepad_report.right_y = i2c_registers.a3_msb << 8 | (i2c_registers.a3a2_lsb.a3_lsb<<4);
+    gamepad_report.right_x = i2c_registers.a2_msb << 8 | i2c_registers.a3a2_lsb.a2_lsb;
+    gamepad_report.right_y = i2c_registers.a3_msb << 8 | i2c_registers.a3a2_lsb.a3_lsb;
+    
+    
+    //printf("gamepad left_x=%d left_y=%d right_x=%d right_y=%d\n", gamepad_report.left_x, gamepad_report.left_y, gamepad_report.right_x, gamepad_report.right_y);
 }
 
 
