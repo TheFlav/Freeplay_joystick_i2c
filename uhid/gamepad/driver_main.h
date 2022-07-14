@@ -92,6 +92,7 @@ int irq_gpio = def_irq_gpio; //gpio pin used for IRQ, limited to 31 for pigpio, 
 
 //Program related
 char program_path[PATH_MAX] = {'\0'}, program_name[PATH_MAX] = {'\0'}; //full path to this program
+char pid_path[PATH_MAX] = {'\0'}; //full path to program pid file
 bool kill_requested = false, already_killed = false; //allow clean close
 double program_start_time = 0.;
 bool diag_mode_init = false; //used mainly to disable print_stderr and print_stdout output in diag mode

@@ -44,7 +44,7 @@
 
 #define battery_rsoc_file "/sys/class/power_supply/battery/capacity" //full path to sysfs battery rsoc (battery state in percent), require a battery gauge and a "power supply" compatible kernel driver, "ALLOW_MCU_SEC_I2C" needs to be defined in compilation command line
 #define def_lowbattery_gpio 10 //low battery gpio pin, set to -1 to disable
-#define def_lowbattery_gpio_invert false //invert low battery gpio pin signal
+#define def_lowbattery_gpio_invert true //invert low battery gpio pin signal
 #define def_battery_interval 2 //MCU battery related stuff update interval in sec
 #define def_battery_report_type 0 //todo
 
