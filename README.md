@@ -1,22 +1,38 @@
 # Freeplay_joystick_i2c
-Freeplay i2c joystick firmware, kernel-space driver, and user-space driver        
+This repository does provide files needs to turn a ATtiny MCU into IO/ADC I2C expansion IC with advanced configuration.  
+It does also contain Linux kernel-space and user-space drivers to turn it into a input driver (only one kind at once).
 
-# Installation into a Freeplay Zero (built after 2022)
-See https://github.com/TheFlav/Freeplay_joystick_i2c/blob/main/scripts/binary_package/README.md
+MCU code uses [megaTinyCore](https://github.com/SpenceKonde/megaTinyCore) and mainly target following MCUs (may require compilation and upload scripts update): ATtiny417, ATtiny817, ATtiny1617, ATtiny427, ATtiny827, ATtiny1627.
 
-## Arduino code
-        ./arduino/Freeplay_joystick_i2c_megatinycore/          Arduino sketch for use with megaTinyCore (attiny427, attiny817, attiny1627, etc.)
+Files provided here are mainly aimed to be used on [Freeplaytech](https://www.freeplaytech.com/) Zero platform (2022 640x480 IPS version) but can also be used on other projects if you want.
 
-## kernel joystick driver to read i2c (polled and/or interrupts)
-        ./kernel                        kernel module
-        ./kernel/device-tree            device-tree blob overlay
+Please check following sections for more indepth instructions/informations.
+<br><br>
 
-## userspace uhid program to poll i2c and inject HID digital/analog joystick/gamepad
-        ./uhid/digital                  simple example code for digital-only pad
-        ./uhid/analog                   simple example code for dual analog 
-        ./uhid/gamepad                  full-featured program for calibration and interfacing many features
-        
-### Example
-        Setup:     sudo apt install libi2c-dev pigpio
-        Compile:   gcc -o uhid-i2c-digital uhid-i2c-digital.c -li2c -lpigpio
-        Run:       sudo ./uhid-i2c-digital 
+### MCU
+- [arduino/Freeplay_joystick_i2c_megatinycore/](arduino/Freeplay_joystick_i2c_megatinycore/) : Arduino sketch with compilation and flash scripts.
+<br>
+
+### Kernel-space driver
+- [kernel/](kernel/) : Kernel driver files.
+- [kernel/device-tree/](kernel/device-tree/) : Device-tree blob overlay.
+- [kernel/diag/](kernel/diag/) : Diagnostic/setup program to allow end users do there own settings in a simpler way (use with caution).
+<br>
+
+### User-space driver
+Note: Require a kernel compiled with UHID support, check existance of ``/dev/uhid`` file on your system to confirm that.  
+- [uhid/digital/](uhid/digital/) : Simple example code for digital-only pad.
+- [uhid/analog/](uhid/analog/) : Simple example code for dual analog.
+- [uhid/gamepad/](uhid/gamepad/) : Full-featured set including driver and diagnostic/setup program for calibration and interfacing many features.
+<br>
+
+### Install scripts
+- [scripts/](scripts/) : Contain install scripts (mainly aimed at Retropie image).
+- [scripts/binary_package/](scripts/binary_package/) : Installation procedure and automated scripts to install already compiled drivers and programs on a fresh image.
+<br><br>
+
+## Installation into a Freeplay Zero (2022 640x480 IPS version)
+Please follow [binary package instructions](scripts/binary_package/README.md).
+
+
+
