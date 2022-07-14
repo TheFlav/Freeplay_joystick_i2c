@@ -15,13 +15,4 @@ else
   echo Using CHIP as ${CHIP}
 fi
 
-./bin/avrdude -c serialupdi -p t${CHIP} -P /dev/ttyAMA0 -U flash:v:Freeplay_joystick_i2c_megatinycore_build_${CHIP}/Freeplay_joystick_i2c_megatinycore.ino.hex:i
-
-if [ $? -ne 0 ]
-then
-   echo "Compare failed!"
-   exit 1
-fi
-
-echo "Compare found no differences!"
-exit 0
+./bin/avrdude -c serialupdi -p t${CHIP} -P /dev/ttyAMA0 -e

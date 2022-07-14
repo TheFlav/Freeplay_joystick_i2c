@@ -8,9 +8,10 @@ raspi-gpio set 15 a0 pu
 
 raspi-gpio set 11 op dh
 
-echo "Requires pymcuprog from https://pypi.org/project/pymcuprog/"
+#echo "Requires pymcuprog from https://pypi.org/project/pymcuprog/"
+echo "Requires avrdude"
 
-if [ ${CHIP} != 817 ]; then
+if [ "${CHIP}" != "817" ]; then
   CHIP=1627
   echo Setting CHIP as ${CHIP}
 else
@@ -18,4 +19,5 @@ else
 fi
 
 
-pymcuprog -d attiny${CHIP} -t uart -u /dev/ttyAMA0 ping
+#pymcuprog -d attiny${CHIP} -t uart -u /dev/ttyAMA0 ping
+./bin/avrdude -c serialupdi -p t${CHIP} -P /dev/ttyAMA0

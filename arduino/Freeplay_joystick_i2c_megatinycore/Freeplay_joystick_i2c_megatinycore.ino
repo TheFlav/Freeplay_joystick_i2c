@@ -54,7 +54,7 @@
 
 #define MANUF_ID         0xED
 #define DEVICE_ID        0x00
-#define VERSION_NUMBER   17
+#define VERSION_NUMBER   24
 
 #define CONFIG_PERIODIC_TASK_TIMER_MILLIS 5000
 #define CONFIG_INPUT_READ_TIMER_MICROS 500        //set to 0 for NO delay reading inputs, otherwise try to read inputs at least every CONFIG_INPUT_READ_TIMER_MICROS microseconds
@@ -175,6 +175,9 @@ enum hotkey_mode_enum {
  #define CONFIG_BACKLIGHT_STEP_DEFAULT  5
 
  byte g_pwm_step = 0x00;  //100% on
+ bool g_lcd_dimming_mode = false;
+ bool g_lcd_sleep_mode = false;
+ bool g_special_input_lcd_off_mode = false;
 #endif
 
 #ifdef USE_ADC0
@@ -253,13 +256,14 @@ struct /*i2c_secondary_address_register_struct */
   uint8_t config_backlight;  // Reg: 0x00
   uint8_t backlight_max;     // Reg: 0x01 
 #define REGISTER_SEC_POWER_CONTROL      0x02    //this one is writeable
-  uint8_t power_control;     // Reg: 0x02 - host can tell us stuff about the state of the power (like low-batt or shutdown imminent) or even tell us to force a shutdown
+  uint8_t power_control;     // Reg: 0x02 - host can tell us stuff about the state of the power (like low-batt, lcd_dimming, lcd_sleep, or shutdown imminent) or even tell us to force a shutdown
   uint8_t features_available;// Reg: 0x03 - bit define if ADCs are available or interrups are in use, etc.
   uint8_t rfu0;              // Reg: 0x04 - reserved for future use (or device-specific use)
   uint8_t rfu1;              // Reg: 0x05 - reserved for future use (or device-specific use)
   uint8_t rfu2;              // Reg: 0x06 - reserved for future use (or device-specific use)
   uint8_t rfu3;              // Reg: 0x07 - reserved for future use (or device-specific use)
-  uint8_t rfu4;              // Reg: 0x08 - reserved for future use (or device-specific use)
+#define REGISTER_SEC_BATTERY_CAPACITY   0x08
+  uint8_t battery_capacity;  // Reg: 0x08 - battery capacity (0-100 = battery %, 255 = UNKNOWN)
 #define REGISTER_SEC_STATUS_LED         0x09   //this one is writeable
   uint8_t status_led_control;// Reg: 0x09 - turn on/off/blinkSlow/blinkFast/etc the blue status LED  (this is actuall a WRITE-ONLY "virtual" register)
 #define REGISTER_SEC_WRITE_PROTECT      0x0A   //this one is writeable
@@ -272,6 +276,19 @@ struct /*i2c_secondary_address_register_struct */
   uint8_t device_ID;         // Reg: 0x0E -
   uint8_t version_ID;        // Reg: 0x0F - 
 } i2c_secondary_registers;
+
+#define KILL_POWER_NOW 0x81
+struct joy_power_control_bit_struct
+{
+    uint8_t low_batt_mode : 1;
+    uint8_t lcd_dimming_mode : 1;
+    uint8_t lcd_sleep_mode : 1;
+    uint8_t unused3 : 1;
+    uint8_t unused4 : 1;
+    uint8_t unused5 : 1;
+    uint8_t unused6 : 1;
+    uint8_t kill_power_now : 1;       //actually must write 0x81 to this entire byte to kill power (as a safety measure)
+}  * const joy_power_control_ptr = (struct joy_power_control_bit_struct*)&i2c_secondary_registers.power_control;
 
 struct eeprom_data_struct
 {
@@ -389,13 +406,29 @@ volatile bool g_read_analog_inputs_asap = true;
 #define IS_PRESSED_BTN_POWER_INPUT1(in1) ((in1 & INPUT1_BTN_POWER) != INPUT1_BTN_POWER)
 
 #ifdef USE_HOTKEY_TOGGLE_MODE
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_UP()    (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_UP   ) != INPUT0_DPAD_UP   ) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP   ) != INPUT0_DPAD_UP))
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN()  (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_DOWN ) != INPUT0_DPAD_DOWN ) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN ) != INPUT0_DPAD_DOWN))
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_LEFT()  (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_LEFT ) != INPUT0_DPAD_LEFT ) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_LEFT ) != INPUT0_DPAD_LEFT))
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_RIGHT() (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_RIGHT) != INPUT0_DPAD_RIGHT) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_RIGHT) != INPUT0_DPAD_RIGHT))
+ 
+ #define IS_PRESSED_SPECIAL_INPUT_TL()         (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input1 & INPUT1_BTN_TL) != INPUT1_BTN_TL) : ((i2c_joystick_registers.input1 & INPUT1_BTN_TL) != INPUT1_BTN_TL))
+ #define IS_PRESSED_SPECIAL_INPUT_TR()         (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input1 & INPUT1_BTN_TR) != INPUT1_BTN_TR) : ((i2c_joystick_registers.input1 & INPUT1_BTN_TR) != INPUT1_BTN_TR))
+
+#ifdef USE_HOTKEY_TOGGLE_MODE
  #define IS_PRESSED_SPECIAL_INPUT_DPAD_UP()   (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP  ) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP))
  #define IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN() (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN))
 
+
+
  #define IS_SPECIAL_INPUT_MODE() (g_hotkey_mode == HOTKEY_SPECIAL_INPUT)
 #else
- #define IS_PRESSED_SPECIAL_INPUT_DPAD_UP()   ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP)
- #define IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN() ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN)
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_UP()    ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP   ) != INPUT0_DPAD_UP)
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN()  ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN ) != INPUT0_DPAD_DOWN)
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_LEFT()  ((i2c_joystick_registers.input0 & INPUT0_DPAD_LEFT ) != INPUT0_DPAD_LEFT)
+ #define IS_PRESSED_SPECIAL_INPUT_DPAD_RIGHT() ((i2c_joystick_registers.input0 & INPUT0_DPAD_RIGHT) != INPUT0_DPAD_RIGHT)
+
+ #define IS_PRESSED_SPECIAL_INPUT_TL() ((i2c_joystick_registers.input1 & INPUT1_BTN_TL) != INPUT1_BTN_TL)
+ #define IS_PRESSED_SPECIAL_INPUT_TR() ((i2c_joystick_registers.input1 & INPUT1_BTN_TR) != INPUT1_BTN_TR)
 
  #define IS_SPECIAL_INPUT_MODE() (IS_PRESSED_BTN_TL() && IS_PRESSED_BTN_TR() && IS_PRESSED_BTN_Y())
 #endif
@@ -642,6 +675,42 @@ void backlight_start_flashing(uint8_t num_flashes)
 #endif
 }
 
+void set_backlight_output()
+{
+  if(g_backlight_is_flashing)
+    return;	
+	
+  //check sleep/dimming settings
+
+  if(IS_SPECIAL_INPUT_MODE())
+  {
+	if(g_special_input_lcd_off_mode)
+	{
+	  digitalWrite(PIN_BACKLIGHT_PWM, LOW);   //turn backlight off    //analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[0]);
+	  return;
+	}
+  }
+  else
+  {
+  	if(g_lcd_sleep_mode)
+    {
+      digitalWrite(PIN_BACKLIGHT_PWM, LOW);   //turn backlight off    //analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[0]);
+	  return;
+    }
+    else if(g_lcd_dimming_mode)
+    {
+      uint8_t dim_val = g_pwm_step >> 1;		// divide by 2
+      dim_val++;
+
+      analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[dim_val]);
+	  return;
+    }
+  }
+  
+  //otherwise, just write the PWM value
+  analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[g_pwm_step]); 
+}
+
 void backlight_process_flashing()
 {
 #ifdef PIN_BACKLIGHT_PWM  
@@ -675,7 +744,7 @@ void backlight_process_flashing()
       {
         backlight_flash_state = NOT_FLASHING;
 #ifdef USE_PWM_BACKLIGHT
-        analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
+        set_backlight_output();//analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
 #else
         digitalWrite(PIN_BACKLIGHT_PWM, HIGH);
 #endif
@@ -1115,6 +1184,9 @@ void read_digital_inputs(void)
       {
         g_hotkey_mode = HOTKEY_OFF;
         status_led_off();
+        g_special_input_lcd_off_mode = false;
+        joy_power_control_ptr->lcd_sleep_mode = 0;  //wake it up, so the user is not confused
+        joy_power_control_ptr->lcd_dimming_mode = 0;//undim it, so the user is not confused
       }
       g_hotkey_input0 = input0;
       g_hotkey_input1 = input1;
@@ -1179,7 +1251,7 @@ void process_special_inputs()
 
 #ifdef USE_PWM_BACKLIGHT
   static uint16_t special_inputs_loop_counter = 0;
-  if(IS_SPECIAL_INPUT_MODE() && (IS_PRESSED_SPECIAL_INPUT_DPAD_UP() || IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN()))
+  if(IS_SPECIAL_INPUT_MODE() && (IS_PRESSED_SPECIAL_INPUT_DPAD_UP() || IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN() || IS_PRESSED_SPECIAL_INPUT_TL()))
   {
     if(special_inputs_loop_counter)   
     {
@@ -1190,21 +1262,33 @@ void process_special_inputs()
     {
       special_inputs_loop_counter = SPECIAL_LOOP_DELAY;
 
-      if(IS_PRESSED_SPECIAL_INPUT_DPAD_UP())
+      if(IS_PRESSED_SPECIAL_INPUT_TL())
       {
-        if(i2c_secondary_registers.config_backlight < (NUM_BACKLIGHT_PWM_STEPS-1))
-        {
-          i2c_secondary_registers.config_backlight++;
-          //Serial.println("Backlight +");
-        }
+        //pressed TopL (L shoulder)
+        g_special_input_lcd_off_mode = !g_special_input_lcd_off_mode;
       }
-      else if(IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN())
+      else
       {
-        if(i2c_secondary_registers.config_backlight > 0)
+        //pressed any other special input button
+        g_special_input_lcd_off_mode = false;
+
+
+        if(IS_PRESSED_SPECIAL_INPUT_DPAD_UP())
         {
-          i2c_secondary_registers.config_backlight--;
-          //Serial.println("Backlight -");
+          if(i2c_secondary_registers.config_backlight < (NUM_BACKLIGHT_PWM_STEPS-1))
+          {
+            i2c_secondary_registers.config_backlight++;
+            //Serial.println("Backlight +");
+          }
         }
+        else if(IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN())
+        {
+          if(i2c_secondary_registers.config_backlight > 0)
+          {
+            i2c_secondary_registers.config_backlight--;
+            //Serial.println("Backlight -");
+          }
+        }        
       }
     } 
   }
@@ -1307,10 +1391,21 @@ inline void receive_i2c_callback_secondary_address(int i2c_bytes_received)
     }    
     else if(x == REGISTER_SEC_POWER_CONTROL && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
+      if(temp == KILL_POWER_NOW)
+        digitalWrite(PIN_POWEROFF_OUT,HIGH);
+
       //backlight_start_flashing(temp);     //change this at some point!
+
+      //power_control bit 0 indicates LOW_BATT status (true/false)
+      //power_control bits 1-7 are currently unused
       
       //we would use this as a way for the i2c master (host system) to tell us about power related stuff (like if the battery is getting low)
-      i2c_secondary_registers.power_control = temp;      
+      //low_batt_mode   SEE joy_power_control_bit_struct above
+      i2c_secondary_registers.power_control = temp;
+    }
+    else if(x == REGISTER_SEC_BATTERY_CAPACITY && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
+    {
+      i2c_secondary_registers.battery_capacity = temp;
     }
     else if(x == REGISTER_SEC_STATUS_LED && i2c_secondary_registers.write_protect == WRITE_UNPROTECT)
     {
@@ -1474,6 +1569,8 @@ void setup()
   i2c_secondary_registers.device_ID = DEVICE_ID;
   i2c_secondary_registers.version_ID = VERSION_NUMBER;
 
+  i2c_secondary_registers.battery_capacity = 255;  //255 = battery capacity is unknown
+
   i2c_secondary_registers.power_control = 0;
   i2c_secondary_registers.write_protect = WRITE_PROTECT;
 
@@ -1597,13 +1694,20 @@ void loop()
 
 #ifdef PIN_BACKLIGHT_PWM
 
+  if(g_lcd_dimming_mode != joy_power_control_ptr->lcd_dimming_mode)
+  {
+    g_lcd_dimming_mode = joy_power_control_ptr->lcd_dimming_mode;
+  }
+  if(g_lcd_sleep_mode != joy_power_control_ptr->lcd_sleep_mode)
+  {
+    g_lcd_sleep_mode = joy_power_control_ptr->lcd_sleep_mode;
+  }
   if(g_pwm_step != i2c_secondary_registers.config_backlight)
   {
     //output the duty cycle to the pwm pin (PA3?)
     if(i2c_secondary_registers.config_backlight >= NUM_BACKLIGHT_PWM_STEPS)
       i2c_secondary_registers.config_backlight = NUM_BACKLIGHT_PWM_STEPS-1;
     
-    analogWrite(PIN_BACKLIGHT_PWM, backlight_pwm_steps[i2c_secondary_registers.config_backlight]);
     g_pwm_step = i2c_secondary_registers.config_backlight;
 
     if(i2c_secondary_registers.config_backlight == 0)   //if the user chose backlight totally OFF, then bootup at default next time
@@ -1612,6 +1716,8 @@ void loop()
       eeprom_data.sec_config_backlight = i2c_secondary_registers.config_backlight;
     eeprom_save_deferred();
   }
+
+  set_backlight_output();
 #endif
 
   if(eeprom_data.sec_joystick_i2c_addr != i2c_secondary_registers.joystick_i2c_addr)
@@ -1702,6 +1808,8 @@ void loop()
       
       timer_qwiic_softi2c_read_start_micros = current_softi2c_micros;
     }
+    
+    resetViaSWR();    //reboot the chip to use old address
   }
 #endif
 
