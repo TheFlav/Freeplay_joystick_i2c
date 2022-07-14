@@ -414,9 +414,6 @@ volatile bool g_read_analog_inputs_asap = true;
  #define IS_PRESSED_SPECIAL_INPUT_TL()         (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input1 & INPUT1_BTN_TL) != INPUT1_BTN_TL) : ((i2c_joystick_registers.input1 & INPUT1_BTN_TL) != INPUT1_BTN_TL))
  #define IS_PRESSED_SPECIAL_INPUT_TR()         (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input1 & INPUT1_BTN_TR) != INPUT1_BTN_TR) : ((i2c_joystick_registers.input1 & INPUT1_BTN_TR) != INPUT1_BTN_TR))
 
-#ifdef USE_HOTKEY_TOGGLE_MODE
- #define IS_PRESSED_SPECIAL_INPUT_DPAD_UP()   (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP  ) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_UP  ) != INPUT0_DPAD_UP))
- #define IS_PRESSED_SPECIAL_INPUT_DPAD_DOWN() (g_hotkey_mode == HOTKEY_SPECIAL_INPUT ? ((g_hotkey_input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN) : ((i2c_joystick_registers.input0 & INPUT0_DPAD_DOWN) != INPUT0_DPAD_DOWN))
 
 
 
@@ -1808,8 +1805,6 @@ void loop()
       
       timer_qwiic_softi2c_read_start_micros = current_softi2c_micros;
     }
-    
-    resetViaSWR();    //reboot the chip to use old address
   }
 #endif
 
